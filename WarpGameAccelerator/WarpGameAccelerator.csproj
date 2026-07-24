@@ -20,9 +20,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <AssemblyVersion>1.8.8.0</AssemblyVersion>
-    <FileVersion>1.8.8.0</FileVersion>
-    <Version>1.8.8</Version>
+    <AssemblyVersion>1.8.9.0</AssemblyVersion>
+    <FileVersion>1.8.9.0</FileVersion>
+    <Version>1.8.9</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -111,60 +111,7 @@ public class MihomoService
     skip-cert-verify: true";
         }
 
-        string dnsAndTunConfig;
-        if (isDirectWireGuard)
-        {
-            // Chế độ Siêu Tốc (Direct WireGuard)
-            dnsAndTunConfig = @"
-dns:
-  enable: true
-  listen: 127.0.0.1:1053
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
-  fake-ip-filter:
-    - ""*.vn""
-    - ""*.com.vn""
-    - ""*.net.vn""
-    - ""*.edu.vn""
-    - ""*.org.vn""
-    - ""*.gov.vn""
-    - ""localhost""
-    - ""*.local""
-  nameserver:
-    - 1.1.1.1
-    - 8.8.8.8
-
-tun:
-  enable: true
-  stack: gvisor
-  auto-route: true
-  auto-detect-interface: true
-  mtu: 1280
-  dns-hijack:
-    - any:53";
-        }
-        else
-        {
-            // Chế độ WARP Client cũ
-            dnsAndTunConfig = @"
-dns:
-  enable: true
-  listen: 127.0.0.1:1053
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
-  fake-ip-filter:
-    - ""*.vn""
-    - ""*.com.vn""
-    - ""*.net.vn""
-    - ""*.edu.vn""
-    - ""*.org.vn""
-    - ""*.gov.vn""
-    - ""localhost""
-    - ""*.local""
-  nameserver:
-    - 1.1.1.1
-    - 8.8.8.8
-
+        string dnsAndTunConfig = @"
 tun:
   enable: true
   stack: mixed
@@ -173,7 +120,6 @@ tun:
   mtu: 1280
   dns-hijack:
     - any:53";
-        }
 
         // Generate Mihomo config
         var yaml = $@"
