@@ -90,6 +90,11 @@
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
+                <NavigationViewItem Tag="warpaccount" Content="WARP+ Account">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8D4;"/>
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Tag="settings" Content="Cài đặt">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;"/>

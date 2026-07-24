@@ -8,12 +8,15 @@ namespace WarpGameAccelerator.Services;
 
 public class WarpAccountInfo
 {
-    public string PrivateKey { get; set; } = string.Empty;
-    public string PublicKey { get; set; } = string.Empty;
-    public string IPv4 { get; set; } = string.Empty;
-    public string IPv6 { get; set; } = string.Empty;
+    public string PrivateKey    { get; set; } = string.Empty;
+    public string PublicKey     { get; set; } = string.Empty;
+    public string Id            { get; set; } = string.Empty;
+    public string Token         { get; set; } = string.Empty;
+    public string License       { get; set; } = string.Empty;
+    public string IPv4          { get; set; } = string.Empty;
+    public string IPv6          { get; set; } = string.Empty;
     public string PeerPublicKey { get; set; } = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
-    public string Endpoint { get; set; } = "162.159.192.1:2408";
+    public string Endpoint      { get; set; } = "162.159.192.1:2408";
 }
 
 public class WarpAccountService
@@ -89,6 +92,11 @@ public class WarpAccountService
         };
 
         var root = doc.RootElement.TryGetProperty("result", out var resEl) ? resEl : doc.RootElement;
+
+        // Lưu Id và Token để dùng gọi API sau này (nạp license key...)
+        if (root.TryGetProperty("id", out var idEl)) result.Id = idEl.GetString() ?? "";
+        if (root.TryGetProperty("token", out var tokenEl)) result.Token = tokenEl.GetString() ?? "";
+
         if (root.TryGetProperty("config", out var configEl))
         {
             if (configEl.TryGetProperty("interface", out var ifaceEl) &&
@@ -112,7 +120,51 @@ public class WarpAccountService
         if (string.IsNullOrEmpty(result.IPv4)) result.IPv4 = "172.16.0.2";
         return result;
     }
+
+    // ── Cập nhật License Key WARP+ ────────────────────────────
+    public static async Task<(bool Success, string Message)> UpdateLicenseAsync(string licenseKey)
+    {
+        try
+        {
+            var acc = await GetOrCreateAccountAsync();
+            if (string.IsNullOrEmpty(acc.Id) || string.IsNullOrEmpty(acc.Token))
+                return (false, "Không tìm thấy ID hoặc Token tài khoản. Vui lòng xóa file warp_account.json và khởi động lại app.");
+
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "okhttp/3.12.1");
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {acc.Token}");
+
+            var payload = new { license = licenseKey };
+            var content = new StringContent(
+                JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            var url = $"https://api.cloudflareclient.com/v0i1909051800/reg/{acc.Id}/account";
+            var response = await client.PutAsync(url, content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                acc.License = licenseKey;
+                var dir = Path.GetDirectoryName(AccountFilePath)!;
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var json = JsonSerializer.Serialize(acc, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(AccountFilePath, json);
+                return (true, "Kích hoạt WARP+ thành công!");
+            }
+
+            if ((int)response.StatusCode == 429)
+                return (false, "Bạn đã thử quá nhiều lần. Vui lòng đợi vài phút rồi thử lại.");
+            if ((int)response.StatusCode == 403)
+                return (false, "License Key không hợp lệ hoặc đã hết hạn.");
+
+            return (false, $"Lỗi từ server ({(int)response.StatusCode}). Vui lòng kiểm tra lại key.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Lỗi kết nối: {ex.Message}");
+        }
+    }
 }
+
 
 // ── X25519 Curve25519 Math ────────────────────────────────────
 public static class X25519KeyGenerator

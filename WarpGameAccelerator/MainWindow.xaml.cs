@@ -89,10 +89,10 @@ public sealed partial class MainWindow : Window
             if (NavView.MenuItems[1] is NavigationViewItem selectGame)
                 selectGame.Content = _loc.NavSelectGame;
 
-            // FooterMenuItems: [0]=Settings, [1]=Exit
-            if (NavView.FooterMenuItems[0] is NavigationViewItem settings)
+        // FooterMenuItems: [0]=WarpAccount, [1]=Settings, [2]=Exit
+            if (NavView.FooterMenuItems[1] is NavigationViewItem settings)
                 settings.Content = _loc.NavSettings;
-            if (NavView.FooterMenuItems[1] is NavigationViewItem exit)
+            if (NavView.FooterMenuItems[2] is NavigationViewItem exit)
                 exit.Content = _loc.NavExit;
         });
     }
@@ -238,10 +238,11 @@ public sealed partial class MainWindow : Window
 
         Type? pageType = tag switch
         {
-            "dashboard" => typeof(DashboardPage),
-            "process"   => typeof(ProcessPickerPage),
-            "settings"  => typeof(SettingsPage),
-            _           => null
+            "dashboard"   => typeof(DashboardPage),
+            "process"     => typeof(ProcessPickerPage),
+            "warpaccount" => typeof(WarpAccountPage),
+            "settings"    => typeof(SettingsPage),
+            _             => null
         };
 
         if (pageType is not null && ContentFrame.CurrentSourcePageType != pageType)

@@ -1,0 +1,110 @@
+<!-- ============================================================
+     Views/WarpAccountPage.xaml — Màn hình quản lý tài khoản WARP+
+     ============================================================ -->
+<Page
+    x:Class="WarpGameAccelerator.Views.WarpAccountPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="Transparent">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="24,20,24,32" Spacing="20">
+
+            <!-- Header -->
+            <TextBlock Text="WARP+ Account"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       CharacterSpacing="80"/>
+
+            <!-- Status Card -->
+            <Border x:Name="StatusCard"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <!-- Badge icon -->
+                        <Border x:Name="AccountBadge" CornerRadius="24"
+                                Width="48" Height="48"
+                                Background="#1A0078D4">
+                            <FontIcon x:Name="AccountIcon"
+                                      Glyph="&#xE8D4;" FontSize="22"
+                                      Foreground="#0078D4"/>
+                        </Border>
+
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="AccountTierText"
+                                       Text="WARP Free"
+                                       FontSize="15" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock x:Name="AccountIdText"
+                                       Text="Chưa có tài khoản"
+                                       FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                </StackPanel>
+            </Border>
+
+            <!-- License Key Section -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+
+                    <TextBlock Text="Nhập License Key WARP+"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+
+                    <TextBlock Text="Lấy key miễn phí từ app 1.1.1.1 trên điện thoại → Settings → Account → Key"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                    <TextBox x:Name="LicenseKeyBox"
+                             PlaceholderText="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+                             FontFamily="Consolas"
+                             FontSize="13"
+                             MaxLength="48"
+                             CornerRadius="6"/>
+
+                    <Button x:Name="ApplyKeyBtn"
+                            Content="Áp dụng Key"
+                            HorizontalAlignment="Stretch"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Click="ApplyKeyBtn_Click"
+                            CornerRadius="6"/>
+
+                    <!-- Status Message -->
+                    <TextBlock x:Name="StatusMsg"
+                               Text=""
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="#0078D4"
+                               Visibility="Collapsed"/>
+
+                </StackPanel>
+            </Border>
+
+            <!-- Info Section -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="ℹ️  Lưu ý"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                        <Run Text="• WARP Free: Dữ liệu có giới hạn nhưng vẫn tối ưu Ping cho Game."/>
+                        <LineBreak/>
+                        <Run Text="• WARP+: Dữ liệu không giới hạn và ưu tiên định tuyến tốc độ cao qua Cloudflare."/>
+                        <LineBreak/>
+                        <Run Text="• Key WARP+ có thể lấy miễn phí bằng cách mời bạn bè dùng app 1.1.1.1."/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>
