@@ -92,7 +92,7 @@ public sealed partial class MultiClientPage : Page
         ValidateFolder(FolderPathBox.Text.Trim());
     }
 
-    private void ValidateFolder(string folder)
+    private async void ValidateFolder(string folder)
     {
         _gameFolder = folder;
         var (valid, msg) = MultiClientService.ValidateGameFolder(folder);
@@ -102,6 +102,11 @@ public sealed partial class MultiClientPage : Page
             : new SolidColorBrush(ColorHelper.FromArgb(255, 136, 136, 136));
 
         LaunchFirstBtn.IsEnabled = valid;
+
+        if (valid)
+        {
+            await MultiClientService.SaveTokenAsync(_currentToken, _gameFolder);
+        }
     }
 
     // ── Card 2: Mở client đầu ───────────────────────────────

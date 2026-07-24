@@ -34,42 +34,49 @@ public class MultiClientService
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return (false, "Thư mục không tồn tại.");
 
-        // Tìm các file bắt buộc (có thể nằm trong bin64 hoặc thư mục gốc)
-        var searchDirs = new[] { folder, Path.Combine(folder, "bin64"), Path.Combine(folder, "Bin64") };
+        string? launcher = FindGameExe(folder, "fxlaunch.exe");
+        string? game     = FindGameExe(folder, "fxgame.exe");
 
-        string? launcher = FindFile(searchDirs, "fxlauncher.exe");
-        string? game     = FindFile(searchDirs, "fxgame.exe");
-
-        if (launcher == null) return (false, "Không tìm thấy fxlauncher.exe.");
+        if (launcher == null) return (false, "Không tìm thấy fxlaunch.exe.");
         if (game == null)     return (false, "Không tìm thấy fxgame.exe.");
 
-        return (true, $"✓  fxlauncher.exe  ·  fxgame.exe");
+        return (true, $"✓  fxlaunch.exe  ·  fxgame.exe");
     }
 
     public static string? FindGameExe(string folder, string exeName)
     {
-        var searchDirs = new[] { folder, Path.Combine(folder, "bin64"), Path.Combine(folder, "Bin64") };
-        return FindFile(searchDirs, exeName);
-    }
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) return null;
 
-    private static string? FindFile(string[] dirs, string fileName)
-    {
-        foreach (var dir in dirs)
+        // 1. Kiểm tra trực tiếp tại thư mục gốc và các subfolder quen thuộc
+        var searchDirs = new[] { folder, Path.Combine(folder, "bin64"), Path.Combine(folder, "Bin64"), Path.Combine(folder, "bin"), Path.Combine(folder, "Bin") };
+        foreach (var dir in searchDirs)
         {
-            var path = Path.Combine(dir, fileName);
-            if (File.Exists(path)) return path;
+            if (Directory.Exists(dir))
+            {
+                var path = Path.Combine(dir, exeName);
+                if (File.Exists(path)) return path;
+            }
         }
+
+        // 2. Nếu không thấy, quét đệ quy subfolder
+        try
+        {
+            var files = Directory.GetFiles(folder, exeName, SearchOption.AllDirectories);
+            if (files.Length > 0) return files[0];
+        }
+        catch { }
+
         return null;
     }
 
-    // ── Bước 1: Mở client đầu tiên qua fxlauncher ──────────
+    // ── Bước 1: Mở client đầu tiên qua fxlaunch ──────────
     public static Task<(bool Success, string Message)> LaunchFirstClientAsync(string gameFolder)
     {
         try
         {
-            var launcher = FindGameExe(gameFolder, "fxlauncher.exe");
+            var launcher = FindGameExe(gameFolder, "fxlaunch.exe");
             if (launcher == null)
-                return Task.FromResult((false, "Không tìm thấy fxlauncher.exe trong thư mục đã chọn."));
+                return Task.FromResult((false, "Không tìm thấy fxlaunch.exe trong thư mục đã chọn."));
 
             var psi = new ProcessStartInfo
             {
@@ -78,9 +85,8 @@ public class MultiClientService
                 UseShellExecute  = true
             };
             Process.Start(psi);
-            return Task.FromResult((true, "Đã gọi fxlauncher.exe. Chờ vài giây để game khởi động..."));
-        }
-        catch (Exception ex)
+            return Task.FromResult((true, "Đã gọi fxlaunch.exe. Chờ vài giây để game khởi động..."));
+        }        catch (Exception ex)
         {
             return Task.FromResult((false, $"Lỗi: {ex.Message}"));
         }

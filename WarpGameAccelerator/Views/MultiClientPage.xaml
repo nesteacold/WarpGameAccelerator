@@ -71,7 +71,7 @@
                                    VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <TextBlock Text="App sẽ gọi fxlauncher.exe để đăng nhập và khởi động game."
+                    <TextBlock Text="App sẽ gọi fxlaunch.exe để đăng nhập và khởi động game."
                                FontSize="12" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
