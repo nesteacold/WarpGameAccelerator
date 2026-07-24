@@ -3,7 +3,7 @@ name: Release Builder
 on:
   push:
     tags:
-      - 'v*' # Trigger khi push tag bắt đầu bằng 'v' (vd: v1.7.1)
+      - 'v*' # Trigger khi push tag bắt đầu bằng 'v' (vd: v1.7.3)
 
 # Cấp quyền ghi để tạo Release và upload file
 permissions:
@@ -22,9 +22,21 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
+    - name: Extract version from tag
+      id: version
+      run: |
+        $tag = "${{ github.ref_name }}"
+        $version = $tag.TrimStart('v')
+        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
     - name: Publish WarpGameAccelerator
       run: |
-        dotnet publish WarpGameAccelerator/WarpGameAccelerator.csproj -c Release -r win-x64 --self-contained -o ./Publish
+        dotnet publish WarpGameAccelerator/WarpGameAccelerator.csproj `
+          -c Release -r win-x64 --self-contained `
+          -p:Version=${{ steps.version.outputs.VERSION }} `
+          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }}.0 `
+          -p:FileVersion=${{ steps.version.outputs.VERSION }}.0 `
+          -o ./Publish
 
     - name: Create Release and Upload Asset
       uses: softprops/action-gh-release@v2
