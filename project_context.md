@@ -1,44 +1,142 @@
-# WARP Game Accelerator - Project Context
+# WARP Game Accelerator — Project Context
 
-Đây là tài liệu tóm tắt toàn bộ bối cảnh, kiến trúc và quyết định kỹ thuật của dự án để AI hoặc lập trình viên có thể nắm bắt nhanh chóng khi làm việc ở các phiên làm việc tiếp theo.
+> Tài liệu tóm tắt toàn bộ kiến trúc, quyết định kỹ thuật và lịch sử tính năng.  
+> Cập nhật lần cuối: **v1.8.2**
+
+---
 
 ## 1. Giới thiệu chung
-- **Tên dự án:** WARP Game Accelerator
-- **Công nghệ:** C# .NET 8 (WPF / WinUI 3), giao diện XAML.
-- **Mục đích:** Tăng tốc độ trễ (Ping) cho các ứng dụng Game thông qua hạ tầng mạng Cloudflare WARP. Hỗ trợ **Split Tunneling** (chỉ định tuyến đúng những tiến trình (process) game người dùng chọn, các ứng dụng khác như Chrome, Discord vẫn dùng mạng mặc định).
+
+| Mục | Thông tin |
+|---|---|
+| **Tên dự án** | WARP Game Accelerator |
+| **Công nghệ** | C# .NET 8, WinUI 3, XAML |
+| **GitHub** | `nesteacold/WarpGameAccelerator` |
+| **Phiên bản hiện tại** | v1.8.2 |
+| **Mục đích** | Tăng tốc Ping game qua hạ tầng Cloudflare WARP. Hỗ trợ Split Tunneling — chỉ định tuyến đúng process game, các app khác vẫn dùng mạng mặc định. |
+
+---
 
 ## 2. Kiến trúc & Core Engine
-Dự án sử dụng **Mihomo** (phiên bản nhánh của Clash Meta) làm nhân mạng lõi để bắt và định tuyến gói tin thông qua **Wintun** (Card mạng ảo). 
 
-### 2.1. Quản lý File Core (Single-file Deployment)
-- Từ bản **v1.6.7**, ứng dụng được đóng gói thành **1 file EXE duy nhất** (Single-file publish) thay vì phải đi kèm thư mục `Core`.
-- Để lách luật Windows (không thể chạy trực tiếp một file exe đang bị nén chung với app chính), file `mihomo.exe` và các thành phần cốt lõi được set là **EmbeddedResource** trong file `.csproj`.
-- Khi app khởi động, `MihomoService.cs` sẽ tự động giải nén file `mihomo.exe` vào thư mục tạm của hệ điều hành: `C:\Users\<User>\AppData\Local\WarpGameAccelerator\Core`. Sau đó nó sẽ sinh ra file `config.yaml` và gọi nhân Mihomo chạy ngầm tại đây.
+### 2.1. Nhân mạng (Mihomo)
+- Dùng **Mihomo** (fork Clash Meta) làm proxy engine bắt và định tuyến gói tin qua **Wintun** (card mạng ảo).
+- Từ v1.6.7: đóng gói thành **1 file EXE duy nhất** (Single-file publish).
+- `mihomo.exe` được set là **EmbeddedResource** trong `.csproj`, giải nén ra `AppData\Local\WarpGameAccelerator\Core\` khi khởi động.
 
-### 2.2. Hai chế độ mạng (Engine Modes)
-Ứng dụng có 2 chế độ hoạt động, cấu hình tự sinh trong `MihomoService.cs`:
+### 2.2. Hai chế độ mạng
 
-1. **Game Mode (Direct WireGuard) 🔥 Khuyên dùng:**
-   - **Hoạt động:** Mihomo TUN bắt gói tin -> Mihomo tự mã hóa gói tin bằng giao thức WireGuard -> Gửi thẳng ra `1.1.1.1` của Cloudflare.
-   - **Ưu điểm:** Bỏ qua hoàn toàn ứng dụng WARP gốc, giảm phân mảnh gói tin, tối ưu tuyệt đối độ trễ (Ping).
-   - **Tài khoản WARP:** Ứng dụng tự động gọi API của Cloudflare (giả lập thiết bị Android) thông qua `WarpAccountService.cs` để xin cấp khóa Private/Public Key và IP ảo miễn phí. Lưu vào `Data/warp_account.json`.
+**1. Game Mode (Direct WireGuard) 🔥 Khuyên dùng**
+- Luồng: Mihomo TUN → mã hóa WireGuard → gửi thẳng `162.159.192.1:2408` (Cloudflare).
+- Bỏ qua ứng dụng WARP gốc → giảm phân mảnh gói tin → ping tối ưu nhất.
+- Tài khoản WARP tự động đăng ký qua API Cloudflare (giả lập Android) trong `WarpAccountService.cs`.
 
-2. **Chế độ Tương Thích (WARP Client Proxy):**
-   - **Hoạt động:** Mihomo TUN bắt gói tin -> Bắn vào cổng SOCKS5 nội bộ `127.0.0.1:40000` -> Ứng dụng Cloudflare WARP (`warp-svc.exe`) trên máy hứng gói tin -> Mã hóa WireGuard -> Gửi ra `1.1.1.1`.
-   - **Yêu cầu:** Máy tính phải cài đặt sẵn và bật ứng dụng Cloudflare WARP chính chủ.
+**2. Chế độ Tương Thích (WARP Client Proxy)**
+- Luồng: Mihomo TUN → SOCKS5 `127.0.0.1:40000` → `warp-svc.exe` → Cloudflare.
+- Yêu cầu cài Cloudflare WARP chính chủ trên máy.
 
-### 2.3. Cấu hình DNS Fake-IP
-Cả 2 chế độ đều bắt buộc sử dụng tính năng **Fake-IP** của Mihomo (`enhanced-mode: fake-ip`, `fake-ip-range: 198.18.0.1/16`) kết hợp với lệnh `dns-hijack: any:53`. 
-- Nếu không có DNS Fake-IP, các game hoặc trình duyệt sẽ không thể phân giải được tên miền để lấy IP trước khi kết nối TCP/UDP, dẫn đến lỗi rớt mạng (`ERR_CONNECTION_CLOSED` trên trình duyệt).
+### 2.3. DNS Fake-IP
+- Cả 2 chế độ dùng Fake-IP (`enhanced-mode: fake-ip`, range `198.18.0.1/16`) + `dns-hijack: any:53`.
+- Bắt buộc để game có thể resolve tên miền trước khi kết nối TCP/UDP.
 
-## 3. GitHub Actions (CI/CD)
-- Dự án đã được thiết lập quy trình tự động hóa tại `.github/workflows/release.yml`.
-- Mỗi khi có một Tag Git mới bắt đầu bằng chữ `v` được push lên nhánh chính (Ví dụ: `git tag v1.7.0` & `git push --tags`), máy chủ GitHub sẽ tự động:
-  - Biên dịch toàn bộ mã nguồn (.NET 8 Publish).
-  - Xuất ra 1 file `.exe` duy nhất.
-  - Tự động tạo một Release mới trên trang GitHub và đính kèm file `.exe` vào đó.
+---
 
-## 4. Lưu ý khi phát triển tiếp
-- Các chuỗi ngôn ngữ được quản lý trong `LocalizationService.cs`.
-- Mọi logic sinh file cấu hình proxy nằm trong `MihomoService.cs`.
-- Quản lý tài khoản và API Cloudflare nằm trong `WarpAccountService.cs`.
+## 3. Cấu trúc Services chính
+
+| Service | Trách nhiệm |
+|---|---|
+| `MihomoService.cs` | Sinh `config.yaml`, giải nén core, quản lý vòng đời Mihomo process |
+| `WarpAccountService.cs` | Gọi API Cloudflare đăng ký device, lưu WireGuard key, quản lý WARP+ license |
+| `MultiClientService.cs` | WMI detect token game, launch nhiều client AOW, quản lý process PID |
+| `WarpCliService.cs` | Wrapper cho `warp-cli.exe` (chế độ tương thích) |
+| `PingMonitorService.cs` | Đo Ping realtime hiển thị trên Dashboard |
+| `ProcessService.cs` | Liệt kê và chọn process game để định tuyến |
+| `GameProfileService.cs` | Lưu/đọc profile game (tên + IP server) |
+| `NetworkOptimizerService.cs` | Tối ưu MTU, TCP buffer |
+| `UpdateService.cs` | Tự động kiểm tra và tải bản mới từ GitHub Releases |
+| `LocalizationService.cs` | Đa ngôn ngữ (VIE/ENG), hot-swap không cần restart |
+
+---
+
+## 4. Navigation (MainWindow)
+
+### Menu Items (trên)
+| Tag | Trang | Icon |
+|---|---|---|
+| `dashboard` | DashboardPage | E945 (Speedometer) |
+| `process` | ProcessPickerPage | E7FC (Gamepad) |
+
+### Footer Items (dưới, từ trên xuống)
+| Tag | Trang | Icon |
+|---|---|---|
+| `multiclient` | MultiClientPage | E90F (People) |
+| `warpaccount` | WarpAccountPage | E8D4 (Account) |
+| `settings` | SettingsPage | E713 (Gear) |
+| _(exit)_ | — | E711 (Close, đỏ) |
+
+> **Quan trọng:** Index FooterMenuItems = `[0]=multiclient, [1]=warpaccount, [2]=settings, [3]=exit`  
+> Khi thêm item mới vào Footer phải cập nhật index trong `UpdateNavItemLabels()`.
+
+---
+
+## 5. Lưu trữ dữ liệu
+
+Tất cả dữ liệu người dùng lưu trong `AppData\Local\WarpGameAccelerator\`:
+
+| File | Nội dung |
+|---|---|
+| `Core\mihomo.exe` | Nhân Mihomo (giải nén từ EmbeddedResource) |
+| `Core\config.yaml` | Cấu hình proxy sinh tự động |
+| `Data\warp_account.json` | WireGuard keys, IP, WARP+ License key |
+| `Data\aow_token.json` | Token game AOW cho Multi-Client Launcher |
+
+> ⚠️ **Trước v1.8.2**: `warp_account.json` lưu cạnh `.exe` → bị mất khi update.  
+> **Từ v1.8.2**: Lưu trong AppData → tồn tại vĩnh viễn qua mọi lần cập nhật.
+
+---
+
+## 6. WARP+ Account
+
+- Màn hình: `WarpAccountPage.xaml`
+- API: `PUT https://api.cloudflareclient.com/v0a2158/reg/{id}/account` với `Bearer {token}`
+- Khi re-register tài khoản mới, license cũ được **tự động re-apply** (fix v1.8.2).
+- Nút **"Gỡ Key & Reset về WARP Free"**: xóa `warp_account.json`, tạo tài khoản mới khi Boost lần sau.
+
+---
+
+## 7. Multi-Client Launcher (AOW)
+
+- Màn hình: `MultiClientPage.xaml`
+- Service: `MultiClientService.cs`
+- **Luồng 3 bước:**
+  1. Chọn thư mục AOW → validate `fxlauncher.exe` + `fxgame.exe`
+  2. Bấm "Mở Client Đầu" → gọi `fxlauncher.exe`
+  3. Bấm "Detect Token" → WMI query `Win32_Process` CommandLine của `fxgame.exe` → parse token → lưu `aow_token.json`
+  4. Nhập số lượng → `Process.Start(fxgame.exe, token)` × N lần
+- Token được lưu lại, dùng đến khi game update phiên bản.
+- Giới hạn tối đa 10 client.
+
+---
+
+## 8. CI/CD (GitHub Actions)
+
+- File: `.github/workflows/release.yml`
+- Trigger: Push tag `v*` → tự động build + tạo GitHub Release + đính kèm `.exe`.
+- **Auto-version**: Workflow inject version từ tên tag vào binary (`-p:Version=X.Y.Z`).
+- Quy trình release: `git tag vX.Y.Z && git push --tags` là đủ.
+
+---
+
+## 9. Lịch sử phiên bản (tóm tắt)
+
+| Phiên bản | Thay đổi chính |
+|---|---|
+| v1.5.0 | Phiên bản đầu |
+| v1.6.0 | Connection Engine Mode |
+| v1.6.1 | Direct WireGuard (Game Mode) |
+| v1.6.9 | Mihomo Single-file, Game Mode mặc định |
+| v1.7.0 | WARP+ Account screen |
+| v1.7.3 | Fix crash DI, fix version display |
+| v1.8.0 | Multi-Client Launcher cho AOW |
+| v1.8.1 | Fix folder picker crash (Win32 SHBrowseForFolder), fix icon |
+| v1.8.2 | Fix mất WARP+ key sau update (AppData migration + auto re-apply) |
