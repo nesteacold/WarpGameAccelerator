@@ -31,16 +31,29 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0"
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
                                    Text="{x:Bind Loc.SettAutoStartTitle, Mode=OneWay}"
-                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"
-                                   VerticalAlignment="Center"/>
-                        <ToggleSwitch Grid.Column="1"
+                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                        <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
                                       IsOn="{x:Bind ViewModel.AutoStartEnabled, Mode=TwoWay}"
-                                      OnContent=""
-                                      OffContent=""
-                                      Margin="0"
-                                      VerticalAlignment="Center"/>
+                                      OnContent="" OffContent="" Margin="0"/>
+                    </Grid>
+                    
+                    <MenuFlyoutSeparator Margin="-12,0,-12,0"/>
+                    
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                   Text="{x:Bind ViewModel.UpdateStatusText, Mode=OneWay}"
+                                   FontSize="12" Foreground="#00E676" FontWeight="SemiBold" TextWrapping="Wrap"
+                                   Margin="0,0,8,0"/>
+                        <Button Grid.Column="1" VerticalAlignment="Center"
+                                Content="{x:Bind Loc.SettBtnCheckUpdate, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.CheckUpdateCommand}"
+                                Style="{StaticResource AccentButtonStyle}"/>
                     </Grid>
                 </StackPanel>
             </Border>
@@ -240,15 +253,10 @@
                         <TextBlock Text="{x:Bind ViewModel.AppVersion}"
                                    FontSize="12"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        <TextBlock Text="{x:Bind ViewModel.UpdateStatusText, Mode=OneWay}"
-                                   FontSize="11" Foreground="#00E676" FontWeight="SemiBold"
-                                   Margin="0,2,0,0"/>
+                        <TextBlock Text="Powered by Cloudflare WARP+"
+                                   FontSize="11"
+                                   Foreground="#F6961E"/>
                     </StackPanel>
-
-                    <Button Grid.Column="2" VerticalAlignment="Center"
-                            Content="{x:Bind Loc.SettBtnCheckUpdate, Mode=OneWay}"
-                            Command="{x:Bind ViewModel.CheckUpdateCommand}"
-                            Style="{StaticResource AccentButtonStyle}"/>
                 </Grid>
             </Border>
 

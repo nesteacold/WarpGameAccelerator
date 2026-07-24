@@ -87,10 +87,8 @@ public sealed partial class ProcessPickerPage : Page
 
     private void NavigateBack()
     {
-        if (Frame.CanGoBack)
-            Frame.GoBack();
-        else
-            Frame.Navigate(typeof(DashboardPage));
+        var mainWindow = App.Services.GetRequiredService<MainWindow>();
+        mainWindow.NavigateToDashboard();
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]

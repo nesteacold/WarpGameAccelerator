@@ -237,4 +237,11 @@ public sealed partial class MainWindow : Window
         if (pageType is not null && ContentFrame.CurrentSourcePageType != pageType)
             ContentFrame.Navigate(pageType);
     }
+
+    public void NavigateToDashboard()
+    {
+        NavView.SelectedItem = NavView.MenuItems[0];
+        if (ContentFrame.CurrentSourcePageType != typeof(DashboardPage))
+            ContentFrame.Navigate(typeof(DashboardPage));
+    }
 }

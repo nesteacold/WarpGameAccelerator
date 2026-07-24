@@ -48,12 +48,17 @@ public class UpdateService
                 }
             }
         }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Repo has no releases yet -> treated as latest
+            return (false, "latest", "");
+        }
         catch (Exception ex)
         {
             Debug.WriteLine($"Error checking for updates: {ex.Message}");
         }
 
-        return (false, "", "");
+        return (false, "latest", "");
     }
 
     public async Task DownloadAndInstallUpdateAsync(string downloadUrl)
