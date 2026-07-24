@@ -180,7 +180,7 @@ public class MultiClientService
     }
 
     // ── Bước 3: Mở thêm client với token đã lưu ─────────────
-    public static async Task<(int Launched, string Message)> LaunchAdditionalClientsAsync(
+    public static (int Launched, string Message) LaunchAdditionalClients(
         string gameFolder, string token, int count)
     {
         var gamePath = FindGameExe(gameFolder, "fxgame.exe");
@@ -206,7 +206,7 @@ public class MultiClientService
                 
                 if (i < count - 1)
                 {
-                    await Task.Delay(3000); // Chờ 3 giây giữa mỗi lần mở client
+                    Thread.Sleep(3000); // Chờ 3 giây đồng bộ trong background thread
                 }
             }
             catch (Exception ex)
