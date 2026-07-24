@@ -90,6 +90,11 @@
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
+                <NavigationViewItem Tag="multiclient" Content="Multi-Client">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7FC;"/>
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Tag="warpaccount" Content="WARP+ Account">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8D4;"/>

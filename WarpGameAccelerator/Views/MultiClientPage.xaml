@@ -1,0 +1,245 @@
+<!-- ============================================================
+     Views/MultiClientPage.xaml — Màn hình Multi-Client Launcher AOW
+     ============================================================ -->
+<Page
+    x:Class="WarpGameAccelerator.Views.MultiClientPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="Transparent">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="24,20,24,32" Spacing="16">
+
+            <!-- Header -->
+            <TextBlock Text="MULTI-CLIENT LAUNCHER"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       CharacterSpacing="80"/>
+
+            <!-- Card 1: Thư mục Game -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="🎮  Thư mục Game (Age of Wushu)"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+
+                    <!-- Folder input row -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="FolderPathBox"
+                                 Grid.Column="0"
+                                 PlaceholderText="C:\Program Files\AOW"
+                                 CornerRadius="6"
+                                 TextChanged="FolderPathBox_TextChanged"/>
+                        <Button Grid.Column="1"
+                                x:Name="BrowseBtn"
+                                Content="📂"
+                                FontSize="16"
+                                Width="40" Height="32"
+                                CornerRadius="6"
+                                Click="BrowseBtn_Click"
+                                ToolTipService.ToolTip="Chọn thư mục game"/>
+                    </Grid>
+
+                    <!-- Validation status -->
+                    <TextBlock x:Name="FolderStatusText"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Nhập hoặc chọn thư mục cài đặt AoW"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card 2: Bước 1 - Mở client đầu -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border Background="#1A0078D4" CornerRadius="12"
+                                Padding="6,2">
+                            <TextBlock Text="BƯỚC 1" FontSize="11" FontWeight="Bold"
+                                       Foreground="#0078D4"/>
+                        </Border>
+                        <TextBlock Text="Mở Client Đầu Tiên"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <TextBlock Text="App sẽ gọi fxlauncher.exe để đăng nhập và khởi động game."
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                    <Button x:Name="LaunchFirstBtn"
+                            Content="▶  Mở Client Đầu Tiên"
+                            HorizontalAlignment="Stretch"
+                            Style="{StaticResource AccentButtonStyle}"
+                            IsEnabled="False"
+                            Click="LaunchFirstBtn_Click"
+                            CornerRadius="6"/>
+
+                    <TextBlock x:Name="LaunchFirstMsg" Text="" FontSize="12"
+                               TextWrapping="Wrap" Visibility="Collapsed"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card 3: Bước 2 - Detect Token -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border Background="#1A0078D4" CornerRadius="12"
+                                Padding="6,2">
+                            <TextBlock Text="BƯỚC 2" FontSize="11" FontWeight="Bold"
+                                       Foreground="#0078D4"/>
+                        </Border>
+                        <TextBlock Text="Lấy Token"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Token status badge -->
+                    <Border x:Name="TokenStatusBadge"
+                            Background="#1AFF9500"
+                            BorderBrush="#33FF9500"
+                            BorderThickness="1" CornerRadius="6" Padding="10,8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="TokenDot" Width="8" Height="8"
+                                     Fill="#FF9500" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TokenStatusText"
+                                       Text="Chưa có token — mở client đầu tiên trước"
+                                       FontSize="12" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Token preview -->
+                    <Border Background="#0AFFFFFF" CornerRadius="6" Padding="10,8">
+                        <TextBlock x:Name="TokenPreviewText"
+                                   Text="Token: —"
+                                   FontFamily="Consolas" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </Border>
+
+                    <Button x:Name="DetectTokenBtn"
+                            Content="🔍  Detect Token từ fxgame.exe"
+                            HorizontalAlignment="Stretch"
+                            CornerRadius="6"
+                            Click="DetectTokenBtn_Click"/>
+
+                    <TextBlock Text="Token được lưu lại và tái sử dụng đến khi game cập nhật phiên bản mới."
+                               FontSize="11" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+
+                    <TextBlock x:Name="DetectMsg" Text="" FontSize="12"
+                               TextWrapping="Wrap" Visibility="Collapsed"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card 4: Mở thêm client -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border Background="#1A107C10" CornerRadius="12"
+                                Padding="6,2">
+                            <TextBlock Text="BƯỚC 3" FontSize="11" FontWeight="Bold"
+                                       Foreground="#107C10"/>
+                        </Border>
+                        <TextBlock Text="Mở Thêm Client"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Count spinner + Launch button -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0" Content="−" Width="36" Height="36"
+                                x:Name="DecBtn" CornerRadius="6"
+                                Click="DecBtn_Click"/>
+                        <Border Grid.Column="1" Width="48" Height="36"
+                                Background="#0AFFFFFF" CornerRadius="6"
+                                VerticalAlignment="Center">
+                            <TextBlock x:Name="CountText" Text="2"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="15" FontWeight="SemiBold"/>
+                        </Border>
+                        <Button Grid.Column="2" Content="+" Width="36" Height="36"
+                                x:Name="IncBtn" CornerRadius="6"
+                                Click="IncBtn_Click"/>
+                        <Button Grid.Column="3" x:Name="LaunchMoreBtn"
+                                Content="▶  Mở Client"
+                                HorizontalAlignment="Stretch"
+                                Background="#107C10" Foreground="White"
+                                IsEnabled="False"
+                                CornerRadius="6"
+                                Click="LaunchMoreBtn_Click"/>
+                    </Grid>
+
+                    <TextBlock x:Name="LaunchMoreMsg" Text="" FontSize="12"
+                               TextWrapping="Wrap" Visibility="Collapsed"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card 5: Client đang chạy -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="RunningHeader"
+                                   Grid.Column="0"
+                                   Text="📋  Client đang chạy (0)"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" x:Name="KillAllBtn"
+                                Content="Dừng tất cả"
+                                Foreground="#FF6666"
+                                Visibility="Collapsed"
+                                FontSize="12" CornerRadius="6"
+                                Click="KillAllBtn_Click"/>
+                    </Grid>
+
+                    <!-- Empty state -->
+                    <StackPanel x:Name="EmptyState" Spacing="4"
+                                HorizontalAlignment="Center" Margin="0,8">
+                        <TextBlock Text="🎮" FontSize="28"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock Text="Chưa có client nào đang chạy"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Client list -->
+                    <StackPanel x:Name="ClientListPanel" Spacing="6"
+                                Visibility="Collapsed"/>
+
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>
