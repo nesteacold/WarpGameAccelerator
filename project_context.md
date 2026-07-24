@@ -1,50 +1,44 @@
 # WARP Game Accelerator - Project Context
 
-## 1. Tổng quan dự án (Overview)
-- **Tên ứng dụng:** WARP Game Accelerator
-- **Mục tiêu:** Ứng dụng Desktop 1-Click giúp giảm ping game thông qua việc điều khiển Cloudflare WARP (`warp-cli`) chạy ngầm, hỗ trợ split tunneling cho các process game cụ thể thông qua `Mihomo` (Clash Meta).
-- **Công nghệ (Tech Stack):** 
-  - .NET 8 (C#)
-  - WinUI 3 (Windows App SDK 1.8)
-  - Kiến trúc MVVM với `CommunityToolkit.Mvvm`
-  - Ứng dụng Unpackaged (Self-contained) yêu cầu quyền Administrator để can thiệp routing và quản lý tiến trình.
+Đây là tài liệu tóm tắt toàn bộ bối cảnh, kiến trúc và quyết định kỹ thuật của dự án để AI hoặc lập trình viên có thể nắm bắt nhanh chóng khi làm việc ở các phiên làm việc tiếp theo.
 
-## 2. Lịch sử Phát triển (Phases 1-4)
-Dự án được xây dựng qua 4 giai đoạn, mỗi giai đoạn giải quyết một mảng kiến trúc cụ thể:
+## 1. Giới thiệu chung
+- **Tên dự án:** WARP Game Accelerator
+- **Công nghệ:** C# .NET 8 (WPF / WinUI 3), giao diện XAML.
+- **Mục đích:** Tăng tốc độ trễ (Ping) cho các ứng dụng Game thông qua hạ tầng mạng Cloudflare WARP. Hỗ trợ **Split Tunneling** (chỉ định tuyến đúng những tiến trình (process) game người dùng chọn, các ứng dụng khác như Chrome, Discord vẫn dùng mạng mặc định).
 
-### Phase 1: Nền tảng & Cốt lõi (Core Logic)
-- **Lỗi MC6000 (Xung đột WinForms):** Ban đầu dùng `System.Windows.Forms` cho khay hệ thống (System Tray) nhưng gây xung đột với WinFX. Đã loại bỏ hoàn toàn WinForms và tự viết lớp `TrayIconHelper` sử dụng Win32 API (`Shell_NotifyIcon`).
-- **Ping Monitor:** Tạo luồng ngầm gửi truy vấn Ping (2s/lần). Lấy `1.1.1.1` làm chuẩn (baseline) và hỗ trợ tự động nhận diện IP game.
+## 2. Kiến trúc & Core Engine
+Dự án sử dụng **Mihomo** (phiên bản nhánh của Clash Meta) làm nhân mạng lõi để bắt và định tuyến gói tin thông qua **Wintun** (Card mạng ảo). 
 
-### Phase 2: Giao diện (WinUI 3) & Biên dịch
-- **Lỗi XamlCompiler:** Nâng cấp SDK từ 1.5 lên 1.8, cài đặt Visual Studio 2022 Build Tools để biên dịch thành công XAML trên .NET 8.
-- **Lỗi WMC9999 (Xaml Pass2 NullRef):** Xảy ra khi dùng Converter cho danh sách (`List<long>`) trong XAML. Đã khắc phục bằng cách binding trực tiếp với string (`PingDisplay`, v.v.).
-- Thiết kế UI ban đầu: Sử dụng Glassmorphism (Mica), Dark Theme.
+### 2.1. Quản lý File Core (Single-file Deployment)
+- Từ bản **v1.6.7**, ứng dụng được đóng gói thành **1 file EXE duy nhất** (Single-file publish) thay vì phải đi kèm thư mục `Core`.
+- Để lách luật Windows (không thể chạy trực tiếp một file exe đang bị nén chung với app chính), file `mihomo.exe` và các thành phần cốt lõi được set là **EmbeddedResource** trong file `.csproj`.
+- Khi app khởi động, `MihomoService.cs` sẽ tự động giải nén file `mihomo.exe` vào thư mục tạm của hệ điều hành: `C:\Users\<User>\AppData\Local\WarpGameAccelerator\Core`. Sau đó nó sẽ sinh ra file `config.yaml` và gọi nhân Mihomo chạy ngầm tại đây.
 
-### Phase 3: Split Tunneling & Proxy Routing (Mihomo)
-- **Mihomo (Clash Meta):** Quyết định đưa lõi Mihomo vào để bắt lưu lượng (traffic) của Game `.exe` đi qua cổng SOCKS5 cục bộ, từ đó đẩy thẳng vào luồng kết nối của Cloudflare WARP.
-- Giải quyết bài toán "Chỉ tăng tốc game, giữ nguyên trình duyệt" một cách triệt để mà không cần cài đặt driver can thiệp sâu.
+### 2.2. Hai chế độ mạng (Engine Modes)
+Ứng dụng có 2 chế độ hoạt động, cấu hình tự sinh trong `MihomoService.cs`:
 
-### Phase 4: Fix Bug & Production Ready (Final)
-- **Kiến trúc Build (Single-File):** Cấu hình `<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>` kết hợp `<PublishSingleFile>true</PublishSingleFile>` và `<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>`. Giúp đóng gói toàn bộ thư viện WinUI 3 và .NET 8 vào 1 file `.exe` duy nhất (~100MB), chạy trực tiếp mọi máy tính không cần Runtime.
-- **Rò rỉ bộ nhớ (Memory Leak) WinUI 3**: Khắc phục lỗi Crash `0xc000027b` bằng cách cấu trúc lại vòng đời `OnNavigatedTo` / `OnNavigatedFrom` để huỷ đăng ký Event.
-- **Lỗi Unpackaged AppData**: Khắc phục văng app khi gọi `ApplicationData.Current.LocalSettings` (do app không có Package Identity) bằng cách ghi thẳng ra file `ping_targets.json`.
-- **Hoàn thiện UI/UX**: Chống tràn chữ khi thu hẹp cửa sổ (`TextWrapping`), đổi hệ màu Active sang Xanh Lá, thêm hộp thoại cảnh báo chống thoát nhầm. Thêm bọc lỗi (try-catch) cho Storyboard.
-- **Cú pháp Cloudflare WARP 2024+**: Cập nhật lệnh `warp-cli` ngầm trong mã nguồn. Phiên bản Cloudflare One Client mới đã đổi từ `warp-cli set-mode proxy` sang `warp-cli mode proxy`. App đã tự động gửi cả hai bộ lệnh (cũ và mới) để ép chế độ SOCKS5 hoạt động tương thích với mọi phiên bản WARP Client.
+1. **Game Mode (Direct WireGuard) 🔥 Khuyên dùng:**
+   - **Hoạt động:** Mihomo TUN bắt gói tin -> Mihomo tự mã hóa gói tin bằng giao thức WireGuard -> Gửi thẳng ra `1.1.1.1` của Cloudflare.
+   - **Ưu điểm:** Bỏ qua hoàn toàn ứng dụng WARP gốc, giảm phân mảnh gói tin, tối ưu tuyệt đối độ trễ (Ping).
+   - **Tài khoản WARP:** Ứng dụng tự động gọi API của Cloudflare (giả lập thiết bị Android) thông qua `WarpAccountService.cs` để xin cấp khóa Private/Public Key và IP ảo miễn phí. Lưu vào `Data/warp_account.json`.
 
-## 3. Kiến trúc Luồng Dữ liệu (Routing Flow)
-1. User chọn Game `.exe`.
-2. `MihomoService` khởi động cấu hình TUN/SOCKS5, lắng nghe tiến trình Game.
-3. `WarpCliService` gọi `warp-cli connect` để mở đường hầm.
-4. Traffic của Game -> Mihomo -> SOCKS5 -> WARP -> Đích.
-5. Cửa sổ UI liên tục hiển thị chênh lệch (Delta) giữa Ping trực tiếp và Ping qua WARP.
+2. **Chế độ Tương Thích (WARP Client Proxy):**
+   - **Hoạt động:** Mihomo TUN bắt gói tin -> Bắn vào cổng SOCKS5 nội bộ `127.0.0.1:40000` -> Ứng dụng Cloudflare WARP (`warp-svc.exe`) trên máy hứng gói tin -> Mã hóa WireGuard -> Gửi ra `1.1.1.1`.
+   - **Yêu cầu:** Máy tính phải cài đặt sẵn và bật ứng dụng Cloudflare WARP chính chủ.
 
-## 4. Trạng thái hiện tại (v1.4.0)
-- Dự án đạt trạng thái **Hoàn thiện 100%**. Không còn lỗi cảnh báo, không còn Crash, kiến trúc đã đóng băng (Production-Ready).
-- Các bản vá lỗi UI/UX nhỏ đã được xử lý triệt để.
+### 2.3. Cấu hình DNS Fake-IP
+Cả 2 chế độ đều bắt buộc sử dụng tính năng **Fake-IP** của Mihomo (`enhanced-mode: fake-ip`, `fake-ip-range: 198.18.0.1/16`) kết hợp với lệnh `dns-hijack: any:53`. 
+- Nếu không có DNS Fake-IP, các game hoặc trình duyệt sẽ không thể phân giải được tên miền để lấy IP trước khi kết nối TCP/UDP, dẫn đến lỗi rớt mạng (`ERR_CONNECTION_CLOSED` trên trình duyệt).
 
-### Phase 5: Nâng cấp Trải nghiệm Người dùng & Đa ngôn ngữ (v1.3.1 -> v1.4.0)
-- **Mở rộng Profile Game:** Thêm các tựa game phổ biến (League of Legends, Valorant, Counter-Strike 2) vào danh sách cấu hình mặc định.
-- **Sửa lỗi Giao diện (UI/UX):** Khắc phục lỗi lệch Grid ở các Game Card có tên dài (CS2), đổi tab "Đang chạy" thành "Process", xử lý dứt điểm lỗi hiển thị Icon (bằng cách dùng thẻ `FontIcon` mặc định của Segoe Fluent thay vì ép font cũ). Tinh chỉnh lại các nút On/Off trong Settings.
-- **Đa ngôn ngữ (Localization):** Xây dựng `LocalizationService` dựa trên Dictionary (VIE/ENG). Cho phép người dùng chuyển đổi ngôn ngữ ứng dụng ngay lập tức (Runtime) thông qua Data Binding trong kiến trúc MVVM mà không cần khởi động lại. Lựa chọn ngôn ngữ được lưu xuống file JSON độc lập.
-- **Quản lý phiên bản:** Đọc Version động từ Assembly Attributes hiển thị trực tiếp trên giao diện (`MainWindow`, `SettingsPage`), đảm bảo đồng bộ với file `.csproj`.
+## 3. GitHub Actions (CI/CD)
+- Dự án đã được thiết lập quy trình tự động hóa tại `.github/workflows/release.yml`.
+- Mỗi khi có một Tag Git mới bắt đầu bằng chữ `v` được push lên nhánh chính (Ví dụ: `git tag v1.7.0` & `git push --tags`), máy chủ GitHub sẽ tự động:
+  - Biên dịch toàn bộ mã nguồn (.NET 8 Publish).
+  - Xuất ra 1 file `.exe` duy nhất.
+  - Tự động tạo một Release mới trên trang GitHub và đính kèm file `.exe` vào đó.
+
+## 4. Lưu ý khi phát triển tiếp
+- Các chuỗi ngôn ngữ được quản lý trong `LocalizationService.cs`.
+- Mọi logic sinh file cấu hình proxy nằm trong `MihomoService.cs`.
+- Quản lý tài khoản và API Cloudflare nằm trong `WarpAccountService.cs`.
