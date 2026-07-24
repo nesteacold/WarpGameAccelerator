@@ -96,7 +96,8 @@ public class MihomoService
     private-key: {acc.PrivateKey}
     remote-dns-resolve: true
     keepalive: 25
-    udp: true";
+    udp: true
+    skip-cert-verify: true";
         }
         else
         {
@@ -106,7 +107,8 @@ public class MihomoService
     type: socks5
     server: 127.0.0.1
     port: 40000
-    udp: true";
+    udp: true
+    skip-cert-verify: true";
         }
 
         string dnsAndTunConfig;
@@ -119,6 +121,15 @@ dns:
   listen: 127.0.0.1:1053
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - ""*.vn""
+    - ""*.com.vn""
+    - ""*.net.vn""
+    - ""*.edu.vn""
+    - ""*.org.vn""
+    - ""*.gov.vn""
+    - ""localhost""
+    - ""*.local""
   nameserver:
     - 1.1.1.1
     - 8.8.8.8
@@ -128,18 +139,28 @@ tun:
   stack: gvisor
   auto-route: true
   auto-detect-interface: true
+  mtu: 1280
   dns-hijack:
     - any:53";
         }
         else
         {
-            // Chế độ WARP Client cũ cũng cần Fake-IP để cấp IP ảo cho trình duyệt/game
+            // Chế độ WARP Client cũ
             dnsAndTunConfig = @"
 dns:
   enable: true
   listen: 127.0.0.1:1053
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - ""*.vn""
+    - ""*.com.vn""
+    - ""*.net.vn""
+    - ""*.edu.vn""
+    - ""*.org.vn""
+    - ""*.gov.vn""
+    - ""localhost""
+    - ""*.local""
   nameserver:
     - 1.1.1.1
     - 8.8.8.8
