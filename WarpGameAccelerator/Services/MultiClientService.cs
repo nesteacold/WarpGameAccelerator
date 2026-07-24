@@ -228,18 +228,30 @@ public class MultiClientService
         var result = new List<RunningClient>();
         try
         {
-            foreach (var p in Process.GetProcessesByName("fxgame"))
+            var processes = Process.GetProcessesByName("fxgame");
+            foreach (var p in processes)
             {
-                if (p.HasExited) continue;
-                
-                string startTime = "Vừa mở";
-                try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
-
-                result.Add(new RunningClient
+                try
                 {
-                    Pid       = p.Id,
-                    StartTime = startTime
-                });
+                    if (p.HasExited) continue;
+
+                    string startTime = "Vừa mở";
+                    try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
+
+                    result.Add(new RunningClient
+                    {
+                        Pid       = p.Id,
+                        StartTime = startTime
+                    });
+                }
+                catch
+                {
+                    // Bỏ qua tiến trình vừa tạo hoặc không có quyền truy cập
+                }
+                finally
+                {
+                    try { p.Dispose(); } catch { }
+                }
             }
         }
         catch { }

@@ -28,6 +28,8 @@ public sealed partial class MultiClientPage : Page
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += (_, _) => RefreshClientList();
         _refreshTimer.Start();
+
+        Unloaded += (_, _) => _refreshTimer.Stop();
     }
 
     // ── Khởi động: nạp token + folder đã lưu ────────────────
@@ -224,27 +226,34 @@ public sealed partial class MultiClientPage : Page
     // ── Card 5: Danh sách client đang chạy ──────────────────
     private void RefreshClientList()
     {
-        var clients = MultiClientService.GetRunningClients();
-        ClientListPanel.Children.Clear();
-
-        if (clients.Count == 0)
+        try
         {
-            EmptyState.Visibility      = Visibility.Visible;
-            ClientListPanel.Visibility = Visibility.Collapsed;
-            KillAllBtn.Visibility      = Visibility.Collapsed;
-            RunningHeader.Text         = "📋  Client đang chạy (0)";
-            return;
+            var clients = MultiClientService.GetRunningClients();
+            ClientListPanel.Children.Clear();
+
+            if (clients.Count == 0)
+            {
+                EmptyState.Visibility      = Visibility.Visible;
+                ClientListPanel.Visibility = Visibility.Collapsed;
+                KillAllBtn.Visibility      = Visibility.Collapsed;
+                RunningHeader.Text         = "📋  Client đang chạy (0)";
+                return;
+            }
+
+            EmptyState.Visibility      = Visibility.Collapsed;
+            ClientListPanel.Visibility = Visibility.Visible;
+            KillAllBtn.Visibility      = Visibility.Visible;
+            RunningHeader.Text         = $"📋  Client đang chạy ({clients.Count})";
+
+            foreach (var c in clients)
+            {
+                var row = BuildClientRow(c.Pid, c.StartTime);
+                ClientListPanel.Children.Add(row);
+            }
         }
-
-        EmptyState.Visibility      = Visibility.Collapsed;
-        ClientListPanel.Visibility = Visibility.Visible;
-        KillAllBtn.Visibility      = Visibility.Visible;
-        RunningHeader.Text         = $"📋  Client đang chạy ({clients.Count})";
-
-        foreach (var c in clients)
+        catch
         {
-            var row = BuildClientRow(c.Pid, c.StartTime);
-            ClientListPanel.Children.Add(row);
+            // Bảo vệ UI Thread khỏi mọi ngoại lệ khi quét process
         }
     }
 
