@@ -124,6 +124,16 @@ public partial class LocalizationService : ObservableObject
     public string SettUpdateError        => VI("Lỗi kiểm tra cập nhật",     "Error checking for updates");
     public string SettUpdateDownloading  => VI("Đang tải & Cài đặt...",     "Downloading & Installing...");
 
+    // ── Connection Engine Mode ────────────────────────────────
+    public string SettSectionEngine      => VI("CHẾ ĐỘ KẾT NỐI (ENGINE)", "CONNECTION MODE (ENGINE)");
+    public string SettEngineDirectTitle  => VI("Chế độ Siêu Tốc (Direct WireGuard)", "Direct WireGuard (Recommended for Games)");
+    public string SettEngineDirectBadge  => VI("(Khuyên dùng)", "(Recommended)");
+    public string SettEngineDirectDesc   => VI("Khuyên dùng cho Game thời gian thực. Tối ưu Ping, chống rớt mạng, không cần cài app WARP.",
+                                               "Recommended for real-time games. Lowest ping, persistent connection, no WARP app needed.");
+    public string SettEngineWarpTitle    => VI("Chế độ Tương Thích (WARP Client)", "WARP Client Proxy (Compatibility Mode)");
+    public string SettEngineWarpDesc     => VI("Dành cho duyệt Web / App thông thường. Yêu cầu ứng dụng Cloudflare WARP gốc.",
+                                               "For general browsing & apps. Requires official Cloudflare WARP app.");
+
     // ── Update Dialog ────────────────────────────────────────
     public string UpdateDialogTitle      => VI("Có Phiên Bản Mới",          "Update Available");
     public string UpdateDialogBtnUpdate  => VI("Cập nhật ngay",             "Update Now");

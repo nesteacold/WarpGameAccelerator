@@ -58,6 +58,56 @@
                 </StackPanel>
             </Border>
 
+            <!-- ══ Section: Connection Mode (Engine) ══════════════ -->
+            <TextBlock Text="{x:Bind Loc.SettSectionEngine, Mode=OneWay}"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel Spacing="12">
+                    <!-- Direct WireGuard (Super Speed / Recommended) -->
+                    <RadioButton IsChecked="{x:Bind ViewModel.IsDirectWireGuard, Mode=TwoWay}"
+                                 GroupName="ConnectionEngineGroup"
+                                 ToolTipService.ToolTip="{x:Bind Loc.SettEngineDirectDesc, Mode=OneWay}"
+                                 HorizontalAlignment="Stretch">
+                        <StackPanel Margin="6,0,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{x:Bind Loc.SettEngineDirectTitle, Mode=OneWay}"
+                                           FontWeight="SemiBold" FontSize="13"/>
+                                <Border Background="#1000E676" BorderBrush="#00E676" BorderThickness="1"
+                                        CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Bind Loc.SettEngineDirectBadge, Mode=OneWay}"
+                                               FontSize="10" Foreground="#00E676" FontWeight="Bold"/>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Text="{x:Bind Loc.SettEngineDirectDesc, Mode=OneWay}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+
+                    <MenuFlyoutSeparator Margin="-12,0,-12,0"/>
+
+                    <!-- WARP Client Proxy (Compatibility Mode) -->
+                    <RadioButton IsChecked="{x:Bind ViewModel.IsWarpClientProxy, Mode=TwoWay}"
+                                 GroupName="ConnectionEngineGroup"
+                                 ToolTipService.ToolTip="{x:Bind Loc.SettEngineWarpDesc, Mode=OneWay}"
+                                 HorizontalAlignment="Stretch">
+                        <StackPanel Margin="6,0,0,0">
+                            <TextBlock Text="{x:Bind Loc.SettEngineWarpTitle, Mode=OneWay}"
+                                       FontWeight="SemiBold" FontSize="13"/>
+                            <TextBlock Text="{x:Bind Loc.SettEngineWarpDesc, Mode=OneWay}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+                </StackPanel>
+            </Border>
+
             <!-- ══ Section: Ping Monitor ═════════════════════════ -->
             <TextBlock Text="{x:Bind Loc.SettSectionPing, Mode=OneWay}"
                        FontSize="10" FontWeight="SemiBold"

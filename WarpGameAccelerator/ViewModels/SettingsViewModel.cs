@@ -26,6 +26,17 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<PingTarget> _pingTargets = new();
     [ObservableProperty] private string       _appVersion         = GetVersion();
 
+    // Connection Engine Mode (Direct WireGuard vs WARP Client Proxy)
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsWarpClientProxy))]
+    private bool _isDirectWireGuard = LoadEngineMode();
+
+    public bool IsWarpClientProxy
+    {
+        get => !IsDirectWireGuard;
+        set => IsDirectWireGuard = !value;
+    }
+
     public LocalizationService Loc => _loc;
     public bool IsVietnamese => _loc.CurrentLanguage == AppLanguage.VI;
 
@@ -120,6 +131,41 @@ public partial class SettingsViewModel : ObservableObject
     {
         if (value) StartupHelper.EnableAutoStart();
         else       StartupHelper.DisableAutoStart();
+    }
+
+    partial void OnIsDirectWireGuardChanged(bool value)
+    {
+        SaveEngineMode(value);
+    }
+
+    private static readonly string _engineModeFilePath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "Data", "engine_mode.json");
+
+    public static bool LoadEngineMode()
+    {
+        try
+        {
+            if (System.IO.File.Exists(_engineModeFilePath))
+            {
+                var json = System.IO.File.ReadAllText(_engineModeFilePath);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("isDirectWireGuard", out var el))
+                    return el.GetBoolean();
+            }
+        }
+        catch { }
+        return true; // Default: Direct WireGuard
+    }
+
+    private static void SaveEngineMode(bool isDirectWireGuard)
+    {
+        try
+        {
+            var dir = System.IO.Path.GetDirectoryName(_engineModeFilePath)!;
+            if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(new { isDirectWireGuard });
+            System.IO.File.WriteAllText(_engineModeFilePath, json);
+        }
+        catch { }
     }
 
     partial void OnSelectedPingTargetChanged(PingTarget? value)

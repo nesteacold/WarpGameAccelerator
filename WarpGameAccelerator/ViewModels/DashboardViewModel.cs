@@ -153,14 +153,14 @@ public partial class DashboardViewModel : ObservableObject
             return;
         }
 
-        // Nếu có chọn game, khởi chạy Mihomo để bắt gói tin Game ném vào Proxy 40000
-        // Ưu tiên dùng profile (có thể chứa nhiều exe), nếu không thì dùng tên exe đơn
+        // Nếu có chọn game, khởi chạy Mihomo với Chế độ Engine được chọn trong Cài đặt
         var exesToBoost = _selectedProfile?.ExecutablesJoined ?? SelectedProcessName;
         if (!string.IsNullOrWhiteSpace(exesToBoost))
         {
             try
             {
-                await _mihomoService.StartProxyAsync(exesToBoost);
+                bool isDirectWireGuard = SettingsViewModel.LoadEngineMode();
+                await _mihomoService.StartProxyAsync(exesToBoost, isDirectWireGuard);
             }
             catch (Exception ex)
             {
