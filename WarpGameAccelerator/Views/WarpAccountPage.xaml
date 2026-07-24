@@ -86,6 +86,39 @@
                 </StackPanel>
             </Border>
 
+            <!-- Reset Section -->
+            <Border Background="#0AFF4444"
+                    BorderBrush="#33FF4444"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE7BA;" FontSize="14" Foreground="#FF6666"/>
+                        <TextBlock Text="Gỡ Key / Reset về WARP Free"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#FF6666"/>
+                    </StackPanel>
+
+                    <TextBlock Text="Dùng khi nhập nhầm key đểu hoặc bị block. Ứng dụng sẽ xóa tài khoản cũ và tự đăng ký tài khoản WARP Free mới hoàn toàn khi kết nối lần sau."
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                    <Button x:Name="ResetBtn"
+                            Content="🗑️  Xóa Key &amp; Tạo tài khoản mới"
+                            HorizontalAlignment="Stretch"
+                            Background="#CC3333"
+                            Foreground="White"
+                            Click="ResetBtn_Click"
+                            CornerRadius="6"/>
+
+                    <TextBlock x:Name="ResetMsg"
+                               Text=""
+                               FontSize="12" TextWrapping="Wrap"
+                               Visibility="Collapsed"/>
+
+                </StackPanel>
+            </Border>
+
             <!-- Info Section -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"

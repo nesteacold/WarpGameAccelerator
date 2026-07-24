@@ -163,6 +163,21 @@ public class WarpAccountService
             return (false, $"Lỗi kết nối: {ex.Message}");
         }
     }
+
+    // ── Reset về WARP Free (xóa tài khoản cũ) ────────────────
+    public static Task<(bool Success, string Message)> ResetToFreeAsync()
+    {
+        try
+        {
+            if (File.Exists(AccountFilePath))
+                File.Delete(AccountFilePath);
+            return Task.FromResult((true, "Đã xóa tài khoản cũ. Tài khoản WARP Free mới sẽ được tạo tự động khi bạn bấm Boost lần sau."));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult((false, $"Không thể xóa file tài khoản: {ex.Message}"));
+        }
+    }
 }
 
 

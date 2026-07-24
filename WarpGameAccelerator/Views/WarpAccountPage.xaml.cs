@@ -92,4 +92,39 @@ public sealed partial class WarpAccountPage : Page
             : new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100));
         StatusMsg.Visibility = Visibility.Visible;
     }
+
+    private async void ResetBtn_Click(object sender, RoutedEventArgs e)
+    {
+        // Hiển thị dialog xác nhận trước khi xóa
+        var dialog = new ContentDialog
+        {
+            XamlRoot            = Content.XamlRoot,
+            Title               = "Xác nhận Reset tài khoản",
+            Content             = "Bạn có chắc chắn muốn xóa tài khoản WARP hiện tại?\n\nKey WARP+ sẽ bị gỡ và một tài khoản WARP Free mới sẽ được tạo tự động khi bạn Boost lần sau.",
+            PrimaryButtonText   = "🗑️  Xóa & Reset",
+            CloseButtonText     = "Hủy",
+            DefaultButton       = ContentDialogButton.Close
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        ResetBtn.IsEnabled = false;
+
+        var (success, message) = await WarpAccountService.ResetToFreeAsync();
+
+        ResetBtn.IsEnabled   = true;
+        ResetMsg.Text        = success ? $"✅  {message}" : $"❌  {message}";
+        ResetMsg.Foreground  = success
+            ? new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100))
+            : new SolidColorBrush(ColorHelper.FromArgb(255, 255, 77, 77));
+        ResetMsg.Visibility  = Visibility.Visible;
+
+        if (success)
+        {
+            // Cập nhật lại UI về trạng thái Free
+            UpdateTierDisplay(isPlus: false);
+            AccountIdText.Text = "Chưa có tài khoản";
+        }
+    }
 }
