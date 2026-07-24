@@ -1,14 +1,13 @@
 // ============================================================
 // Views/MultiClientPage.xaml.cs — Code-behind Multi-Client Launcher
 // ============================================================
+using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using Windows.Storage.Pickers;
 using WarpGameAccelerator.Services;
-using WinRT.Interop;
 
 namespace WarpGameAccelerator.Views;
 
@@ -45,17 +44,47 @@ public sealed partial class MultiClientPage : Page
     }
 
     // ── Card 1: Browse thư mục game ─────────────────────────
-    private async void BrowseBtn_Click(object sender, RoutedEventArgs e)
+    // ── Win32 Folder Browser Dialog (hoạt động trong unpackaged app) ──
+    [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SHBrowseForFolder(ref BROWSEINFO lpbi);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+    private static extern bool SHGetPathFromIDList(IntPtr pidl, System.Text.StringBuilder pszPath);
+
+    [DllImport("ole32.dll")]
+    private static extern void CoTaskMemFree(IntPtr pv);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct BROWSEINFO
     {
-        var picker = new FolderPicker();
-        picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.ComputerFolder;
-        picker.FileTypeFilter.Add("*");
+        public IntPtr hwndOwner;
+        public IntPtr pidlRoot;
+        public string pszDisplayName;
+        public string lpszTitle;
+        public uint ulFlags;
+        public IntPtr lpfn;
+        public IntPtr lParam;
+        public int iImage;
+    }
 
-        InitializeWithWindow.Initialize(picker, ((App)Application.Current).MainWindowHandle);
+    private void BrowseBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var bi = new BROWSEINFO
+        {
+            hwndOwner      = ((App)Application.Current).MainWindowHandle,
+            lpszTitle      = "Chọn thư mục cài đặt Age of Wushu",
+            ulFlags        = 0x0001 | 0x0040, // BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+            pszDisplayName = new string('\0', 260)
+        };
 
-        var folder = await picker.PickSingleFolderAsync();
-        if (folder != null)
-            FolderPathBox.Text = folder.Path;
+        IntPtr pidl = SHBrowseForFolder(ref bi);
+        if (pidl == IntPtr.Zero) return;
+
+        var sb = new System.Text.StringBuilder(260);
+        if (SHGetPathFromIDList(pidl, sb))
+            FolderPathBox.Text = sb.ToString();
+
+        CoTaskMemFree(pidl);
     }
 
     private void FolderPathBox_TextChanged(object sender, TextChangedEventArgs e)
