@@ -223,6 +223,11 @@ public partial class DashboardViewModel : ObservableObject
         _selectedProfile    = null;
         SelectedProcessName = processName;
         OnPropertyChanged(nameof(GameDisplayName));
+
+        if (CurrentState == AppState.Connected)
+        {
+            _ = UpdateActiveProxyRulesAsync();
+        }
     }
 
     /// <summary>Chọn một Game Profile — hiển thị tên thương mại và boost toàn bộ exe</summary>
@@ -231,6 +236,28 @@ public partial class DashboardViewModel : ObservableObject
         _selectedProfile    = profile;
         SelectedProcessName = profile.ExecutablesJoined;
         OnPropertyChanged(nameof(GameDisplayName));
+
+        if (CurrentState == AppState.Connected)
+        {
+            _ = UpdateActiveProxyRulesAsync();
+        }
+    }
+
+    private async Task UpdateActiveProxyRulesAsync()
+    {
+        var exesToBoost = _selectedProfile?.ExecutablesJoined ?? SelectedProcessName;
+        if (!string.IsNullOrWhiteSpace(exesToBoost))
+        {
+            try
+            {
+                bool isDirectWireGuard = SettingsViewModel.LoadEngineMode();
+                await _mihomoService.StartProxyAsync(exesToBoost, isDirectWireGuard);
+            }
+            catch (Exception ex)
+            {
+                SetError(_loc.ErrMihomoPrefix + ex.Message);
+            }
+        }
     }
 
     public async Task HandleAppExitAsync()

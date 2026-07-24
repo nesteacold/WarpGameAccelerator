@@ -12,11 +12,11 @@ using System.Reflection;
 
 [assembly: System.Reflection.AssemblyCompanyAttribute("WarpGameAccelerator")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
-[assembly: System.Reflection.AssemblyFileVersionAttribute("1.5.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.5.0")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("1.6.9.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.6.9+f0a85567df544da8c4b98cff671d3693f57f0916")]
 [assembly: System.Reflection.AssemblyProductAttribute("WarpGameAccelerator")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WarpGameAccelerator")]
-[assembly: System.Reflection.AssemblyVersionAttribute("1.5.0.0")]
+[assembly: System.Reflection.AssemblyVersionAttribute("1.6.9.0")]
 [assembly: System.Runtime.Versioning.TargetPlatformAttribute("Windows10.0.19041.0")]
 [assembly: System.Runtime.Versioning.SupportedOSPlatformAttribute("Windows10.0.17763.0")]
 

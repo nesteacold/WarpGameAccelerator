@@ -130,6 +130,8 @@
                                       ItemsSource="{x:Bind FilteredProcesses, Mode=OneWay}"
                                       SelectedItem="{x:Bind ViewModel.SelectedProcess, Mode=TwoWay}"
                                       SelectionMode="Single"
+                                      IsItemClickEnabled="True"
+                                      ItemClick="ProcessList_ItemClick"
                                       Padding="4,4,4,4">
                                 <ListView.ItemTemplate>
                                     <DataTemplate x:DataType="models:GameProcess">

@@ -159,15 +159,25 @@ public sealed partial class MainWindow : Window
     {
         _trayIcon?.Dispose();
 
-        await _dashboardVm.HandleAppExitAsync();
+        try
+        {
+            // Thực hiện dọn dẹp với timeout 3 giây để tránh bị treo app
+            var cleanupTask = Task.Run(async () =>
+            {
+                var warpSvc = App.Services.GetRequiredService<IWarpService>();
+                var mihomoSvc = App.Services.GetRequiredService<MihomoService>();
 
-        // Đảm bảo ngắt kết nối Cloudflare
-        var warpSvc = App.Services.GetRequiredService<IWarpService>();
-        await warpSvc.DisconnectAsync();
+                // Ngắt Cloudflare WARP trước
+                await warpSvc.DisconnectAsync();
+                
+                // Dừng Mihomo và Dashboard
+                mihomoSvc.StopProxy();
+                await _dashboardVm.HandleAppExitAsync();
+            });
 
-        // Ensure background proxies are killed
-        var mihomoSvc = App.Services.GetRequiredService<MihomoService>();
-        mihomoSvc.StopProxy();
+            await Task.WhenAny(cleanupTask, Task.Delay(3000));
+        }
+        catch { }
 
         Application.Current.Exit();
         Environment.Exit(0); // Force kill to prevent background thread hangs

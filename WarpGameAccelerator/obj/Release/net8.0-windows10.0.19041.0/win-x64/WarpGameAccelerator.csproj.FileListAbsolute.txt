@@ -3,7 +3,6 @@ C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windo
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\Assets\logo.png
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\Assets\tray_connected.ico
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\Assets\tray_idle.ico
-C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\Core\mihomo.exe
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\CoreMessagingXP.dll
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\dcompi.dll
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\DirectML.dll
@@ -597,3 +596,4 @@ C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windo
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\mscordbi.dll
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\mscorrc.dll
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\msquic.dll
+C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\WarpGameAccelerator.sourcelink.json

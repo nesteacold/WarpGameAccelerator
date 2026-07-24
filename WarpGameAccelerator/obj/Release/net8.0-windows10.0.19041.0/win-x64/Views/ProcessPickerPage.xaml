@@ -130,6 +130,8 @@
                                                                                            
                                                                                                     
                                       SelectionMode="Single"
+                                      IsItemClickEnabled="True"
+                                                                       
                                       Padding="4,4,4,4">
                                 <ListView.ItemTemplate>
                                     <DataTemplate                                >

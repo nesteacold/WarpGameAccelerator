@@ -88,25 +88,23 @@ public class WarpAccountService
             PublicKey = pubKeyB64
         };
 
-        if (doc.RootElement.TryGetProperty("result", out var resEl))
+        var root = doc.RootElement.TryGetProperty("result", out var resEl) ? resEl : doc.RootElement;
+        if (root.TryGetProperty("config", out var configEl))
         {
-            if (resEl.TryGetProperty("config", out var configEl))
+            if (configEl.TryGetProperty("interface", out var ifaceEl) &&
+                ifaceEl.TryGetProperty("addresses", out var addrEl))
             {
-                if (configEl.TryGetProperty("interface", out var ifaceEl) &&
-                    ifaceEl.TryGetProperty("addresses", out var addrEl))
-                {
-                    if (addrEl.TryGetProperty("v4", out var v4El)) result.IPv4 = v4El.GetString() ?? "172.16.0.2";
-                    if (addrEl.TryGetProperty("v6", out var v6El)) result.IPv6 = v6El.GetString() ?? "";
-                }
+                if (addrEl.TryGetProperty("v4", out var v4El)) result.IPv4 = v4El.GetString() ?? "172.16.0.2";
+                if (addrEl.TryGetProperty("v6", out var v6El)) result.IPv6 = v6El.GetString() ?? "";
+            }
 
-                if (configEl.TryGetProperty("peers", out var peersEl) && peersEl.ValueKind == JsonValueKind.Array && peersEl.GetArrayLength() > 0)
+            if (configEl.TryGetProperty("peers", out var peersEl) && peersEl.ValueKind == JsonValueKind.Array && peersEl.GetArrayLength() > 0)
+            {
+                var peer = peersEl[0];
+                if (peer.TryGetProperty("public_key", out var pkEl)) result.PeerPublicKey = pkEl.GetString() ?? result.PeerPublicKey;
+                if (peer.TryGetProperty("endpoint", out var epEl) && epEl.TryGetProperty("v4", out var epv4El))
                 {
-                    var peer = peersEl[0];
-                    if (peer.TryGetProperty("public_key", out var pkEl)) result.PeerPublicKey = pkEl.GetString() ?? result.PeerPublicKey;
-                    if (peer.TryGetProperty("endpoint", out var epEl) && epEl.TryGetProperty("v4", out var epv4El))
-                    {
-                        result.Endpoint = epv4El.GetString() ?? result.Endpoint;
-                    }
+                    result.Endpoint = epv4El.GetString() ?? result.Endpoint;
                 }
             }
         }
@@ -257,7 +255,7 @@ public static class X25519KeyGenerator
 
     private static long[] Mul(long[] a, long[] b)
     {
-        long[] res = new long[19];
+        long[] res = new long[20];
         for (int i = 0; i < 10; ++i)
             for (int j = 0; j < 10; ++j)
                 res[i + j] += a[i] * b[j];

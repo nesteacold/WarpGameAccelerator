@@ -13,9 +13,49 @@ public class MihomoService
 
     public MihomoService()
     {
-        _coreDir = Path.Combine(AppContext.BaseDirectory, "Core");
+        // Khi bundle chung 1 file, không được lưu Core vào AppContext vì quyền/read-only
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        _coreDir = Path.Combine(appData, "WarpGameAccelerator", "Core");
         _exePath = Path.Combine(_coreDir, "mihomo.exe");
         _configPath = Path.Combine(_coreDir, "config.yaml");
+
+        ExtractCoreResources();
+    }
+
+    private void ExtractCoreResources()
+    {
+        if (!Directory.Exists(_coreDir))
+            Directory.CreateDirectory(_coreDir);
+
+        var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        // EmbeddedResource namespace pattern: ProjectName.FolderName.FileName
+        var resourcesToExtract = new[] {
+            "mihomo.exe",
+            "geoip.metadat",
+            "geosite.dat",
+            "Country.mmdb"
+        };
+
+        var allResourceNames = assembly.GetManifestResourceNames();
+
+        foreach (var file in resourcesToExtract)
+        {
+            var resName = allResourceNames.FirstOrDefault(r => r.EndsWith("." + file, StringComparison.OrdinalIgnoreCase));
+            if (resName != null)
+            {
+                var destPath = Path.Combine(_coreDir, file);
+                // Chỉ extract nếu file chưa tồn tại hoặc bị lỗi
+                if (!File.Exists(destPath) || new FileInfo(destPath).Length == 0)
+                {
+                    using var stream = assembly.GetManifestResourceStream(resName);
+                    if (stream != null)
+                    {
+                        using var fileStream = File.Create(destPath);
+                        stream.CopyTo(fileStream);
+                    }
+                }
+            }
+        }
     }
 
     public async Task StartProxyAsync(string processName, bool isDirectWireGuard = true)
@@ -69,13 +109,40 @@ public class MihomoService
     udp: true";
         }
 
-        // Generate Mihomo config for Wintun + Process routing
-        var yaml = $@"
-port: 7890
-socks-port: 7891
-allow-lan: false
-mode: rule
-log-level: warning
+        string dnsAndTunConfig;
+        if (isDirectWireGuard)
+        {
+            // Chế độ Siêu Tốc (Direct WireGuard)
+            dnsAndTunConfig = @"
+dns:
+  enable: true
+  listen: 127.0.0.1:1053
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
+
+tun:
+  enable: true
+  stack: gvisor
+  auto-route: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53";
+        }
+        else
+        {
+            // Chế độ WARP Client cũ cũng cần Fake-IP để cấp IP ảo cho trình duyệt/game
+            dnsAndTunConfig = @"
+dns:
+  enable: true
+  listen: 127.0.0.1:1053
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
 
 tun:
   enable: true
@@ -84,7 +151,17 @@ tun:
   auto-detect-interface: true
   mtu: 1280
   dns-hijack:
-    - any:53
+    - any:53";
+        }
+
+        // Generate Mihomo config
+        var yaml = $@"
+port: 7890
+socks-port: 7891
+allow-lan: false
+mode: rule
+log-level: warning
+{dnsAndTunConfig}
 
 proxies:
 {proxyConfig}

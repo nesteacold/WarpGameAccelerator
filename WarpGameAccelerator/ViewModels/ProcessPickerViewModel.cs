@@ -53,8 +53,9 @@ public partial class ProcessPickerViewModel : ObservableObject
     [RelayCommand]
     private void ConfirmSelection()
     {
-        if (SelectedProcess is not null)
-            ProcessConfirmed?.Invoke(SelectedProcess);
+        var target = SelectedProcess ?? Processes.FirstOrDefault();
+        if (target is not null)
+            ProcessConfirmed?.Invoke(target);
     }
 
     /// <summary>Người dùng bấm chọn thẳng một Game Profile từ danh sách built-in</summary>

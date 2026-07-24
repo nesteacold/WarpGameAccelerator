@@ -78,6 +78,14 @@ public sealed partial class ProcessPickerPage : Page
         NavigateBack();
     }
 
+    private void ProcessList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is GameProcess process)
+        {
+            OnProcessConfirmed(process);
+        }
+    }
+
     private void OnProfileConfirmed(GameProfile profile)
     {
         var dashVm = App.Services.GetRequiredService<DashboardViewModel>();
