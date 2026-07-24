@@ -141,3 +141,4 @@ Tất cả dữ liệu người dùng lưu trong `AppData\Local\WarpGameAccelera
 | v1.8.1 | Fix folder picker crash (Win32 SHBrowseForFolder), fix icon |
 | v1.8.2 | Fix mất WARP+ key sau update (AppData migration + auto re-apply) |
 | v1.8.4 | Fix launcher file (`fxlaunch.exe`), bổ sung quét thư mục đệ quy, tự động lưu đường dẫn game |
+| v1.8.9 | Khôi phục cấu hình TUN v1.5.0 (`stack: mixed`, `mtu: 1280`, loại bỏ hoàn toàn `fake-ip` gây lỗi cURL SSL Error trong addon game) |
