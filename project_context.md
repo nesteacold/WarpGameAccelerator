@@ -1,7 +1,7 @@
 # WARP Game Accelerator — Project Context
 
 > Tài liệu tóm tắt toàn bộ kiến trúc, quyết định kỹ thuật và lịch sử tính năng.  
-> Cập nhật lần cuối: **v1.8.2**
+> Cập nhật lần cuối: **v1.8.4**
 
 ---
 
@@ -12,7 +12,7 @@
 | **Tên dự án** | WARP Game Accelerator |
 | **Công nghệ** | C# .NET 8, WinUI 3, XAML |
 | **GitHub** | `nesteacold/WarpGameAccelerator` |
-| **Phiên bản hiện tại** | v1.8.2 |
+| **Phiên bản hiện tại** | v1.8.4 |
 | **Mục đích** | Tăng tốc Ping game qua hạ tầng Cloudflare WARP. Hỗ trợ Split Tunneling — chỉ định tuyến đúng process game, các app khác vẫn dùng mạng mặc định. |
 
 ---
@@ -109,8 +109,8 @@ Tất cả dữ liệu người dùng lưu trong `AppData\Local\WarpGameAccelera
 - Màn hình: `MultiClientPage.xaml`
 - Service: `MultiClientService.cs`
 - **Luồng 3 bước:**
-  1. Chọn thư mục AOW → validate `fxlauncher.exe` + `fxgame.exe`
-  2. Bấm "Mở Client Đầu" → gọi `fxlauncher.exe`
+  1. Chọn thư mục AOW → tự động quét đệ quy subfolder tìm `fxlaunch.exe` + `fxgame.exe` (tự ghi nhớ đường dẫn).
+  2. Bấm "Mở Client Đầu" → gọi `fxlaunch.exe`
   3. Bấm "Detect Token" → WMI query `Win32_Process` CommandLine của `fxgame.exe` → parse token → lưu `aow_token.json`
   4. Nhập số lượng → `Process.Start(fxgame.exe, token)` × N lần
 - Token được lưu lại, dùng đến khi game update phiên bản.
@@ -140,3 +140,4 @@ Tất cả dữ liệu người dùng lưu trong `AppData\Local\WarpGameAccelera
 | v1.8.0 | Multi-Client Launcher cho AOW |
 | v1.8.1 | Fix folder picker crash (Win32 SHBrowseForFolder), fix icon |
 | v1.8.2 | Fix mất WARP+ key sau update (AppData migration + auto re-apply) |
+| v1.8.4 | Fix launcher file (`fxlaunch.exe`), bổ sung quét thư mục đệ quy, tự động lưu đường dẫn game |
