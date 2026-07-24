@@ -203,7 +203,11 @@ public class MultiClientService
                 };
                 Process.Start(psi);
                 launched++;
-                await Task.Delay(800); // Delay nhỏ giữa các lần mở tránh flood
+                
+                if (i < count - 1)
+                {
+                    await Task.Delay(3000); // Chờ 3 giây giữa mỗi lần mở client
+                }
             }
             catch (Exception ex)
             {

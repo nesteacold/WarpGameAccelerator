@@ -199,16 +199,19 @@ public sealed partial class MultiClientPage : Page
 
         LaunchMoreBtn.IsEnabled = false;
         LaunchMoreBtn.Content   = "Đang mở...";
+        ShowMsg(LaunchMoreMsg, "Đang khởi chạy các client, vui lòng đợi (chờ 3s mỗi client)...", isError: false);
 
-        var (launched, msg) = await MultiClientService.LaunchAdditionalClientsAsync(
-            _gameFolder, _currentToken, _clientCount);
+        int count = _clientCount;
+        string folder = _gameFolder;
+        string token = _currentToken;
+
+        var (launched, msg) = await Task.Run(() => MultiClientService.LaunchAdditionalClientsAsync(folder, token, count));
 
         LaunchMoreBtn.IsEnabled = true;
         LaunchMoreBtn.Content   = $"▶  Mở {_clientCount} Client";
         ShowMsg(LaunchMoreMsg, msg, launched == 0);
 
         // Cập nhật danh sách
-        await Task.Delay(1500);
         RefreshClientList();
     }
 
