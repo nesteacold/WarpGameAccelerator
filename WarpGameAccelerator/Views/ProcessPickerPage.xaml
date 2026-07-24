@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ProcessPickerPage.xaml — Chọn game process để boost
+-->
+<Page
+    x:Name="PageRoot"
+    x:Class="WarpGameAccelerator.Views.ProcessPickerPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WarpGameAccelerator.Views"
+    xmlns:models="using:WarpGameAccelerator.Models"
+    xmlns:conv="using:WarpGameAccelerator.Converters"
+    Background="Transparent">
+
+    <Page.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </Page.Resources>
+
+    <Grid Padding="16,12,16,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Header -->
+            <RowDefinition Height="*"/>     <!-- Pivot tabs -->
+            <RowDefinition Height="Auto"/>  <!-- Info banner -->
+        </Grid.RowDefinitions>
+
+        <!-- ══ ROW 0: Header ══════════════════════════════════════ -->
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,12">
+            <TextBlock Text="{x:Bind Loc.PickerTitle, Mode=OneWay}"
+                       FontSize="18" FontWeight="Bold"
+                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+            <TextBlock Text="{x:Bind Loc.PickerSubtitle, Mode=OneWay}"
+                       FontSize="12"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        </StackPanel>
+
+        <!-- ══ ROW 1: Pivot ═══════════════════════════════════════ -->
+        <Pivot Grid.Row="1" Margin="0,-8,0,0">
+
+            <!-- ─ Tab 1: Game đã biết ─────────────────────────── -->
+            <PivotItem Header="{x:Bind Loc.PickerTabProfiles, Mode=OneWay}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.GameProfiles, Mode=OneWay}"
+                                  Margin="0,8,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:GameProfile">
+                                <Button HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Stretch"
+                                        Margin="0,0,0,8"
+                                        CornerRadius="12"
+                                        Padding="16,14"
+                                        Command="{Binding ElementName=PageRoot, Path=ViewModel.SelectProfileCommand}"
+                                        CommandParameter="{x:Bind}">
+                                    <Grid ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="44"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Icon -->
+                                        <Border Grid.Column="0"
+                                                Width="44" Height="44"
+                                                CornerRadius="10"
+                                                Background="#20F6961E">
+                                            <FontIcon Glyph="{x:Bind IconGlyph}"
+                                                      FontSize="22"
+                                                      Foreground="#F6961E"/>
+                                        </Border>
+
+                                        <!-- Tên game + danh sách exe -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                            <TextBlock Text="{x:Bind Name}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="14"/>
+                                            <TextBlock Text="{x:Bind ExecutablesJoined}"
+                                                       FontSize="10"
+                                                       Opacity="0.6"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                        </StackPanel>
+
+                                        <!-- Arrow -->
+                                        <FontIcon Grid.Column="2"
+                                                  Glyph="&#xE76C;"
+                                                  FontSize="12"
+                                                  Opacity="0.5"
+                                                  VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- ─ Tab 2: Đang chạy ───────────────────────────── -->
+            <PivotItem Header="{x:Bind Loc.PickerTabProcess, Mode=OneWay}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Search bar -->
+                    <TextBox Grid.Row="0"
+                             x:Name="SearchBox"
+                             PlaceholderText="{x:Bind Loc.PickerSearchPlaceholder, Mode=OneWay}"
+                             Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             Margin="0,8,0,8"
+                             CornerRadius="8"
+                             FontSize="13"/>
+
+                    <!-- Process list -->
+                    <Border Grid.Row="1" Style="{StaticResource GlassCard}" Padding="0">
+                        <Grid>
+                            <!-- Loading state -->
+                            <StackPanel VerticalAlignment="Center"
+                                        HorizontalAlignment="Center"
+                                        Spacing="8"
+                                        Visibility="{x:Bind ViewModel.IsLoading, Mode=OneWay,
+                                                     Converter={StaticResource BoolToVis}}">
+                                <ProgressRing IsActive="True" Width="32" Height="32"/>
+                                <TextBlock Text="{x:Bind Loc.PickerLoading, Mode=OneWay}"
+                                           FontSize="13"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+
+                            <ListView x:Name="ProcessList"
+                                      ItemsSource="{x:Bind FilteredProcesses, Mode=OneWay}"
+                                      SelectedItem="{x:Bind ViewModel.SelectedProcess, Mode=TwoWay}"
+                                      SelectionMode="Single"
+                                      Padding="4,4,4,4">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:GameProcess">
+                                        <Grid Padding="4,6" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="36"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0"
+                                                    Width="32" Height="32"
+                                                    CornerRadius="6"
+                                                    Background="#15FFFFFF">
+                                                <FontIcon Glyph="&#xE756;" FontSize="16"
+                                                          Foreground="#F6961E"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                <TextBlock Text="{x:Bind ProcessName}"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="13"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{x:Bind ExePath}"
+                                                           FontSize="10"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Opacity="0.7"/>
+                                            </StackPanel>
+                                            <Border Grid.Column="2"
+                                                    CornerRadius="4"
+                                                    Padding="6,2"
+                                                    Background="#10FFFFFF"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock FontSize="10"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                                    <Run Text="PID "/>
+                                                    <Run Text="{x:Bind ProcessId}"/>
+                                                </TextBlock>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Border>
+
+                    <!-- Action buttons -->
+                    <Grid Grid.Row="2" Margin="0,10,0,0" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0"
+                                Content="{x:Bind Loc.PickerBtnRefresh, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.RefreshCommand}"
+                                HorizontalAlignment="Stretch"
+                                CornerRadius="10"
+                                Padding="0,12"
+                                FontSize="12"/>
+                        <Button Grid.Column="1"
+                                Content="{x:Bind Loc.PickerBtnBrowse, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.BrowseExeCommand}"
+                                HorizontalAlignment="Stretch"
+                                CornerRadius="10"
+                                Padding="0,12"
+                                FontSize="12"/>
+                        <Button Grid.Column="2"
+                                Content="{x:Bind Loc.PickerBtnSelect, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.ConfirmSelectionCommand}"
+                                Style="{StaticResource AccentButtonStyle}"
+                                HorizontalAlignment="Stretch"
+                                CornerRadius="10"
+                                Padding="0,12"
+                                FontSize="12"/>
+                    </Grid>
+                </Grid>
+            </PivotItem>
+        </Pivot>
+
+        <!-- ══ ROW 2: Info Banner ═════════════════════════════════ -->
+        <InfoBar Grid.Row="2"
+                 Severity="Informational"
+                 IsOpen="True"
+                 IsClosable="False"
+                 Title=""
+                 Message="{x:Bind Loc.PickerInfoBanner, Mode=OneWay}"
+                 CornerRadius="8"/>
+    </Grid>
+</Page>

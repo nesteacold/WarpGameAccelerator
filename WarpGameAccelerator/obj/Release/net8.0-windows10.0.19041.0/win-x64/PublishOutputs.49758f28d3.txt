@@ -1,0 +1,2 @@
+C:\Temp\WarpBuild_Latest_Compressed\WarpGameAccelerator.pdb
+C:\Temp\WarpBuild_Latest_Compressed\WarpGameAccelerator.exe

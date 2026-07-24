@@ -1,0 +1,169 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ProcessPickerPage.xaml — Chọn game process để boost
+-->
+<Page x:ConnectionId='1'
+    x:Class="WarpGameAccelerator.Views.ProcessPickerPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WarpGameAccelerator.Views"
+    xmlns:models="using:WarpGameAccelerator.Models"
+    xmlns:conv="using:WarpGameAccelerator.Converters"
+    Background="Transparent">
+
+    <Page.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </Page.Resources>
+
+    <Grid Padding="16,12,16,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Header -->
+            <RowDefinition Height="Auto"/>  <!-- Search bar -->
+            <RowDefinition Height="*"/>     <!-- Process list -->
+            <RowDefinition Height="Auto"/>  <!-- Browse + Confirm buttons -->
+            <RowDefinition Height="Auto"/>  <!-- Info banner -->
+        </Grid.RowDefinitions>
+
+        <!-- ══ ROW 0: Header ══════════════════════════════════════ -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Spacing="2">
+                <TextBlock Text="Chọn Game Process"
+                           FontSize="18" FontWeight="Bold"
+                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                <TextBlock Text="Chỉ process được chọn sẽ đi qua WARP+"
+                           FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+
+            <Button x:ConnectionId='12' Grid.Column="1"
+                                                               
+                    ToolTipService.ToolTip="Làm mới danh sách"
+                    Style="{StaticResource DefaultButtonStyle}"
+                    Width="36" Height="36"
+                    Padding="0"
+                    CornerRadius="8">
+                <FontIcon Glyph="&#xE72C;" FontSize="14"/>
+            </Button>
+        </Grid>
+
+        <!-- ══ ROW 1: Search ══════════════════════════════════════ -->
+        <TextBox x:ConnectionId='2' Grid.Row="1"
+                 x:Name="SearchBox"
+                 PlaceholderText="&#xE721;  Tìm process..."
+                                                                                                       
+                 Margin="0,0,0,10"
+                 CornerRadius="8"
+                 FontSize="13"/>
+
+        <!-- ══ ROW 2: Process List ════════════════════════════════ -->
+        <Border Grid.Row="2" Style="{StaticResource GlassCard}" Padding="0">
+            <Grid>
+                <!-- Loading state -->
+                <StackPanel x:ConnectionId='5' VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Spacing="8"
+                                                                                 
+                                                                               >
+                    <ProgressRing IsActive="True" Width="32" Height="32"/>
+                    <TextBlock Text="Đang tải processes..."
+                               FontSize="13"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+
+                <!-- Process list -->
+                <ListView x:ConnectionId='6' x:Name="ProcessList"
+                                                                               
+                                                                                        
+                          SelectionMode="Single"
+                          Padding="4,4,4,4">
+                    <ListView.ItemTemplate>
+                        <DataTemplate                                >
+                            <Grid x:ConnectionId='8' Padding="4,6" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Exe icon (FileIcon placeholder) -->
+                                <Border Grid.Column="0"
+                                        Width="32" Height="32"
+                                        CornerRadius="6"
+                                        Background="#15FFFFFF">
+                                    <FontIcon Glyph="&#xE756;" FontSize="16"
+                                              Foreground="#F6961E"/>
+                                </Border>
+
+                                <!-- Process name + path -->
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock x:ConnectionId='10'                            
+                                               FontWeight="SemiBold"
+                                               FontSize="13"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:ConnectionId='11'                        
+                                               FontSize="10"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Opacity="0.7"/>
+                                </StackPanel>
+
+                                <!-- PID badge -->
+                                <Border Grid.Column="2"
+                                        CornerRadius="4"
+                                        Padding="6,2"
+                                        Background="#10FFFFFF"
+                                        VerticalAlignment="Center">
+                                    <TextBlock FontSize="10"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                        <Run Text="PID "/>
+                                        <Run x:ConnectionId='9'                          />
+                                    </TextBlock>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+
+        <!-- ══ ROW 3: Action Buttons ══════════════════════════════ -->
+        <Grid Grid.Row="3" Margin="0,10,0,8" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:ConnectionId='3' Grid.Column="0"
+                    Content="📂  Duyệt file .exe"
+                                                                 
+                    HorizontalAlignment="Stretch"
+                    CornerRadius="10"
+                    Padding="0,12"
+                    FontSize="13"/>
+
+            <Button x:ConnectionId='4' Grid.Column="1"
+                    Content="✅  Xác nhận"
+                                                                        
+                    Style="{StaticResource AccentButtonStyle}"
+                    HorizontalAlignment="Stretch"
+                    CornerRadius="10"
+                    Padding="0,12"
+                    FontSize="13"/>
+        </Grid>
+
+        <!-- ══ ROW 4: Info Banner ═════════════════════════════════ -->
+        <InfoBar Grid.Row="4"
+                 Severity="Informational"
+                 IsOpen="True"
+                 IsClosable="False"
+                 Title=""
+                 Message="Split Tunneling: chỉ process được chọn đi qua WARP+. Chrome, Discord, YouTube giữ nguyên mạng gốc."
+                 CornerRadius="8"/>
+    </Grid>
+</Page>
+

@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SettingsPage.xaml — Cài đặt: auto-start, ping target, ngôn ngữ, about
+-->
+<Page
+    x:Class="WarpGameAccelerator.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:WarpGameAccelerator.Models"
+    xmlns:conv="using:WarpGameAccelerator.Converters"
+    Background="Transparent">
+
+    <Page.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </Page.Resources>
+
+    <ScrollViewer Padding="16,12,16,16">
+        <StackPanel Spacing="12">
+
+            <!-- ══ Section: Khởi động ════════════════════════════ -->
+            <TextBlock Text="{x:Bind Loc.SettSectionStartup, Mode=OneWay}"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,0,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="{x:Bind Loc.SettAutoStartTitle, Mode=OneWay}"
+                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"
+                                   VerticalAlignment="Center"/>
+                        <ToggleSwitch Grid.Column="1"
+                                      IsOn="{x:Bind ViewModel.AutoStartEnabled, Mode=TwoWay}"
+                                      OnContent=""
+                                      OffContent=""
+                                      Margin="0"
+                                      VerticalAlignment="Center"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ══ Section: Ping Monitor ═════════════════════════ -->
+            <TextBlock Text="{x:Bind Loc.SettSectionPing, Mode=OneWay}"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel Spacing="12">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{x:Bind Loc.SettPingServerTitle, Mode=OneWay}"
+                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                        <TextBlock Text="{x:Bind Loc.SettPingServerSubtitle, Mode=OneWay}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0"
+                                  ItemsSource="{x:Bind ViewModel.PingTargets}"
+                                  SelectedItem="{x:Bind ViewModel.SelectedPingTarget, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  CornerRadius="8">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:PingTarget">
+                                    <StackPanel>
+                                        <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{x:Bind Host}" FontSize="11"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <Button Grid.Column="1"
+                                Command="{x:Bind ViewModel.RemovePingTargetCommand}"
+                                CommandParameter="{x:Bind ViewModel.SelectedPingTarget, Mode=OneWay}"
+                                ToolTipService.ToolTip="{x:Bind Loc.SettPingDeleteTooltip, Mode=OneWay}"
+                                Background="Transparent"
+                                Foreground="#FF4444"
+                                Width="36" Height="36">
+                            <FontIcon Glyph="&#xE74D;" FontSize="16"/>
+                        </Button>
+                    </Grid>
+
+                    <MenuFlyoutSeparator Margin="-12,4,-12,4"/>
+
+                    <TextBlock Text="{x:Bind Loc.SettAddServerTitle, Mode=OneWay}"
+                               FontWeight="SemiBold" FontSize="12"/>
+
+                    <Grid ColumnSpacing="8" RowSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Row="0" Grid.Column="0"
+                                 PlaceholderText="{x:Bind Loc.SettNamePlaceholder, Mode=OneWay}"
+                                 Text="{x:Bind ViewModel.NewTargetName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBox Grid.Row="0" Grid.Column="1"
+                                 PlaceholderText="{x:Bind Loc.SettIpPlaceholder, Mode=OneWay}"
+                                 Text="{x:Bind ViewModel.NewTargetHost, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                    Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                            <TextBlock Text="{x:Bind ViewModel.NewTargetTestResult, Mode=OneWay}"
+                                       VerticalAlignment="Center" Foreground="#00E676" FontWeight="SemiBold"/>
+
+                            <Button Content="{x:Bind Loc.SettBtnTestIp, Mode=OneWay}"
+                                    Command="{x:Bind ViewModel.TestPingCommand}" />
+
+                            <Button Content="{x:Bind Loc.SettBtnAdd, Mode=OneWay}"
+                                    Command="{x:Bind ViewModel.AddPingTargetCommand}"
+                                    Style="{StaticResource AccentButtonStyle}"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ══ Section: Language ═════════════════════════════ -->
+            <TextBlock Text="{x:Bind Loc.SettSectionLanguage, Mode=OneWay}"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{x:Bind Loc.SettLangTitle, Mode=OneWay}"
+                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                        <TextBlock Text="{x:Bind Loc.SettLangSubtitle, Mode=OneWay}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button x:Name="BtnVi"
+                                Content="🇻🇳  VIE"
+                                Command="{x:Bind ViewModel.SetLanguageViCommand}"
+                                CornerRadius="8"
+                                Padding="14,8"
+                                FontSize="12"/>
+                        <Button x:Name="BtnEn"
+                                Content="🇺🇸  ENG"
+                                Command="{x:Bind ViewModel.SetLanguageEnCommand}"
+                                CornerRadius="8"
+                                Padding="14,8"
+                                FontSize="12"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ══ Section: WARP ════════════════════════════════= -->
+            <TextBlock Text="{x:Bind Loc.SettSectionWarp, Mode=OneWay}"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="Cloudflare WARP Client"
+                                       FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                            <TextBlock Text="{x:Bind Loc.SettWarpClientSubtitle, Mode=OneWay}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Content="{x:Bind Loc.SettBtnDownload, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.OpenCloudflareWarpCommand}"
+                                Style="{StaticResource AccentButtonStyle}"
+                                CornerRadius="8"
+                                Padding="14,6"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ══ Section: About ════════════════════════════════ -->
+            <TextBlock Text="{x:Bind Loc.SettSectionAbout, Mode=OneWay}"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- App icon -->
+                    <Ellipse Grid.Column="0"
+                             Width="48" Height="48"
+                             Margin="0,0,12,0">
+                        <Ellipse.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#F6961E" Offset="0"/>
+                                <GradientStop Color="#FF6B35" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Ellipse.Fill>
+                    </Ellipse>
+                    <FontIcon Grid.Column="0"
+                              Glyph="&#xE945;" FontSize="22"
+                              Foreground="White"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"/>
+
+                    <!-- App info -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="WARP Game Accelerator"
+                                   FontWeight="Bold" FontSize="14"/>
+                        <TextBlock Text="{x:Bind ViewModel.AppVersion}"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock Text="{x:Bind ViewModel.UpdateStatusText, Mode=OneWay}"
+                                   FontSize="11" Foreground="#00E676" FontWeight="SemiBold"
+                                   Margin="0,2,0,0"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="2" VerticalAlignment="Center"
+                            Content="{x:Bind Loc.SettBtnCheckUpdate, Mode=OneWay}"
+                            Command="{x:Bind ViewModel.CheckUpdateCommand}"
+                            Style="{StaticResource AccentButtonStyle}"/>
+                </Grid>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>
