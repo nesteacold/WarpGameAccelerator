@@ -54,6 +54,7 @@ public partial class App : Application
         services.AddSingleton<GameProfileService>();
         services.AddSingleton<NetworkOptimizerService>();
         services.AddSingleton<UpdateService>();
+        services.AddSingleton<WarpAccountService>();
         services.AddSingleton<LocalizationService>();
 
         // ViewModels — DispatcherQueue được resolve lazily khi ViewModel đầu tiên được dùng

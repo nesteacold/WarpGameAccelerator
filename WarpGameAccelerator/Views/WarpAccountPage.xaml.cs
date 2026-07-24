@@ -12,13 +12,11 @@ namespace WarpGameAccelerator.Views;
 
 public sealed partial class WarpAccountPage : Page
 {
-    private readonly WarpAccountService _svc;
     private readonly LocalizationService _loc;
 
     public WarpAccountPage()
     {
         InitializeComponent();
-        _svc = App.Services.GetRequiredService<WarpAccountService>();
         _loc = App.Services.GetRequiredService<LocalizationService>();
         _ = LoadAccountInfoAsync();
     }
