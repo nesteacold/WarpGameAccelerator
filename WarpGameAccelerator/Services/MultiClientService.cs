@@ -230,10 +230,15 @@ public class MultiClientService
         {
             foreach (var p in Process.GetProcessesByName("fxgame"))
             {
+                if (p.HasExited) continue;
+                
+                string startTime = "Vừa mở";
+                try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
+
                 result.Add(new RunningClient
                 {
                     Pid       = p.Id,
-                    StartTime = p.StartTime.ToString("HH:mm:ss")
+                    StartTime = startTime
                 });
             }
         }
@@ -245,7 +250,11 @@ public class MultiClientService
     {
         try
         {
-            Process.GetProcessById(pid).Kill();
+            var p = Process.GetProcessById(pid);
+            if (!p.HasExited)
+            {
+                p.Kill(entireProcessTree: true);
+            }
             return true;
         }
         catch { return false; }

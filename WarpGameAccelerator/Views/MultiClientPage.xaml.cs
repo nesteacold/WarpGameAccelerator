@@ -17,11 +17,17 @@ public sealed partial class MultiClientPage : Page
     private string _currentToken = string.Empty;
     private string _gameFolder   = string.Empty;
 
+    private readonly DispatcherTimer _refreshTimer;
+
     public MultiClientPage()
     {
         InitializeComponent();
         LoadSavedState();
         RefreshClientList();
+
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _refreshTimer.Tick += (_, _) => RefreshClientList();
+        _refreshTimer.Start();
     }
 
     // ── Khởi động: nạp token + folder đã lưu ────────────────
