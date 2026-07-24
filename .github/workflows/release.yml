@@ -1,32 +1,31 @@
-name: Release WarpGameAccelerator
+name: Release Builder
 
 on:
   push:
     tags:
-      - 'v*' # Trigger khi push tag có tiền tố v (vd: v1.5.0, v1.6.0)
+      - 'v*' # Trigger workflow when a tag starting with 'v' is pushed (e.g., v1.7.0)
 
 jobs:
   build-and-release:
     runs-on: windows-latest
     
     steps:
-    - name: Checkout Code
+    - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Setup .NET 8
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
-        
-    - name: Build Application (Single File .exe)
+        dotnet-version: '8.0.x'
+
+    - name: Publish WarpGameAccelerator
       run: |
-        cd WarpGameAccelerator
-        dotnet publish WarpGameAccelerator.csproj -c Release -r win-x64 --self-contained -o ../publish
-        
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
+        dotnet publish WarpGameAccelerator\WarpGameAccelerator.csproj -c Release -r win-x64 --self-contained -o .\Publish
+
+    - name: Create Release and Upload Asset
+      uses: softprops/action-gh-release@v2
       with:
-        files: publish/WarpGameAccelerator.exe
+        files: .\Publish\WarpGameAccelerator.exe
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
