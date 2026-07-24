@@ -135,31 +135,41 @@ public partial class DashboardViewModel : ObservableObject
     {
         CurrentState = AppState.Connecting;
 
-        // Kiểm tra warp-cli
-        if (!await _warpService.IsInstalledAsync())
-        {
-            SetError(_loc.ErrWarpNotFound);
-            return;
-        }
+        bool isDirectWireGuard = SettingsViewModel.LoadEngineMode();
 
         // Đo baseline trước khi connect
         await _pingMonitor.StartAsync(recordBaseline: true);
 
-        // Kết nối WARP (Proxy)
-        var connected = await _warpService.ConnectAsync();
-        if (!connected)
+        // 1. Chế độ Siêu Tốc (Direct WireGuard):
+        // Không cần chạy warp-cli! Ngắt warp-cli nếu đang kết nối để tránh xung đột proxy.
+        if (isDirectWireGuard)
         {
-            SetError(_loc.ErrWarpConnectFail);
-            return;
+            await _warpService.DisconnectAsync();
+        }
+        else
+        {
+            // 2. Chế độ Tương Thích (WARP Client Proxy):
+            // Yêu cầu app WARP gốc và khởi chạy local proxy 127.0.0.1:40000
+            if (!await _warpService.IsInstalledAsync())
+            {
+                SetError(_loc.ErrWarpNotFound);
+                return;
+            }
+
+            var connected = await _warpService.ConnectAsync();
+            if (!connected)
+            {
+                SetError(_loc.ErrWarpConnectFail);
+                return;
+            }
         }
 
-        // Nếu có chọn game, khởi chạy Mihomo với Chế độ Engine được chọn trong Cài đặt
+        // Khởi chạy Mihomo Core theo chế độ đã chọn
         var exesToBoost = _selectedProfile?.ExecutablesJoined ?? SelectedProcessName;
         if (!string.IsNullOrWhiteSpace(exesToBoost))
         {
             try
             {
-                bool isDirectWireGuard = SettingsViewModel.LoadEngineMode();
                 await _mihomoService.StartProxyAsync(exesToBoost, isDirectWireGuard);
             }
             catch (Exception ex)

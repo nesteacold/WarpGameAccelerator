@@ -126,7 +126,7 @@ public partial class LocalizationService : ObservableObject
 
     // ── Connection Engine Mode ────────────────────────────────
     public string SettSectionEngine      => VI("CHẾ ĐỘ KẾT NỐI (ENGINE)", "CONNECTION MODE (ENGINE)");
-    public string SettEngineDirectTitle  => VI("Chế độ Siêu Tốc (Direct WireGuard)", "Direct WireGuard (Recommended for Games)");
+    public string SettEngineDirectTitle  => VI("Chế độ Siêu Tốc (Direct WireGuard) ⭐ Khuyên dùng", "Direct WireGuard ⭐ Recommended");
     public string SettEngineDirectBadge  => VI("(Khuyên dùng)", "(Recommended)");
     public string SettEngineDirectDesc   => VI("Khuyên dùng cho Game thời gian thực. Tối ưu Ping, chống rớt mạng, không cần cài app WARP.",
                                                "Recommended for real-time games. Lowest ping, persistent connection, no WARP app needed.");

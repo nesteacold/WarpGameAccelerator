@@ -39,14 +39,21 @@ public class MihomoService
         {
             // Chế độ Siêu Tốc (Direct WireGuard): Kết nối trực tiếp hạ tầng Cloudflare WARP
             // Tích hợp WireGuard-go, Persistent Keepalive 25s chống rớt mạng, giảm 2-8ms trễ.
-            proxyConfig = @"
+            var acc = await WarpAccountService.GetOrCreateAccountAsync();
+            var epParts = acc.Endpoint.Split(':');
+            string host = epParts.Length > 0 ? epParts[0] : "162.159.192.1";
+            string port = epParts.Length > 1 ? epParts[1] : "2408";
+
+            var ipv6Line = !string.IsNullOrEmpty(acc.IPv6) ? $"\n    ipv6: {acc.IPv6}" : "";
+
+            proxyConfig = $@"
   - name: ""WARP_OUT""
     type: wireguard
-    server: 162.159.192.1
-    port: 2408
-    ip: 172.16.0.2
-    public-key: bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=
-    private-key: 4EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    server: {host}
+    port: {port}
+    ip: {acc.IPv4}{ipv6Line}
+    public-key: {acc.PeerPublicKey}
+    private-key: {acc.PrivateKey}
     remote-dns-resolve: true
     keepalive: 25
     udp: true";
