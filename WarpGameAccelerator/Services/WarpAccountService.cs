@@ -21,7 +21,10 @@ public class WarpAccountInfo
 
 public class WarpAccountService
 {
-    private static readonly string AccountFilePath = Path.Combine(AppContext.BaseDirectory, "Data", "warp_account.json");
+    // Lưu vào AppData thay vì cạnh .exe → tồn tại qua mọi lần cập nhật
+    private static readonly string AccountFilePath =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                     "WarpGameAccelerator", "Data", "warp_account.json");
 
     public static async Task<WarpAccountInfo> GetOrCreateAccountAsync()
     {
@@ -41,9 +44,22 @@ public class WarpAccountService
         }
 
         // 2. Tạo tài khoản WireGuard mới và đăng ký với Cloudflare WARP API
+        //    Trước khi tạo mới: lưu License cũ lại để re-apply sau
+        string oldLicense = string.Empty;
+        if (File.Exists(AccountFilePath))
+        {
+            try
+            {
+                var oldJson = await File.ReadAllTextAsync(AccountFilePath);
+                var oldAcc  = JsonSerializer.Deserialize<WarpAccountInfo>(oldJson);
+                if (oldAcc != null) oldLicense = oldAcc.License ?? string.Empty;
+            }
+            catch { }
+        }
+
         var newAcc = await RegisterNewWarpAccountAsync();
-        
-        // 3. Lưu vào ổ đĩa để tái sử dụng
+
+        // 3. Lưu vào AppData
         try
         {
             var dir = Path.GetDirectoryName(AccountFilePath)!;
@@ -52,6 +68,12 @@ public class WarpAccountService
             await File.WriteAllTextAsync(AccountFilePath, json);
         }
         catch { }
+
+        // 4. Nếu có License cũ → tự động re-apply (tránh mất key sau update)
+        if (!string.IsNullOrEmpty(oldLicense))
+        {
+            await UpdateLicenseAsync(oldLicense);
+        }
 
         return newAcc;
     }
