@@ -83,22 +83,12 @@ public class PingMonitorService : IDisposable
     {
         try
         {
-            // 1. Kiểm tra xem tiến trình game được chọn có kết nối TCP tới Game Server không
-            var (gameIp, gamePort) = GetActiveGameServerAddress(_targetProcessName);
-
-            if (!string.IsNullOrEmpty(gameIp) && gamePort > 0)
-            {
-                // Đo TCP Handshake Ping trực tiếp tới IP & Port của Game Server thực tế
-                var (rtt, ok) = await MeasureTcpPingAsync(gameIp, gamePort, 1200);
-                if (ok && rtt > 0) return rtt;
-            }
-
-            // 2. Nếu game chưa mở / chưa kết nối ➔ Lấy Node được chọn và đo trễ khớp 100% với Node Dialog
+            // 1. Lấy Node được chọn hiện tại và đo ICMP RTT (khớp 100% với Node Dialog, không bị Wintun 1ms intercept)
             var selectedNode = CloudflareNodeService.GetSelectedNode();
             long nodePing = await CloudflareNodeService.PingNodeAsync(selectedNode);
             if (nodePing > 0) return nodePing;
 
-            // 3. Fallback ICMP Ping
+            // 2. Fallback ICMP Ping tới target host
             using var pinger = new Ping();
             var reply = await pinger.SendPingAsync(host, 1200);
             return reply.Status == IPStatus.Success ? reply.RoundtripTime : -1;

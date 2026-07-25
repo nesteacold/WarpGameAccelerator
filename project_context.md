@@ -147,3 +147,4 @@ Tất cả dữ liệu người dùng lưu trong `AppData\Local\WarpGameAccelera
 | v1.9.1 | Fix triệt để crash khi mở nhiều client (tạm dừng UI timer khi launch, giải phóng handle process) và tự động ghi log lỗi vào AppData/Local/WarpGameAccelerator/Logs/crash.log |
 | v1.9.2 | Tự động hiển thị Hộp thoại Báo Cáo Sự Cố (CrashReportDialog) khi bật lại app sau khi bị sập, đề xuất tự động gửi log chi tiết lên GitHub Issues với cơ chế try-catch fail-safe 100% |
 | v1.9.3 | Đồng bộ 100% chỉ số Ping giữa Dashboard và Node Selection Dialog (loại bỏ hiện tượng 1ms do TUN adapter loopback intercept) |
+| v1.9.4 | Loại bỏ hoàn toàn cơ chế TCP Handshake Ping (vốn bị card ảo Wintun giữ lại ở loopback 1ms), sử dụng ICMP RTT trực tiếp chuẩn xác 100% khớp tuyệt đối với Node Selection Dialog |
