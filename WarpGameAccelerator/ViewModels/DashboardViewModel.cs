@@ -137,7 +137,22 @@ public partial class DashboardViewModel : ObservableObject
 
         bool isDirectWireGuard = SettingsViewModel.LoadEngineMode();
 
-        // Đo baseline trước khi connect
+        // Lấy Node được chọn để đo ping thực tế khớp 100% với Node Dialog
+        var selectedNode = CloudflareNodeService.GetSelectedNode();
+        if (selectedNode != null && !string.IsNullOrEmpty(selectedNode.EndpointIp))
+        {
+            _pingMonitor.SetTarget(selectedNode.EndpointIp);
+        }
+        else
+        {
+            _pingMonitor.SetTarget("162.159.192.1");
+        }
+
+        var exesToBoost = _selectedProfile?.ExecutablesJoined ?? SelectedProcessName;
+        if (string.IsNullOrWhiteSpace(exesToBoost)) exesToBoost = "fxgame";
+
+        // Đo baseline & monitor ping theo đúng tiến trình game đang được boost
+        _pingMonitor.SetTargetProcess(exesToBoost);
         await _pingMonitor.StartAsync(recordBaseline: true);
 
         // 1. Chế độ Siêu Tốc (Direct WireGuard):
@@ -165,7 +180,6 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         // Khởi chạy Mihomo Core theo chế độ đã chọn
-        var exesToBoost = _selectedProfile?.ExecutablesJoined ?? SelectedProcessName;
         if (!string.IsNullOrWhiteSpace(exesToBoost))
         {
             try

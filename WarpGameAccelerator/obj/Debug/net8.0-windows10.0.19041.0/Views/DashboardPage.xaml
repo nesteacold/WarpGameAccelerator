@@ -88,24 +88,33 @@
 
                 <!-- Game name + path -->
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                    <TextBlock x:ConnectionId='19' x:Name="SelectedGameName"
-                                                                                         
+                    <TextBlock x:ConnectionId='21' x:Name="SelectedGameName"
+                                                                                     
                                FontWeight="SemiBold"
                                FontSize="14"
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                    <TextBlock Text="Process đang được boost"
+                    <TextBlock x:ConnectionId='22'                                                         
                                FontSize="11"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
 
-                <!-- Change button -->
-                <Button x:ConnectionId='18' Grid.Column="2"
-                        Content="Đổi"
-                        Style="{StaticResource AccentButtonStyle}"
-                        FontSize="12"
-                        Padding="12,6"
-                        CornerRadius="8"
-                                                      />
+                <!-- Change button + Select Node button -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Button x:ConnectionId='19' x:Name="SelectNodeBtn"
+                            Content="🌐 Node Server"
+                            FontSize="12"
+                            Padding="10,6"
+                            CornerRadius="8"
+                                                       
+                            ToolTipService.ToolTip="Chọn Node Server Cloudflare (Taiwan, HK, Auto...)"/>
+
+                    <Button x:ConnectionId='20'                                               
+                            Style="{StaticResource AccentButtonStyle}"
+                            FontSize="12"
+                            Padding="12,6"
+                            CornerRadius="8"
+                                                          />
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -115,7 +124,7 @@
               VerticalAlignment="Center">
 
             <!-- Outer pulse ring (Connected state) -->
-            <Ellipse x:ConnectionId='9' x:Name="BoostRingOuter"
+            <Ellipse x:ConnectionId='10' x:Name="BoostRingOuter"
                      Width="180" Height="180"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
                      Opacity="0">
@@ -133,7 +142,7 @@
             </Ellipse>
 
             <!-- Middle glow ring -->
-            <Ellipse x:ConnectionId='10' x:Name="BoostGlow"
+            <Ellipse x:ConnectionId='11' x:Name="BoostGlow"
                      Width="156" Height="156"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
                      Opacity="0.4">
@@ -146,13 +155,13 @@
             </Ellipse>
 
             <!-- Main BOOST button -->
-            <Button x:ConnectionId='11' x:Name="BoostButton"
+            <Button x:ConnectionId='12' x:Name="BoostButton"
                     Width="140" Height="140"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     CornerRadius="70"
                                                                    
                                                                         
-                    ToolTipService.ToolTip="Bắt đầu tăng tốc WARP+">
+                                                                                       >
                 <Button.Background>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                         <GradientStop Color="#F6961E" Offset="0"/>
@@ -172,26 +181,26 @@
 
                 <StackPanel HorizontalAlignment="Center" Spacing="4">
                     <!-- Loading spinner (Connecting) -->
-                    <ProgressRing x:ConnectionId='14' x:Name="ConnectingRing"
+                    <ProgressRing x:ConnectionId='15' x:Name="ConnectingRing"
                                   Width="28" Height="28"
                                   Foreground="White"
                                                                                          
                                                                              
                                                                                                   />
                     <!-- Rocket icon (Idle) -->
-                    <FontIcon x:ConnectionId='15' Glyph="&#xE945;"
+                    <FontIcon x:ConnectionId='16' Glyph="&#xE945;"
                               FontSize="32"
                               Foreground="White"
                                                                    
                                                                                               />
                     <!-- Stop icon (Connected) -->
-                    <FontIcon x:ConnectionId='16' Glyph="&#xE71A;"
+                    <FontIcon x:ConnectionId='17' Glyph="&#xE71A;"
                               FontSize="28"
                               Foreground="White"
                                                                         
                                                                                               />
 
-                    <TextBlock x:ConnectionId='17' x:Name="BoostLabel"
+                    <TextBlock x:ConnectionId='18' x:Name="BoostLabel"
                                                                                       
                                FontWeight="ExtraBold"
                                FontSize="14"
@@ -228,8 +237,8 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                                                       
                                                                                   >
-                        <Run Text="Trước: "/>
-                        <Run x:ConnectionId='8'                                                       />
+                        <Run x:ConnectionId='8'                                            />
+                        <Run x:ConnectionId='9'                                                       />
                     </TextBlock>
                 </StackPanel>
             </Border>

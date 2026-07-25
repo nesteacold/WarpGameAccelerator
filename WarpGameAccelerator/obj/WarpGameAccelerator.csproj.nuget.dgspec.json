@@ -5,7 +5,7 @@
   },
   "projects": {
     "C:\\Users\\annh\\Documents\\AOW_Booster\\WarpGameAccelerator\\WarpGameAccelerator.csproj": {
-      "version": "1.6.9",
+      "version": "1.8.10",
       "restore": {
         "projectUniqueName": "C:\\Users\\annh\\Documents\\AOW_Booster\\WarpGameAccelerator\\WarpGameAccelerator.csproj",
         "projectName": "WarpGameAccelerator",
@@ -68,6 +68,10 @@
             "Microsoft.WindowsAppSDK": {
               "target": "Package",
               "version": "[1.8.260710003, )"
+            },
+            "System.Management": {
+              "target": "Package",
+              "version": "[8.0.0, )"
             }
           },
           "imports": [

@@ -31,10 +31,10 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:ConnectionId='37' Grid.Column="0" VerticalAlignment="Center"
+                        <TextBlock x:ConnectionId='22' Grid.Column="0" VerticalAlignment="Center"
                                                                                       
                                    FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
-                        <ToggleSwitch x:ConnectionId='38' Grid.Column="1" VerticalAlignment="Center"
+                        <ToggleSwitch x:ConnectionId='23' Grid.Column="1" VerticalAlignment="Center"
                                                                                              
                                       OnContent="" OffContent="" Margin="0"/>
                     </Grid>
@@ -46,11 +46,11 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:ConnectionId='35' Grid.Column="0" VerticalAlignment="Center"
+                        <TextBlock x:ConnectionId='20' Grid.Column="0" VerticalAlignment="Center"
                                                                                           
                                    FontSize="12" Foreground="#00E676" FontWeight="SemiBold" TextWrapping="Wrap"
                                    Margin="0,0,8,0"/>
-                        <Button x:ConnectionId='36' Grid.Column="1" VerticalAlignment="Center"
+                        <Button x:ConnectionId='21' Grid.Column="1" VerticalAlignment="Center"
                                                                                       
                                                                                
                                 Style="{StaticResource AccentButtonStyle}"/>
@@ -68,14 +68,14 @@
             <Border Style="{StaticResource GlassCard}">
                 <StackPanel Spacing="12">
                     <!-- Direct WireGuard (Super Speed / Recommended) -->
-                    <RadioButton x:ConnectionId='29'                                                              
+                    <RadioButton x:ConnectionId='14'                                                              
                                  GroupName="ConnectionEngineGroup"
                                                                                                         
                                  HorizontalAlignment="Stretch">
                         <StackPanel Margin="6,0,0,0">
-                            <TextBlock x:ConnectionId='33'                                                       
+                            <TextBlock x:ConnectionId='18'                                                       
                                        FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
-                            <TextBlock x:ConnectionId='34'                                                      
+                            <TextBlock x:ConnectionId='19'                                                      
                                        FontSize="11" TextWrapping="Wrap"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        Margin="0,3,0,0"/>
@@ -85,14 +85,14 @@
                     <MenuFlyoutSeparator Margin="-12,0,-12,0"/>
 
                     <!-- WARP Client Proxy (Compatibility Mode) -->
-                    <RadioButton x:ConnectionId='30'                                                              
+                    <RadioButton x:ConnectionId='15'                                                              
                                  GroupName="ConnectionEngineGroup"
                                                                                                       
                                  HorizontalAlignment="Stretch">
                         <StackPanel Margin="6,0,0,0">
-                            <TextBlock x:ConnectionId='31'                                                     
+                            <TextBlock x:ConnectionId='16'                                                     
                                        FontWeight="SemiBold" FontSize="13"/>
-                            <TextBlock x:ConnectionId='32'                                                    
+                            <TextBlock x:ConnectionId='17'                                                    
                                        FontSize="11" TextWrapping="Wrap"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        Margin="0,3,0,0"/>
@@ -101,96 +101,8 @@
                 </StackPanel>
             </Border>
 
-            <!-- ══ Section: Ping Monitor ═════════════════════════ -->
-            <TextBlock x:ConnectionId='4'                                                 
-                       FontSize="10" FontWeight="SemiBold"
-                       CharacterSpacing="150"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       Margin="0,8,0,4"/>
-
-            <Border Style="{StaticResource GlassCard}">
-                <StackPanel Spacing="12">
-                    <StackPanel Spacing="4">
-                        <TextBlock x:ConnectionId='27'                                                     
-                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
-                        <TextBlock x:ConnectionId='28'                                                        
-                                   FontSize="11" TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    </StackPanel>
-
-                    <Grid ColumnSpacing="8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <ComboBox x:ConnectionId='21' Grid.Column="0"
-                                                                              
-                                                                                                   
-                                  HorizontalAlignment="Stretch"
-                                  CornerRadius="8">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate                               >
-                                    <StackPanel x:ConnectionId='24'>
-                                        <TextBlock x:ConnectionId='25'                      FontWeight="SemiBold"/>
-                                        <TextBlock x:ConnectionId='26'                      FontSize="11"
-                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-
-                        <Button x:ConnectionId='22' Grid.Column="1"
-                                                                                    
-                                                                                                     
-                                                                                                        
-                                Background="Transparent"
-                                Foreground="#FF4444"
-                                Width="36" Height="36">
-                            <FontIcon Glyph="&#xE74D;" FontSize="16"/>
-                        </Button>
-                    </Grid>
-
-                    <MenuFlyoutSeparator Margin="-12,4,-12,4"/>
-
-                    <TextBlock x:ConnectionId='15'                                                    
-                               FontWeight="SemiBold" FontSize="12"/>
-
-                    <Grid ColumnSpacing="8" RowSpacing="8">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <TextBox x:ConnectionId='16' Grid.Row="0" Grid.Column="0"
-                                                                                                
-                                                                                                                           />
-
-                        <TextBox x:ConnectionId='17' Grid.Row="0" Grid.Column="1"
-                                                                                              
-                                                                                                                           />
-
-                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                    Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-                            <TextBlock x:ConnectionId='18'                                                           
-                                       VerticalAlignment="Center" Foreground="#00E676" FontWeight="SemiBold"/>
-
-                            <Button x:ConnectionId='19'                                                  
-                                                                                 />
-
-                            <Button x:ConnectionId='20'                                               
-                                                                                     
-                                    Style="{StaticResource AccentButtonStyle}"/>
-                        </StackPanel>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
             <!-- ══ Section: Language ═════════════════════════════ -->
-            <TextBlock x:ConnectionId='5'                                                     
+            <TextBlock x:ConnectionId='4'                                                     
                        FontSize="10" FontWeight="SemiBold"
                        CharacterSpacing="150"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -203,20 +115,20 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                        <TextBlock x:ConnectionId='13'                                               
+                        <TextBlock x:ConnectionId='12'                                               
                                    FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
-                        <TextBlock x:ConnectionId='14'                                                  
+                        <TextBlock x:ConnectionId='13'                                                  
                                    FontSize="11" TextWrapping="Wrap"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Button x:ConnectionId='11' x:Name="BtnVi"
+                        <Button x:ConnectionId='10' x:Name="BtnVi"
                                 Content="🇻🇳  VIE"
                                                                                  
                                 CornerRadius="8"
                                 Padding="14,8"
                                 FontSize="12"/>
-                        <Button x:ConnectionId='12' x:Name="BtnEn"
+                        <Button x:ConnectionId='11' x:Name="BtnEn"
                                 Content="🇺🇸  ENG"
                                                                                  
                                 CornerRadius="8"
@@ -227,7 +139,7 @@
             </Border>
 
             <!-- ══ Section: WARP ════════════════════════════════= -->
-            <TextBlock x:ConnectionId='6'                                                 
+            <TextBlock x:ConnectionId='5'                                                 
                        FontSize="10" FontWeight="SemiBold"
                        CharacterSpacing="150"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -243,11 +155,11 @@
                         <StackPanel Grid.Column="0" Spacing="2">
                             <TextBlock Text="Cloudflare WARP Client"
                                        FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
-                            <TextBlock x:ConnectionId='10'                                                        
+                            <TextBlock x:ConnectionId='9'                                                        
                                        FontSize="11" TextWrapping="Wrap"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
-                        <Button x:ConnectionId='9' Grid.Column="1"
+                        <Button x:ConnectionId='8' Grid.Column="1"
                                                                                    
                                                                                       
                                 Style="{StaticResource AccentButtonStyle}"
@@ -258,7 +170,7 @@
             </Border>
 
             <!-- ══ Section: About ════════════════════════════════ -->
-            <TextBlock x:ConnectionId='7'                                                  
+            <TextBlock x:ConnectionId='6'                                                  
                        FontSize="10" FontWeight="SemiBold"
                        CharacterSpacing="150"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -293,7 +205,7 @@
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                         <TextBlock Text="WARP Game Accelerator"
                                    FontWeight="Bold" FontSize="14"/>
-                        <TextBlock x:ConnectionId='8'                                     
+                        <TextBlock x:ConnectionId='7'                                     
                                    FontSize="12"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         <TextBlock Text="Powered by Cloudflare WARP+"

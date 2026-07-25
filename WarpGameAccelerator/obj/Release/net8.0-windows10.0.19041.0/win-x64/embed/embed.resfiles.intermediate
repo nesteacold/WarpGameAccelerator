@@ -1,6 +1,9 @@
 App.xbf
+Dialogs\NodeSelectionDialog.xbf
 MainWindow.xbf
 Styles\AppStyles.xbf
 Views\DashboardPage.xbf
+Views\MultiClientPage.xbf
 Views\ProcessPickerPage.xbf
 Views\SettingsPage.xbf
+Views\WarpAccountPage.xbf

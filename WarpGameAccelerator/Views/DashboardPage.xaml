@@ -98,14 +98,23 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
 
-                <!-- Change button -->
-                <Button Grid.Column="2"
-                        Content="{x:Bind Loc.DashChange, Mode=OneWay}"
-                        Style="{StaticResource AccentButtonStyle}"
-                        FontSize="12"
-                        Padding="12,6"
-                        CornerRadius="8"
-                        Click="ChangeGameButton_Click"/>
+                <!-- Change button + Select Node button -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Button x:Name="SelectNodeBtn"
+                            Content="🌐 Node Server"
+                            FontSize="12"
+                            Padding="10,6"
+                            CornerRadius="8"
+                            Click="SelectNodeBtn_Click"
+                            ToolTipService.ToolTip="Chọn Node Server Cloudflare (Taiwan, HK, Auto...)"/>
+
+                    <Button Content="{x:Bind Loc.DashChange, Mode=OneWay}"
+                            Style="{StaticResource AccentButtonStyle}"
+                            FontSize="12"
+                            Padding="12,6"
+                            CornerRadius="8"
+                            Click="ChangeGameButton_Click"/>
+                </StackPanel>
             </Grid>
         </Border>
 

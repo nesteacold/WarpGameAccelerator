@@ -35,11 +35,17 @@
                         Margin="16,0,0,0"
                         Spacing="8">
                 <Image Source="ms-appx:///Assets/logo.png" Width="24" Height="24" Stretch="UniformToFill"/>
-                <TextBlock Text="WARP Game Accelerator"
-                           FontWeight="SemiBold"
-                           FontSize="13"
-                           VerticalAlignment="Center"
-                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                <StackPanel VerticalAlignment="Center" Spacing="0">
+                    <TextBlock Text="WARP Game Accelerator"
+                               FontWeight="SemiBold"
+                               FontSize="13"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock x:ConnectionId='7' x:Name="AppVersionText"
+                               Text="v1.3.1"
+                               FontSize="9"
+                               Opacity="0.5"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
             </StackPanel>
 
             <!-- Connection status badge -->
@@ -84,6 +90,16 @@
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
+                <NavigationViewItem Tag="multiclient" Content="Multi-Client">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE90F;"/>
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="warpaccount" Content="WARP+ Account">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8D4;"/>
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Tag="settings" Content="Cài đặt">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;"/>

@@ -72,15 +72,104 @@ public class PingMonitorService : IDisposable
         }
     }
 
+    private string _targetProcessName = "fxgame";
+
+    public void SetTargetProcess(string processNameStr)
+    {
+        _targetProcessName = processNameStr;
+    }
+
     public async Task<long> MeasurePingAsync(string host)
     {
         try
         {
+            // 1. Kiểm tra xem tiến trình game được chọn có kết nối TCP tới Game Server không
+            var (gameIp, gamePort) = GetActiveGameServerAddress(_targetProcessName);
+
+            if (!string.IsNullOrEmpty(gameIp) && gamePort > 0)
+            {
+                // Đo TCP Handshake Ping trực tiếp tới IP & Port của Game Server
+                var (rtt, ok) = await MeasureTcpPingAsync(gameIp, gamePort, 1200);
+                if (ok && rtt > 0) return rtt;
+            }
+
+            // 2. Nếu game chưa chạy ➔ Đo TCP/ICMP Ping tới Node IP hoặc targetHost
+            var (nodeRtt, nodeOk) = await MeasureTcpPingAsync(host, 2408, 1200);
+            if (nodeOk && nodeRtt > 0) return nodeRtt;
+
+            // 3. Fallback ICMP Ping
             using var pinger = new Ping();
-            var reply = await pinger.SendPingAsync(host, 1500);
+            var reply = await pinger.SendPingAsync(host, 1200);
             return reply.Status == IPStatus.Success ? reply.RoundtripTime : -1;
         }
         catch { return -1; }
+    }
+
+    // ── Tự động tìm IP & Port Game Server từ TCP Connections ──
+    private static (string RemoteIp, int RemotePort) GetActiveGameServerAddress(string processNamesJoined)
+    {
+        try
+        {
+            var pNames = processNamesJoined.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            var activePids = new HashSet<int>();
+
+            foreach (var pName in pNames)
+            {
+                var cleanName = pName.Trim();
+                if (cleanName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    cleanName = cleanName.Substring(0, cleanName.Length - 4);
+
+                foreach (var proc in System.Diagnostics.Process.GetProcessesByName(cleanName))
+                {
+                    try { activePids.Add(proc.Id); } catch { }
+                }
+            }
+
+            if (activePids.Count == 0) return (string.Empty, 0);
+
+            var properties = IPGlobalProperties.GetIPGlobalProperties();
+            var tcpConns   = properties.GetActiveTcpConnections();
+
+            foreach (var conn in tcpConns)
+            {
+                if (conn.State != TcpState.Established) continue;
+                var ip = conn.RemoteEndPoint.Address;
+                if (System.Net.IPAddress.IsLoopback(ip)) continue;
+
+                string ipStr = ip.ToString();
+                // Lọc bỏ IP LAN nội bộ và IP giả lập Fake-IP
+                if (ipStr.StartsWith("127.") || ipStr.StartsWith("192.168.") ||
+                    ipStr.StartsWith("10.")  || ipStr.StartsWith("198.18.") ||
+                    ipStr.StartsWith("172.16.")) continue;
+
+                return (ipStr, conn.RemoteEndPoint.Port);
+            }
+        }
+        catch { }
+        return (string.Empty, 0);
+    }
+
+    // ── Đo TCP Handshake Ping (Không bị Firewall chặn ICMP) ─────
+    private static async Task<(long RttMs, bool Success)> MeasureTcpPingAsync(string host, int port, int timeoutMs)
+    {
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var client = new System.Net.Sockets.TcpClient();
+            var connectTask = client.ConnectAsync(host, port);
+            var timeoutTask = Task.Delay(timeoutMs);
+
+            var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+            sw.Stop();
+
+            if (completedTask == connectTask && client.Connected)
+            {
+                long ms = sw.ElapsedMilliseconds < 1 ? 1 : sw.ElapsedMilliseconds;
+                return (ms, true);
+            }
+        }
+        catch { }
+        return (-1, false);
     }
 
     private async Task<long> MeasureAverageAsync(int count)

@@ -3,3 +3,8 @@ obj/
 .vs/
 *.user
 C:/Temp/
+Publish/
+Publish_*/
+*.exe
+*.pdb
+test_exit.cs

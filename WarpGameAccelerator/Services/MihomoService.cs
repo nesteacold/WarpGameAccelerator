@@ -80,9 +80,22 @@ public class MihomoService
             // Chế độ Siêu Tốc (Direct WireGuard): Kết nối trực tiếp hạ tầng Cloudflare WARP
             // Tích hợp WireGuard-go, Persistent Keepalive 25s chống rớt mạng, giảm 2-8ms trễ.
             var acc = await WarpAccountService.GetOrCreateAccountAsync();
-            var epParts = acc.Endpoint.Split(':');
-            string host = epParts.Length > 0 ? epParts[0] : "162.159.192.1";
-            string port = epParts.Length > 1 ? epParts[1] : "2408";
+            // Kiểm tra xem người dùng có chọn Node thủ công hay dùng Auto
+            var selectedNode = CloudflareNodeService.GetSelectedNode();
+            string host = "162.159.192.1";
+            string port = "2408";
+
+            if (selectedNode != null && !selectedNode.IsAuto && !string.IsNullOrEmpty(selectedNode.EndpointIp))
+            {
+                host = selectedNode.EndpointIp;
+                port = selectedNode.Port.ToString();
+            }
+            else
+            {
+                var epParts = acc.Endpoint.Split(':');
+                if (epParts.Length > 0 && !string.IsNullOrEmpty(epParts[0])) host = epParts[0];
+                if (epParts.Length > 1 && !string.IsNullOrEmpty(epParts[1])) port = epParts[1];
+            }
 
             var ipv6Line = !string.IsNullOrEmpty(acc.IPv6) ? $"\n    ipv6: {acc.IPv6}" : "";
 

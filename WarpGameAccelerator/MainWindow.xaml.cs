@@ -48,10 +48,19 @@ public sealed partial class MainWindow : Window
 
     private void ConfigureWindow()
     {
-        // Fixed size 420 × 640
+        // Fixed size 520 × 680
         var appWindow = AppWindow;
-        appWindow.Resize(new SizeInt32(420, 640));
+        appWindow.Resize(new SizeInt32(520, 680));
         appWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico"));
+
+        // Căn giữa màn hình
+        var displayArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(appWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest);
+        if (displayArea != null)
+        {
+            var centeredX = displayArea.WorkArea.X + (displayArea.WorkArea.Width - 520) / 2;
+            var centeredY = displayArea.WorkArea.Y + (displayArea.WorkArea.Height - 680) / 2;
+            appWindow.Move(new PointInt32(centeredX, centeredY));
+        }
 
         // Disable resize
         if (appWindow.Presenter is OverlappedPresenter presenter)

@@ -203,6 +203,15 @@ public sealed partial class DashboardPage : Page
 
     // ── Navigation ───────────────────────────────────────────
 
+    private async void SelectNodeBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Dialogs.NodeSelectionDialog
+        {
+            XamlRoot = this.XamlRoot
+        };
+        await dialog.ShowAsync();
+    }
+
     private void ChangeGameButton_Click(object sender, RoutedEventArgs e)
     {
         Frame.Navigate(typeof(ProcessPickerPage));
