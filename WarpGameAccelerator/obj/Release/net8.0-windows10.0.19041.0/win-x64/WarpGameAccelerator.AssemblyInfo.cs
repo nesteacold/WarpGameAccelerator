@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WarpGameAccelerator")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.9.2.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.9.2+5412edaf542ec5b3de46dc125a68817558f12023")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.9.2+f69f0780e4d14dbce1ef76e50015ddefde080435")]
 [assembly: System.Reflection.AssemblyProductAttribute("WarpGameAccelerator")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WarpGameAccelerator")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.9.2.0")]

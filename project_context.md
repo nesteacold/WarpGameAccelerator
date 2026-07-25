@@ -146,3 +146,4 @@ Tất cả dữ liệu người dùng lưu trong `AppData\Local\WarpGameAccelera
 | v1.9.0 | Bổ sung bảng Chọn Node Server kiểu GearUP (Auto, Taiwan, HK, Singapore...), tự động bắt IP Game Server & đo TCP Handshake Ping thực tế, nới rộng UI 520x680 & căn giữa màn hình |
 | v1.9.1 | Fix triệt để crash khi mở nhiều client (tạm dừng UI timer khi launch, giải phóng handle process) và tự động ghi log lỗi vào AppData/Local/WarpGameAccelerator/Logs/crash.log |
 | v1.9.2 | Tự động hiển thị Hộp thoại Báo Cáo Sự Cố (CrashReportDialog) khi bật lại app sau khi bị sập, đề xuất tự động gửi log chi tiết lên GitHub Issues với cơ chế try-catch fail-safe 100% |
+| v1.9.3 | Đồng bộ 100% chỉ số Ping giữa Dashboard và Node Selection Dialog (loại bỏ hiện tượng 1ms do TUN adapter loopback intercept) |
