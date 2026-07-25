@@ -205,22 +205,36 @@ public sealed partial class MultiClientPage : Page
             return;
         }
 
-        LaunchMoreBtn.IsEnabled = false;
-        LaunchMoreBtn.Content   = "Đang mở...";
-        ShowMsg(LaunchMoreMsg, "Đang khởi chạy các client, vui lòng đợi (chờ 3s mỗi client)...", isError: false);
+        try
+        {
+            // Tạm dừng timer tự động làm tươi để tránh xung đột UI thread khi đang launch
+            _refreshTimer.Stop();
 
-        int count = _clientCount;
-        string folder = _gameFolder;
-        string token = _currentToken;
+            LaunchMoreBtn.IsEnabled = false;
+            LaunchMoreBtn.Content   = "Đang mở...";
+            ShowMsg(LaunchMoreMsg, "Đang khởi chạy các client, vui lòng đợi (chờ 3s mỗi client)...", isError: false);
 
-        var (launched, msg) = await Task.Run(() => MultiClientService.LaunchAdditionalClients(folder, token, count));
+            int count = _clientCount;
+            string folder = _gameFolder;
+            string token = _currentToken;
 
-        LaunchMoreBtn.IsEnabled = true;
-        LaunchMoreBtn.Content   = $"▶  Mở {_clientCount} Client";
-        ShowMsg(LaunchMoreMsg, msg, launched == 0);
+            var (launched, msg) = await Task.Run(() => MultiClientService.LaunchAdditionalClients(folder, token, count));
 
-        // Cập nhật danh sách
-        RefreshClientList();
+            LaunchMoreBtn.IsEnabled = true;
+            LaunchMoreBtn.Content   = $"▶  Mở {_clientCount} Client";
+            ShowMsg(LaunchMoreMsg, msg, launched == 0);
+        }
+        catch (Exception ex)
+        {
+            ShowMsg(LaunchMoreMsg, $"Lỗi: {ex.Message}", isError: true);
+            LaunchMoreBtn.IsEnabled = true;
+            LaunchMoreBtn.Content   = $"▶  Mở {_clientCount} Client";
+        }
+        finally
+        {
+            _refreshTimer.Start();
+            RefreshClientList();
+        }
     }
 
     // ── Card 5: Danh sách client đang chạy ──────────────────

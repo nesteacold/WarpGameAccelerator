@@ -201,7 +201,8 @@ public class MultiClientService
                     WorkingDirectory = Path.GetDirectoryName(gamePath)!,
                     UseShellExecute  = true
                 };
-                Process.Start(psi);
+                var proc = Process.Start(psi);
+                try { proc?.Dispose(); } catch { }
                 launched++;
                 
                 if (i < count - 1)

@@ -144,3 +144,4 @@ Tất cả dữ liệu người dùng lưu trong `AppData\Local\WarpGameAccelera
 | v1.8.9 | Khôi phục cấu hình TUN v1.5.0 (`stack: mixed`, `mtu: 1280`, loại bỏ hoàn toàn `fake-ip` gây lỗi cURL SSL Error trong addon game) |
 | v1.8.10 | Fix dứt điểm crash app khi mở nhiều client (bọc try-catch xung quanh process handle & timer UI update) |
 | v1.9.0 | Bổ sung bảng Chọn Node Server kiểu GearUP (Auto, Taiwan, HK, Singapore...), tự động bắt IP Game Server & đo TCP Handshake Ping thực tế, nới rộng UI 520x680 & căn giữa màn hình |
+| v1.9.1 | Fix triệt để crash khi mở nhiều client (tạm dừng UI timer khi launch, giải phóng handle process) và tự động ghi log lỗi vào AppData/Local/WarpGameAccelerator/Logs/crash.log |

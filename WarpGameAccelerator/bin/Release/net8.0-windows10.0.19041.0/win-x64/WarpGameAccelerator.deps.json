@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v8.0": {},
     ".NETCoreApp,Version=v8.0/win-x64": {
-      "WarpGameAccelerator/1.8.10": {
+      "WarpGameAccelerator/1.9.0": {
         "dependencies": {
           "CommunityToolkit.Mvvm": "8.3.2",
           "Microsoft.Extensions.DependencyInjection": "8.0.1",
@@ -1389,7 +1389,7 @@
     }
   },
   "libraries": {
-    "WarpGameAccelerator/1.8.10": {
+    "WarpGameAccelerator/1.9.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

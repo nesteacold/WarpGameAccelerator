@@ -21,13 +21,23 @@ public partial class App : Application
 
     public App()
     {
+        var logDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WarpGameAccelerator", "Logs");
+        try { if (!System.IO.Directory.Exists(logDir)) System.IO.Directory.CreateDirectory(logDir); } catch { }
+        string logFile = System.IO.Path.Combine(logDir, "crash.log");
+
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
-            try { System.IO.File.WriteAllText(@"C:\Temp\WarpCrash.log", e.ExceptionObject.ToString()); } catch { }
+            try { System.IO.File.AppendAllText(logFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] AppDomain Exception: {e.ExceptionObject}\n\n"); } catch { }
+        };
+        TaskScheduler.UnobservedTaskException += (s, e) =>
+        {
+            try { System.IO.File.AppendAllText(logFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Task Exception: {e.Exception}\n\n"); } catch { }
+            e.SetObserved();
         };
         Microsoft.UI.Xaml.Application.Current.UnhandledException += (s, e) =>
         {
-            try { System.IO.File.WriteAllText(@"C:\Temp\WarpCrash_Xaml.log", e.Exception.ToString()); } catch { }
+            try { System.IO.File.AppendAllText(logFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] WinUI Exception: {e.Exception}\n\n"); } catch { }
+            e.Handled = true; // Ngăn chặn crash app trên luồng XAML UI
         };
 
         InitializeComponent();
