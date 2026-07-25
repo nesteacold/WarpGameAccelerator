@@ -42,6 +42,34 @@ public sealed partial class MainWindow : Window
         NavView.SelectedItem = NavView.MenuItems[0];
 
         UpdateNavItemLabels();
+
+        // Kiểm tra & đề xuất gửi báo cáo lỗi nếu lần trước bị sập
+        CheckPendingCrashReportAsync();
+    }
+
+    private async void CheckPendingCrashReportAsync()
+    {
+        try
+        {
+            if (CrashReportService.HasPendingCrashReport())
+            {
+                var info = CrashReportService.GetPendingCrashReport();
+                if (info != null)
+                {
+                    await System.Threading.Tasks.Task.Delay(1200); // Chờ UI nạp hoàn chỉnh
+                    var dialog = new Dialogs.CrashReportDialog(info)
+                    {
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await dialog.ShowAsync();
+                }
+            }
+        }
+        catch
+        {
+            // Bảo vệ 100%: Fail-safe im lặng
+            CrashReportService.ClearPendingCrashReport();
+        }
     }
 
     // ── Window configuration ─────────────────────────────────

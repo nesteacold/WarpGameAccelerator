@@ -614,3 +614,8 @@ C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windo
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\NodeSelectionDialog.g.cs
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\NodeSelectionDialog.xaml
 C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\NodeSelectionDialog.xbf
+C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\bin\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\CrashReportDialog.xbf
+C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\CrashReportDialog.g.i.cs
+C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\CrashReportDialog.g.cs
+C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\CrashReportDialog.xaml
+C:\Users\annh\Documents\AOW_Booster\WarpGameAccelerator\obj\Release\net8.0-windows10.0.19041.0\win-x64\Dialogs\CrashReportDialog.xbf

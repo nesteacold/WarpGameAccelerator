@@ -226,155 +226,157 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
         
         private void InitTypeTables()
         {
-            _typeNameTable = new string[73];
+            _typeNameTable = new string[74];
             _typeNameTable[0] = "Microsoft.UI.Xaml.Controls.XamlControlsResources";
             _typeNameTable[1] = "Microsoft.UI.Xaml.ResourceDictionary";
             _typeNameTable[2] = "Object";
             _typeNameTable[3] = "Boolean";
-            _typeNameTable[4] = "WarpGameAccelerator.Dialogs.NodeSelectionDialog";
+            _typeNameTable[4] = "WarpGameAccelerator.Dialogs.CrashReportDialog";
             _typeNameTable[5] = "Microsoft.UI.Xaml.Controls.ContentDialog";
             _typeNameTable[6] = "Microsoft.UI.Xaml.Controls.ContentControl";
-            _typeNameTable[7] = "WarpGameAccelerator.Models.GameNode";
-            _typeNameTable[8] = "Microsoft.UI.Xaml.Controls.NavigationView";
-            _typeNameTable[9] = "Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode";
-            _typeNameTable[10] = "System.Enum";
-            _typeNameTable[11] = "System.ValueType";
-            _typeNameTable[12] = "Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible";
-            _typeNameTable[13] = "Double";
-            _typeNameTable[14] = "System.Collections.Generic.IList`1<Object>";
-            _typeNameTable[15] = "Microsoft.UI.Xaml.Controls.AutoSuggestBox";
-            _typeNameTable[16] = "Microsoft.UI.Xaml.UIElement";
-            _typeNameTable[17] = "Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode";
-            _typeNameTable[18] = "Microsoft.UI.Xaml.DataTemplate";
-            _typeNameTable[19] = "Microsoft.UI.Xaml.Style";
-            _typeNameTable[20] = "Microsoft.UI.Xaml.Controls.StyleSelector";
-            _typeNameTable[21] = "Microsoft.UI.Xaml.Controls.DataTemplateSelector";
-            _typeNameTable[22] = "Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode";
-            _typeNameTable[23] = "String";
-            _typeNameTable[24] = "Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus";
-            _typeNameTable[25] = "Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled";
-            _typeNameTable[26] = "Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings";
-            _typeNameTable[27] = "Microsoft.UI.Xaml.DependencyObject";
-            _typeNameTable[28] = "Microsoft.UI.Xaml.Controls.NavigationViewItem";
-            _typeNameTable[29] = "Microsoft.UI.Xaml.Controls.NavigationViewItemBase";
-            _typeNameTable[30] = "Microsoft.UI.Xaml.Controls.IconElement";
-            _typeNameTable[31] = "Microsoft.UI.Xaml.Controls.InfoBadge";
-            _typeNameTable[32] = "Microsoft.UI.Xaml.Controls.Control";
-            _typeNameTable[33] = "WarpGameAccelerator.MainWindow";
-            _typeNameTable[34] = "Microsoft.UI.Xaml.Window";
-            _typeNameTable[35] = "WarpGameAccelerator.Converters.BoolToVisibilityConverter";
-            _typeNameTable[36] = "WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter";
-            _typeNameTable[37] = "WarpGameAccelerator.Converters.PingColorConverter";
-            _typeNameTable[38] = "Microsoft.UI.Xaml.Controls.InfoBar";
-            _typeNameTable[39] = "Microsoft.UI.Xaml.Controls.InfoBarSeverity";
-            _typeNameTable[40] = "Microsoft.UI.Xaml.Controls.Primitives.ButtonBase";
-            _typeNameTable[41] = "System.Windows.Input.ICommand";
-            _typeNameTable[42] = "Microsoft.UI.Xaml.Controls.IconSource";
-            _typeNameTable[43] = "Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings";
-            _typeNameTable[44] = "Microsoft.UI.Xaml.Controls.Button";
-            _typeNameTable[45] = "Microsoft.UI.Xaml.Controls.ProgressRing";
-            _typeNameTable[46] = "Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings";
-            _typeNameTable[47] = "Microsoft.UI.Xaml.Media.RadialGradientBrush";
-            _typeNameTable[48] = "Microsoft.UI.Xaml.Media.XamlCompositionBrushBase";
-            _typeNameTable[49] = "Windows.Foundation.Collections.IObservableVector`1<Microsoft.UI.Xaml.Media.GradientStop>";
-            _typeNameTable[50] = "Microsoft.UI.Xaml.Media.GradientStop";
-            _typeNameTable[51] = "Windows.Foundation.Point";
-            _typeNameTable[52] = "Microsoft.UI.Composition.CompositionColorSpace";
-            _typeNameTable[53] = "Microsoft.UI.Xaml.Media.BrushMappingMode";
-            _typeNameTable[54] = "Microsoft.UI.Xaml.Media.GradientSpreadMethod";
-            _typeNameTable[55] = "WarpGameAccelerator.Views.DashboardPage";
-            _typeNameTable[56] = "Microsoft.UI.Xaml.Controls.Page";
-            _typeNameTable[57] = "Microsoft.UI.Xaml.Controls.UserControl";
-            _typeNameTable[58] = "WarpGameAccelerator.ViewModels.DashboardViewModel";
-            _typeNameTable[59] = "CommunityToolkit.Mvvm.ComponentModel.ObservableObject";
-            _typeNameTable[60] = "WarpGameAccelerator.Services.LocalizationService";
-            _typeNameTable[61] = "WarpGameAccelerator.Views.MultiClientPage";
-            _typeNameTable[62] = "WarpGameAccelerator.Views.ProcessPickerPage";
-            _typeNameTable[63] = "WarpGameAccelerator.ViewModels.ProcessPickerViewModel";
-            _typeNameTable[64] = "System.Collections.ObjectModel.ObservableCollection`1<WarpGameAccelerator.Models.GameProcess>";
-            _typeNameTable[65] = "System.Collections.ObjectModel.Collection`1<WarpGameAccelerator.Models.GameProcess>";
-            _typeNameTable[66] = "WarpGameAccelerator.Models.GameProcess";
-            _typeNameTable[67] = "Int32";
-            _typeNameTable[68] = "WarpGameAccelerator.Views.SettingsPage";
-            _typeNameTable[69] = "WarpGameAccelerator.ViewModels.SettingsViewModel";
-            _typeNameTable[70] = "WarpGameAccelerator.Views.WarpAccountPage";
-            _typeNameTable[71] = "Microsoft.UI.Xaml.Controls.TreeViewNode";
-            _typeNameTable[72] = "System.Collections.Generic.IList`1<Microsoft.UI.Xaml.Controls.TreeViewNode>";
+            _typeNameTable[7] = "WarpGameAccelerator.Dialogs.NodeSelectionDialog";
+            _typeNameTable[8] = "WarpGameAccelerator.Models.GameNode";
+            _typeNameTable[9] = "Microsoft.UI.Xaml.Controls.NavigationView";
+            _typeNameTable[10] = "Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode";
+            _typeNameTable[11] = "System.Enum";
+            _typeNameTable[12] = "System.ValueType";
+            _typeNameTable[13] = "Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible";
+            _typeNameTable[14] = "Double";
+            _typeNameTable[15] = "System.Collections.Generic.IList`1<Object>";
+            _typeNameTable[16] = "Microsoft.UI.Xaml.Controls.AutoSuggestBox";
+            _typeNameTable[17] = "Microsoft.UI.Xaml.UIElement";
+            _typeNameTable[18] = "Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode";
+            _typeNameTable[19] = "Microsoft.UI.Xaml.DataTemplate";
+            _typeNameTable[20] = "Microsoft.UI.Xaml.Style";
+            _typeNameTable[21] = "Microsoft.UI.Xaml.Controls.StyleSelector";
+            _typeNameTable[22] = "Microsoft.UI.Xaml.Controls.DataTemplateSelector";
+            _typeNameTable[23] = "Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode";
+            _typeNameTable[24] = "String";
+            _typeNameTable[25] = "Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus";
+            _typeNameTable[26] = "Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled";
+            _typeNameTable[27] = "Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings";
+            _typeNameTable[28] = "Microsoft.UI.Xaml.DependencyObject";
+            _typeNameTable[29] = "Microsoft.UI.Xaml.Controls.NavigationViewItem";
+            _typeNameTable[30] = "Microsoft.UI.Xaml.Controls.NavigationViewItemBase";
+            _typeNameTable[31] = "Microsoft.UI.Xaml.Controls.IconElement";
+            _typeNameTable[32] = "Microsoft.UI.Xaml.Controls.InfoBadge";
+            _typeNameTable[33] = "Microsoft.UI.Xaml.Controls.Control";
+            _typeNameTable[34] = "WarpGameAccelerator.MainWindow";
+            _typeNameTable[35] = "Microsoft.UI.Xaml.Window";
+            _typeNameTable[36] = "WarpGameAccelerator.Converters.BoolToVisibilityConverter";
+            _typeNameTable[37] = "WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter";
+            _typeNameTable[38] = "WarpGameAccelerator.Converters.PingColorConverter";
+            _typeNameTable[39] = "Microsoft.UI.Xaml.Controls.InfoBar";
+            _typeNameTable[40] = "Microsoft.UI.Xaml.Controls.InfoBarSeverity";
+            _typeNameTable[41] = "Microsoft.UI.Xaml.Controls.Primitives.ButtonBase";
+            _typeNameTable[42] = "System.Windows.Input.ICommand";
+            _typeNameTable[43] = "Microsoft.UI.Xaml.Controls.IconSource";
+            _typeNameTable[44] = "Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings";
+            _typeNameTable[45] = "Microsoft.UI.Xaml.Controls.Button";
+            _typeNameTable[46] = "Microsoft.UI.Xaml.Controls.ProgressRing";
+            _typeNameTable[47] = "Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings";
+            _typeNameTable[48] = "Microsoft.UI.Xaml.Media.RadialGradientBrush";
+            _typeNameTable[49] = "Microsoft.UI.Xaml.Media.XamlCompositionBrushBase";
+            _typeNameTable[50] = "Windows.Foundation.Collections.IObservableVector`1<Microsoft.UI.Xaml.Media.GradientStop>";
+            _typeNameTable[51] = "Microsoft.UI.Xaml.Media.GradientStop";
+            _typeNameTable[52] = "Windows.Foundation.Point";
+            _typeNameTable[53] = "Microsoft.UI.Composition.CompositionColorSpace";
+            _typeNameTable[54] = "Microsoft.UI.Xaml.Media.BrushMappingMode";
+            _typeNameTable[55] = "Microsoft.UI.Xaml.Media.GradientSpreadMethod";
+            _typeNameTable[56] = "WarpGameAccelerator.Views.DashboardPage";
+            _typeNameTable[57] = "Microsoft.UI.Xaml.Controls.Page";
+            _typeNameTable[58] = "Microsoft.UI.Xaml.Controls.UserControl";
+            _typeNameTable[59] = "WarpGameAccelerator.ViewModels.DashboardViewModel";
+            _typeNameTable[60] = "CommunityToolkit.Mvvm.ComponentModel.ObservableObject";
+            _typeNameTable[61] = "WarpGameAccelerator.Services.LocalizationService";
+            _typeNameTable[62] = "WarpGameAccelerator.Views.MultiClientPage";
+            _typeNameTable[63] = "WarpGameAccelerator.Views.ProcessPickerPage";
+            _typeNameTable[64] = "WarpGameAccelerator.ViewModels.ProcessPickerViewModel";
+            _typeNameTable[65] = "System.Collections.ObjectModel.ObservableCollection`1<WarpGameAccelerator.Models.GameProcess>";
+            _typeNameTable[66] = "System.Collections.ObjectModel.Collection`1<WarpGameAccelerator.Models.GameProcess>";
+            _typeNameTable[67] = "WarpGameAccelerator.Models.GameProcess";
+            _typeNameTable[68] = "Int32";
+            _typeNameTable[69] = "WarpGameAccelerator.Views.SettingsPage";
+            _typeNameTable[70] = "WarpGameAccelerator.ViewModels.SettingsViewModel";
+            _typeNameTable[71] = "WarpGameAccelerator.Views.WarpAccountPage";
+            _typeNameTable[72] = "Microsoft.UI.Xaml.Controls.TreeViewNode";
+            _typeNameTable[73] = "System.Collections.Generic.IList`1<Microsoft.UI.Xaml.Controls.TreeViewNode>";
 
-            _typeTable = new global::System.Type[73];
+            _typeTable = new global::System.Type[74];
             _typeTable[0] = typeof(global::Microsoft.UI.Xaml.Controls.XamlControlsResources);
             _typeTable[1] = typeof(global::Microsoft.UI.Xaml.ResourceDictionary);
             _typeTable[2] = typeof(global::System.Object);
             _typeTable[3] = typeof(global::System.Boolean);
-            _typeTable[4] = typeof(global::WarpGameAccelerator.Dialogs.NodeSelectionDialog);
+            _typeTable[4] = typeof(global::WarpGameAccelerator.Dialogs.CrashReportDialog);
             _typeTable[5] = typeof(global::Microsoft.UI.Xaml.Controls.ContentDialog);
             _typeTable[6] = typeof(global::Microsoft.UI.Xaml.Controls.ContentControl);
-            _typeTable[7] = typeof(global::WarpGameAccelerator.Models.GameNode);
-            _typeTable[8] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationView);
-            _typeTable[9] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode);
-            _typeTable[10] = typeof(global::System.Enum);
-            _typeTable[11] = typeof(global::System.ValueType);
-            _typeTable[12] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible);
-            _typeTable[13] = typeof(global::System.Double);
-            _typeTable[14] = typeof(global::System.Collections.Generic.IList<global::System.Object>);
-            _typeTable[15] = typeof(global::Microsoft.UI.Xaml.Controls.AutoSuggestBox);
-            _typeTable[16] = typeof(global::Microsoft.UI.Xaml.UIElement);
-            _typeTable[17] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode);
-            _typeTable[18] = typeof(global::Microsoft.UI.Xaml.DataTemplate);
-            _typeTable[19] = typeof(global::Microsoft.UI.Xaml.Style);
-            _typeTable[20] = typeof(global::Microsoft.UI.Xaml.Controls.StyleSelector);
-            _typeTable[21] = typeof(global::Microsoft.UI.Xaml.Controls.DataTemplateSelector);
-            _typeTable[22] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode);
-            _typeTable[23] = typeof(global::System.String);
-            _typeTable[24] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus);
-            _typeTable[25] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled);
-            _typeTable[26] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings);
-            _typeTable[27] = typeof(global::Microsoft.UI.Xaml.DependencyObject);
-            _typeTable[28] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItem);
-            _typeTable[29] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItemBase);
-            _typeTable[30] = typeof(global::Microsoft.UI.Xaml.Controls.IconElement);
-            _typeTable[31] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBadge);
-            _typeTable[32] = typeof(global::Microsoft.UI.Xaml.Controls.Control);
-            _typeTable[33] = typeof(global::WarpGameAccelerator.MainWindow);
-            _typeTable[34] = typeof(global::Microsoft.UI.Xaml.Window);
-            _typeTable[35] = typeof(global::WarpGameAccelerator.Converters.BoolToVisibilityConverter);
-            _typeTable[36] = typeof(global::WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter);
-            _typeTable[37] = typeof(global::WarpGameAccelerator.Converters.PingColorConverter);
-            _typeTable[38] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBar);
-            _typeTable[39] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBarSeverity);
-            _typeTable[40] = typeof(global::Microsoft.UI.Xaml.Controls.Primitives.ButtonBase);
-            _typeTable[41] = typeof(global::System.Windows.Input.ICommand);
-            _typeTable[42] = typeof(global::Microsoft.UI.Xaml.Controls.IconSource);
-            _typeTable[43] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings);
-            _typeTable[44] = typeof(global::Microsoft.UI.Xaml.Controls.Button);
-            _typeTable[45] = typeof(global::Microsoft.UI.Xaml.Controls.ProgressRing);
-            _typeTable[46] = typeof(global::Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings);
-            _typeTable[47] = typeof(global::Microsoft.UI.Xaml.Media.RadialGradientBrush);
-            _typeTable[48] = typeof(global::Microsoft.UI.Xaml.Media.XamlCompositionBrushBase);
-            _typeTable[49] = typeof(global::Windows.Foundation.Collections.IObservableVector<global::Microsoft.UI.Xaml.Media.GradientStop>);
-            _typeTable[50] = typeof(global::Microsoft.UI.Xaml.Media.GradientStop);
-            _typeTable[51] = typeof(global::Windows.Foundation.Point);
-            _typeTable[52] = typeof(global::Microsoft.UI.Composition.CompositionColorSpace);
-            _typeTable[53] = typeof(global::Microsoft.UI.Xaml.Media.BrushMappingMode);
-            _typeTable[54] = typeof(global::Microsoft.UI.Xaml.Media.GradientSpreadMethod);
-            _typeTable[55] = typeof(global::WarpGameAccelerator.Views.DashboardPage);
-            _typeTable[56] = typeof(global::Microsoft.UI.Xaml.Controls.Page);
-            _typeTable[57] = typeof(global::Microsoft.UI.Xaml.Controls.UserControl);
-            _typeTable[58] = typeof(global::WarpGameAccelerator.ViewModels.DashboardViewModel);
-            _typeTable[59] = typeof(global::CommunityToolkit.Mvvm.ComponentModel.ObservableObject);
-            _typeTable[60] = typeof(global::WarpGameAccelerator.Services.LocalizationService);
-            _typeTable[61] = typeof(global::WarpGameAccelerator.Views.MultiClientPage);
-            _typeTable[62] = typeof(global::WarpGameAccelerator.Views.ProcessPickerPage);
-            _typeTable[63] = typeof(global::WarpGameAccelerator.ViewModels.ProcessPickerViewModel);
-            _typeTable[64] = typeof(global::System.Collections.ObjectModel.ObservableCollection<global::WarpGameAccelerator.Models.GameProcess>);
-            _typeTable[65] = typeof(global::System.Collections.ObjectModel.Collection<global::WarpGameAccelerator.Models.GameProcess>);
-            _typeTable[66] = typeof(global::WarpGameAccelerator.Models.GameProcess);
-            _typeTable[67] = typeof(global::System.Int32);
-            _typeTable[68] = typeof(global::WarpGameAccelerator.Views.SettingsPage);
-            _typeTable[69] = typeof(global::WarpGameAccelerator.ViewModels.SettingsViewModel);
-            _typeTable[70] = typeof(global::WarpGameAccelerator.Views.WarpAccountPage);
-            _typeTable[71] = typeof(global::Microsoft.UI.Xaml.Controls.TreeViewNode);
-            _typeTable[72] = typeof(global::System.Collections.Generic.IList<global::Microsoft.UI.Xaml.Controls.TreeViewNode>);
+            _typeTable[7] = typeof(global::WarpGameAccelerator.Dialogs.NodeSelectionDialog);
+            _typeTable[8] = typeof(global::WarpGameAccelerator.Models.GameNode);
+            _typeTable[9] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationView);
+            _typeTable[10] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode);
+            _typeTable[11] = typeof(global::System.Enum);
+            _typeTable[12] = typeof(global::System.ValueType);
+            _typeTable[13] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible);
+            _typeTable[14] = typeof(global::System.Double);
+            _typeTable[15] = typeof(global::System.Collections.Generic.IList<global::System.Object>);
+            _typeTable[16] = typeof(global::Microsoft.UI.Xaml.Controls.AutoSuggestBox);
+            _typeTable[17] = typeof(global::Microsoft.UI.Xaml.UIElement);
+            _typeTable[18] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode);
+            _typeTable[19] = typeof(global::Microsoft.UI.Xaml.DataTemplate);
+            _typeTable[20] = typeof(global::Microsoft.UI.Xaml.Style);
+            _typeTable[21] = typeof(global::Microsoft.UI.Xaml.Controls.StyleSelector);
+            _typeTable[22] = typeof(global::Microsoft.UI.Xaml.Controls.DataTemplateSelector);
+            _typeTable[23] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode);
+            _typeTable[24] = typeof(global::System.String);
+            _typeTable[25] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus);
+            _typeTable[26] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled);
+            _typeTable[27] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings);
+            _typeTable[28] = typeof(global::Microsoft.UI.Xaml.DependencyObject);
+            _typeTable[29] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItem);
+            _typeTable[30] = typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItemBase);
+            _typeTable[31] = typeof(global::Microsoft.UI.Xaml.Controls.IconElement);
+            _typeTable[32] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBadge);
+            _typeTable[33] = typeof(global::Microsoft.UI.Xaml.Controls.Control);
+            _typeTable[34] = typeof(global::WarpGameAccelerator.MainWindow);
+            _typeTable[35] = typeof(global::Microsoft.UI.Xaml.Window);
+            _typeTable[36] = typeof(global::WarpGameAccelerator.Converters.BoolToVisibilityConverter);
+            _typeTable[37] = typeof(global::WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter);
+            _typeTable[38] = typeof(global::WarpGameAccelerator.Converters.PingColorConverter);
+            _typeTable[39] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBar);
+            _typeTable[40] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBarSeverity);
+            _typeTable[41] = typeof(global::Microsoft.UI.Xaml.Controls.Primitives.ButtonBase);
+            _typeTable[42] = typeof(global::System.Windows.Input.ICommand);
+            _typeTable[43] = typeof(global::Microsoft.UI.Xaml.Controls.IconSource);
+            _typeTable[44] = typeof(global::Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings);
+            _typeTable[45] = typeof(global::Microsoft.UI.Xaml.Controls.Button);
+            _typeTable[46] = typeof(global::Microsoft.UI.Xaml.Controls.ProgressRing);
+            _typeTable[47] = typeof(global::Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings);
+            _typeTable[48] = typeof(global::Microsoft.UI.Xaml.Media.RadialGradientBrush);
+            _typeTable[49] = typeof(global::Microsoft.UI.Xaml.Media.XamlCompositionBrushBase);
+            _typeTable[50] = typeof(global::Windows.Foundation.Collections.IObservableVector<global::Microsoft.UI.Xaml.Media.GradientStop>);
+            _typeTable[51] = typeof(global::Microsoft.UI.Xaml.Media.GradientStop);
+            _typeTable[52] = typeof(global::Windows.Foundation.Point);
+            _typeTable[53] = typeof(global::Microsoft.UI.Composition.CompositionColorSpace);
+            _typeTable[54] = typeof(global::Microsoft.UI.Xaml.Media.BrushMappingMode);
+            _typeTable[55] = typeof(global::Microsoft.UI.Xaml.Media.GradientSpreadMethod);
+            _typeTable[56] = typeof(global::WarpGameAccelerator.Views.DashboardPage);
+            _typeTable[57] = typeof(global::Microsoft.UI.Xaml.Controls.Page);
+            _typeTable[58] = typeof(global::Microsoft.UI.Xaml.Controls.UserControl);
+            _typeTable[59] = typeof(global::WarpGameAccelerator.ViewModels.DashboardViewModel);
+            _typeTable[60] = typeof(global::CommunityToolkit.Mvvm.ComponentModel.ObservableObject);
+            _typeTable[61] = typeof(global::WarpGameAccelerator.Services.LocalizationService);
+            _typeTable[62] = typeof(global::WarpGameAccelerator.Views.MultiClientPage);
+            _typeTable[63] = typeof(global::WarpGameAccelerator.Views.ProcessPickerPage);
+            _typeTable[64] = typeof(global::WarpGameAccelerator.ViewModels.ProcessPickerViewModel);
+            _typeTable[65] = typeof(global::System.Collections.ObjectModel.ObservableCollection<global::WarpGameAccelerator.Models.GameProcess>);
+            _typeTable[66] = typeof(global::System.Collections.ObjectModel.Collection<global::WarpGameAccelerator.Models.GameProcess>);
+            _typeTable[67] = typeof(global::WarpGameAccelerator.Models.GameProcess);
+            _typeTable[68] = typeof(global::System.Int32);
+            _typeTable[69] = typeof(global::WarpGameAccelerator.Views.SettingsPage);
+            _typeTable[70] = typeof(global::WarpGameAccelerator.ViewModels.SettingsViewModel);
+            _typeTable[71] = typeof(global::WarpGameAccelerator.Views.WarpAccountPage);
+            _typeTable[72] = typeof(global::Microsoft.UI.Xaml.Controls.TreeViewNode);
+            _typeTable[73] = typeof(global::System.Collections.Generic.IList<global::Microsoft.UI.Xaml.Controls.TreeViewNode>);
         }
 
         private int LookupTypeIndexByName(string typeName)
@@ -410,74 +412,75 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
         }
 
         private object Activate_0_XamlControlsResources() { return new global::Microsoft.UI.Xaml.Controls.XamlControlsResources(); }
-        private object Activate_4_NodeSelectionDialog() { return new global::WarpGameAccelerator.Dialogs.NodeSelectionDialog(); }
-        private object Activate_7_GameNode() { return new global::WarpGameAccelerator.Models.GameNode(); }
-        private object Activate_8_NavigationView() { return new global::Microsoft.UI.Xaml.Controls.NavigationView(); }
-        private object Activate_26_NavigationViewTemplateSettings() { return new global::Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings(); }
-        private object Activate_28_NavigationViewItem() { return new global::Microsoft.UI.Xaml.Controls.NavigationViewItem(); }
-        private object Activate_31_InfoBadge() { return new global::Microsoft.UI.Xaml.Controls.InfoBadge(); }
-        private object Activate_35_BoolToVisibilityConverter() { return new global::WarpGameAccelerator.Converters.BoolToVisibilityConverter(); }
-        private object Activate_36_InverseBoolToVisibilityConverter() { return new global::WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter(); }
-        private object Activate_37_PingColorConverter() { return new global::WarpGameAccelerator.Converters.PingColorConverter(); }
-        private object Activate_38_InfoBar() { return new global::Microsoft.UI.Xaml.Controls.InfoBar(); }
-        private object Activate_43_InfoBarTemplateSettings() { return new global::Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings(); }
-        private object Activate_45_ProgressRing() { return new global::Microsoft.UI.Xaml.Controls.ProgressRing(); }
-        private object Activate_47_RadialGradientBrush() { return new global::Microsoft.UI.Xaml.Media.RadialGradientBrush(); }
-        private object Activate_55_DashboardPage() { return new global::WarpGameAccelerator.Views.DashboardPage(); }
-        private object Activate_60_LocalizationService() { return new global::WarpGameAccelerator.Services.LocalizationService(); }
-        private object Activate_61_MultiClientPage() { return new global::WarpGameAccelerator.Views.MultiClientPage(); }
-        private object Activate_62_ProcessPickerPage() { return new global::WarpGameAccelerator.Views.ProcessPickerPage(); }
-        private object Activate_64_ObservableCollection() { return new global::System.Collections.ObjectModel.ObservableCollection<global::WarpGameAccelerator.Models.GameProcess>(); }
-        private object Activate_65_Collection() { return new global::System.Collections.ObjectModel.Collection<global::WarpGameAccelerator.Models.GameProcess>(); }
-        private object Activate_66_GameProcess() { return new global::WarpGameAccelerator.Models.GameProcess(); }
-        private object Activate_68_SettingsPage() { return new global::WarpGameAccelerator.Views.SettingsPage(); }
-        private object Activate_70_WarpAccountPage() { return new global::WarpGameAccelerator.Views.WarpAccountPage(); }
-        private object Activate_71_TreeViewNode() { return new global::Microsoft.UI.Xaml.Controls.TreeViewNode(); }
+        private object Activate_7_NodeSelectionDialog() { return new global::WarpGameAccelerator.Dialogs.NodeSelectionDialog(); }
+        private object Activate_8_GameNode() { return new global::WarpGameAccelerator.Models.GameNode(); }
+        private object Activate_9_NavigationView() { return new global::Microsoft.UI.Xaml.Controls.NavigationView(); }
+        private object Activate_27_NavigationViewTemplateSettings() { return new global::Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings(); }
+        private object Activate_29_NavigationViewItem() { return new global::Microsoft.UI.Xaml.Controls.NavigationViewItem(); }
+        private object Activate_32_InfoBadge() { return new global::Microsoft.UI.Xaml.Controls.InfoBadge(); }
+        private object Activate_36_BoolToVisibilityConverter() { return new global::WarpGameAccelerator.Converters.BoolToVisibilityConverter(); }
+        private object Activate_37_InverseBoolToVisibilityConverter() { return new global::WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter(); }
+        private object Activate_38_PingColorConverter() { return new global::WarpGameAccelerator.Converters.PingColorConverter(); }
+        private object Activate_39_InfoBar() { return new global::Microsoft.UI.Xaml.Controls.InfoBar(); }
+        private object Activate_44_InfoBarTemplateSettings() { return new global::Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings(); }
+        private object Activate_46_ProgressRing() { return new global::Microsoft.UI.Xaml.Controls.ProgressRing(); }
+        private object Activate_48_RadialGradientBrush() { return new global::Microsoft.UI.Xaml.Media.RadialGradientBrush(); }
+        private object Activate_56_DashboardPage() { return new global::WarpGameAccelerator.Views.DashboardPage(); }
+        private object Activate_61_LocalizationService() { return new global::WarpGameAccelerator.Services.LocalizationService(); }
+        private object Activate_62_MultiClientPage() { return new global::WarpGameAccelerator.Views.MultiClientPage(); }
+        private object Activate_63_ProcessPickerPage() { return new global::WarpGameAccelerator.Views.ProcessPickerPage(); }
+        private object Activate_65_ObservableCollection() { return new global::System.Collections.ObjectModel.ObservableCollection<global::WarpGameAccelerator.Models.GameProcess>(); }
+        private object Activate_66_Collection() { return new global::System.Collections.ObjectModel.Collection<global::WarpGameAccelerator.Models.GameProcess>(); }
+        private object Activate_67_GameProcess() { return new global::WarpGameAccelerator.Models.GameProcess(); }
+        private object Activate_69_SettingsPage() { return new global::WarpGameAccelerator.Views.SettingsPage(); }
+        private object Activate_71_WarpAccountPage() { return new global::WarpGameAccelerator.Views.WarpAccountPage(); }
+        private object Activate_72_TreeViewNode() { return new global::Microsoft.UI.Xaml.Controls.TreeViewNode(); }
         private void StaticInitializer_0_XamlControlsResources() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.XamlControlsResources).TypeHandle);
-        private void StaticInitializer_4_NodeSelectionDialog() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Dialogs.NodeSelectionDialog).TypeHandle);
-        private void StaticInitializer_7_GameNode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Models.GameNode).TypeHandle);
-        private void StaticInitializer_8_NavigationView() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationView).TypeHandle);
-        private void StaticInitializer_9_NavigationViewPaneDisplayMode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode).TypeHandle);
-        private void StaticInitializer_10_Enum() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Enum).TypeHandle);
-        private void StaticInitializer_11_ValueType() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.ValueType).TypeHandle);
-        private void StaticInitializer_12_NavigationViewBackButtonVisible() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible).TypeHandle);
-        private void StaticInitializer_14_IList() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.Generic.IList<global::System.Object>).TypeHandle);
-        private void StaticInitializer_17_NavigationViewDisplayMode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode).TypeHandle);
-        private void StaticInitializer_22_NavigationViewOverflowLabelMode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode).TypeHandle);
-        private void StaticInitializer_24_NavigationViewSelectionFollowsFocus() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus).TypeHandle);
-        private void StaticInitializer_25_NavigationViewShoulderNavigationEnabled() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled).TypeHandle);
-        private void StaticInitializer_26_NavigationViewTemplateSettings() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings).TypeHandle);
-        private void StaticInitializer_28_NavigationViewItem() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItem).TypeHandle);
-        private void StaticInitializer_29_NavigationViewItemBase() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItemBase).TypeHandle);
-        private void StaticInitializer_31_InfoBadge() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBadge).TypeHandle);
-        private void StaticInitializer_33_MainWindow() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.MainWindow).TypeHandle);
-        private void StaticInitializer_35_BoolToVisibilityConverter() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Converters.BoolToVisibilityConverter).TypeHandle);
-        private void StaticInitializer_36_InverseBoolToVisibilityConverter() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter).TypeHandle);
-        private void StaticInitializer_37_PingColorConverter() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Converters.PingColorConverter).TypeHandle);
-        private void StaticInitializer_38_InfoBar() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBar).TypeHandle);
-        private void StaticInitializer_39_InfoBarSeverity() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBarSeverity).TypeHandle);
-        private void StaticInitializer_41_ICommand() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Windows.Input.ICommand).TypeHandle);
-        private void StaticInitializer_43_InfoBarTemplateSettings() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings).TypeHandle);
-        private void StaticInitializer_45_ProgressRing() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.ProgressRing).TypeHandle);
-        private void StaticInitializer_46_ProgressRingTemplateSettings() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings).TypeHandle);
-        private void StaticInitializer_47_RadialGradientBrush() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Media.RadialGradientBrush).TypeHandle);
-        private void StaticInitializer_49_IObservableVector() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Windows.Foundation.Collections.IObservableVector<global::Microsoft.UI.Xaml.Media.GradientStop>).TypeHandle);
-        private void StaticInitializer_52_CompositionColorSpace() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Composition.CompositionColorSpace).TypeHandle);
-        private void StaticInitializer_55_DashboardPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.DashboardPage).TypeHandle);
-        private void StaticInitializer_58_DashboardViewModel() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.ViewModels.DashboardViewModel).TypeHandle);
-        private void StaticInitializer_59_ObservableObject() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::CommunityToolkit.Mvvm.ComponentModel.ObservableObject).TypeHandle);
-        private void StaticInitializer_60_LocalizationService() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Services.LocalizationService).TypeHandle);
-        private void StaticInitializer_61_MultiClientPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.MultiClientPage).TypeHandle);
-        private void StaticInitializer_62_ProcessPickerPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.ProcessPickerPage).TypeHandle);
-        private void StaticInitializer_63_ProcessPickerViewModel() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.ViewModels.ProcessPickerViewModel).TypeHandle);
-        private void StaticInitializer_64_ObservableCollection() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.ObjectModel.ObservableCollection<global::WarpGameAccelerator.Models.GameProcess>).TypeHandle);
-        private void StaticInitializer_65_Collection() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.ObjectModel.Collection<global::WarpGameAccelerator.Models.GameProcess>).TypeHandle);
-        private void StaticInitializer_66_GameProcess() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Models.GameProcess).TypeHandle);
-        private void StaticInitializer_68_SettingsPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.SettingsPage).TypeHandle);
-        private void StaticInitializer_69_SettingsViewModel() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.ViewModels.SettingsViewModel).TypeHandle);
-        private void StaticInitializer_70_WarpAccountPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.WarpAccountPage).TypeHandle);
-        private void StaticInitializer_71_TreeViewNode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.TreeViewNode).TypeHandle);
-        private void StaticInitializer_72_IList() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.Generic.IList<global::Microsoft.UI.Xaml.Controls.TreeViewNode>).TypeHandle);
+        private void StaticInitializer_4_CrashReportDialog() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Dialogs.CrashReportDialog).TypeHandle);
+        private void StaticInitializer_7_NodeSelectionDialog() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Dialogs.NodeSelectionDialog).TypeHandle);
+        private void StaticInitializer_8_GameNode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Models.GameNode).TypeHandle);
+        private void StaticInitializer_9_NavigationView() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationView).TypeHandle);
+        private void StaticInitializer_10_NavigationViewPaneDisplayMode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode).TypeHandle);
+        private void StaticInitializer_11_Enum() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Enum).TypeHandle);
+        private void StaticInitializer_12_ValueType() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.ValueType).TypeHandle);
+        private void StaticInitializer_13_NavigationViewBackButtonVisible() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible).TypeHandle);
+        private void StaticInitializer_15_IList() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.Generic.IList<global::System.Object>).TypeHandle);
+        private void StaticInitializer_18_NavigationViewDisplayMode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode).TypeHandle);
+        private void StaticInitializer_23_NavigationViewOverflowLabelMode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode).TypeHandle);
+        private void StaticInitializer_25_NavigationViewSelectionFollowsFocus() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus).TypeHandle);
+        private void StaticInitializer_26_NavigationViewShoulderNavigationEnabled() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled).TypeHandle);
+        private void StaticInitializer_27_NavigationViewTemplateSettings() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings).TypeHandle);
+        private void StaticInitializer_29_NavigationViewItem() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItem).TypeHandle);
+        private void StaticInitializer_30_NavigationViewItemBase() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.NavigationViewItemBase).TypeHandle);
+        private void StaticInitializer_32_InfoBadge() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBadge).TypeHandle);
+        private void StaticInitializer_34_MainWindow() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.MainWindow).TypeHandle);
+        private void StaticInitializer_36_BoolToVisibilityConverter() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Converters.BoolToVisibilityConverter).TypeHandle);
+        private void StaticInitializer_37_InverseBoolToVisibilityConverter() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter).TypeHandle);
+        private void StaticInitializer_38_PingColorConverter() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Converters.PingColorConverter).TypeHandle);
+        private void StaticInitializer_39_InfoBar() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBar).TypeHandle);
+        private void StaticInitializer_40_InfoBarSeverity() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBarSeverity).TypeHandle);
+        private void StaticInitializer_42_ICommand() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Windows.Input.ICommand).TypeHandle);
+        private void StaticInitializer_44_InfoBarTemplateSettings() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings).TypeHandle);
+        private void StaticInitializer_46_ProgressRing() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.ProgressRing).TypeHandle);
+        private void StaticInitializer_47_ProgressRingTemplateSettings() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings).TypeHandle);
+        private void StaticInitializer_48_RadialGradientBrush() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Media.RadialGradientBrush).TypeHandle);
+        private void StaticInitializer_50_IObservableVector() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Windows.Foundation.Collections.IObservableVector<global::Microsoft.UI.Xaml.Media.GradientStop>).TypeHandle);
+        private void StaticInitializer_53_CompositionColorSpace() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Composition.CompositionColorSpace).TypeHandle);
+        private void StaticInitializer_56_DashboardPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.DashboardPage).TypeHandle);
+        private void StaticInitializer_59_DashboardViewModel() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.ViewModels.DashboardViewModel).TypeHandle);
+        private void StaticInitializer_60_ObservableObject() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::CommunityToolkit.Mvvm.ComponentModel.ObservableObject).TypeHandle);
+        private void StaticInitializer_61_LocalizationService() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Services.LocalizationService).TypeHandle);
+        private void StaticInitializer_62_MultiClientPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.MultiClientPage).TypeHandle);
+        private void StaticInitializer_63_ProcessPickerPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.ProcessPickerPage).TypeHandle);
+        private void StaticInitializer_64_ProcessPickerViewModel() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.ViewModels.ProcessPickerViewModel).TypeHandle);
+        private void StaticInitializer_65_ObservableCollection() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.ObjectModel.ObservableCollection<global::WarpGameAccelerator.Models.GameProcess>).TypeHandle);
+        private void StaticInitializer_66_Collection() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.ObjectModel.Collection<global::WarpGameAccelerator.Models.GameProcess>).TypeHandle);
+        private void StaticInitializer_67_GameProcess() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Models.GameProcess).TypeHandle);
+        private void StaticInitializer_69_SettingsPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.SettingsPage).TypeHandle);
+        private void StaticInitializer_70_SettingsViewModel() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.ViewModels.SettingsViewModel).TypeHandle);
+        private void StaticInitializer_71_WarpAccountPage() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::WarpGameAccelerator.Views.WarpAccountPage).TypeHandle);
+        private void StaticInitializer_72_TreeViewNode() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::Microsoft.UI.Xaml.Controls.TreeViewNode).TypeHandle);
+        private void StaticInitializer_73_IList() => global::System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(global::System.Collections.Generic.IList<global::Microsoft.UI.Xaml.Controls.TreeViewNode>).TypeHandle);
         private void MapAdd_0_XamlControlsResources(object instance, object key, object item)
         {
             var collection = (global::System.Collections.Generic.IDictionary<global::System.Object, global::System.Object>)instance;
@@ -485,31 +488,31 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
             var newItem = (global::System.Object)item;
             collection.Add(newKey, newItem);
         }
-        private void VectorAdd_14_IList(object instance, object item)
+        private void VectorAdd_15_IList(object instance, object item)
         {
             var collection = (global::System.Collections.Generic.ICollection<global::System.Object>)instance;
             var newItem = (global::System.Object)item;
             collection.Add(newItem);
         }
-        private void VectorAdd_49_IObservableVector(object instance, object item)
+        private void VectorAdd_50_IObservableVector(object instance, object item)
         {
             var collection = (global::System.Collections.Generic.ICollection<global::Microsoft.UI.Xaml.Media.GradientStop>)instance;
             var newItem = (global::Microsoft.UI.Xaml.Media.GradientStop)item;
             collection.Add(newItem);
         }
-        private void VectorAdd_64_ObservableCollection(object instance, object item)
+        private void VectorAdd_65_ObservableCollection(object instance, object item)
         {
             var collection = (global::System.Collections.Generic.ICollection<global::WarpGameAccelerator.Models.GameProcess>)instance;
             var newItem = (global::WarpGameAccelerator.Models.GameProcess)item;
             collection.Add(newItem);
         }
-        private void VectorAdd_65_Collection(object instance, object item)
+        private void VectorAdd_66_Collection(object instance, object item)
         {
             var collection = (global::System.Collections.Generic.ICollection<global::WarpGameAccelerator.Models.GameProcess>)instance;
             var newItem = (global::WarpGameAccelerator.Models.GameProcess)item;
             collection.Add(newItem);
         }
-        private void VectorAdd_72_IList(object instance, object item)
+        private void VectorAdd_73_IList(object instance, object item)
         {
             var collection = (global::System.Collections.Generic.ICollection<global::Microsoft.UI.Xaml.Controls.TreeViewNode>)instance;
             var newItem = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)item;
@@ -547,11 +550,9 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 4:   //  WarpGameAccelerator.Dialogs.NodeSelectionDialog
+            case 4:   //  WarpGameAccelerator.Dialogs.CrashReportDialog
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.ContentDialog"));
-                userType.Activator = Activate_4_NodeSelectionDialog;
-                userType.StaticInitializer = StaticInitializer_4_NodeSelectionDialog;
-                userType.AddMemberName("SelectedNode");
+                userType.StaticInitializer = StaticInitializer_4_CrashReportDialog;
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
@@ -564,18 +565,27 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 7:   //  WarpGameAccelerator.Models.GameNode
+            case 7:   //  WarpGameAccelerator.Dialogs.NodeSelectionDialog
+                userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.ContentDialog"));
+                userType.Activator = Activate_7_NodeSelectionDialog;
+                userType.StaticInitializer = StaticInitializer_7_NodeSelectionDialog;
+                userType.AddMemberName("SelectedNode");
+                userType.SetIsLocalType();
+                xamlType = userType;
+                break;
+
+            case 8:   //  WarpGameAccelerator.Models.GameNode
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.StaticInitializer = StaticInitializer_7_GameNode;
+                userType.StaticInitializer = StaticInitializer_8_GameNode;
                 userType.SetIsReturnTypeStub();
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 8:   //  Microsoft.UI.Xaml.Controls.NavigationView
+            case 9:   //  Microsoft.UI.Xaml.Controls.NavigationView
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.ContentControl"));
-                userType.Activator = Activate_8_NavigationView;
-                userType.StaticInitializer = StaticInitializer_8_NavigationView;
+                userType.Activator = Activate_9_NavigationView;
+                userType.StaticInitializer = StaticInitializer_9_NavigationView;
                 userType.AddMemberName("PaneDisplayMode");
                 userType.AddMemberName("IsBackButtonVisible");
                 userType.AddMemberName("IsSettingsVisible");
@@ -616,9 +626,9 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 9:   //  Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode
+            case 10:   //  Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_9_NavigationViewPaneDisplayMode;
+                userType.StaticInitializer = StaticInitializer_10_NavigationViewPaneDisplayMode;
                 userType.AddEnumValue("Auto", global::Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode.Auto);
                 userType.AddEnumValue("Left", global::Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode.Left);
                 userType.AddEnumValue("Top", global::Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode.Top);
@@ -627,116 +637,116 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 10:   //  System.Enum
+            case 11:   //  System.Enum
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.ValueType"));
-                userType.StaticInitializer = StaticInitializer_10_Enum;
+                userType.StaticInitializer = StaticInitializer_11_Enum;
                 xamlType = userType;
                 break;
 
-            case 11:   //  System.ValueType
+            case 12:   //  System.ValueType
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.StaticInitializer = StaticInitializer_11_ValueType;
+                userType.StaticInitializer = StaticInitializer_12_ValueType;
                 xamlType = userType;
                 break;
 
-            case 12:   //  Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible
+            case 13:   //  Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_12_NavigationViewBackButtonVisible;
+                userType.StaticInitializer = StaticInitializer_13_NavigationViewBackButtonVisible;
                 userType.AddEnumValue("Collapsed", global::Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible.Collapsed);
                 userType.AddEnumValue("Visible", global::Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible.Visible);
                 userType.AddEnumValue("Auto", global::Microsoft.UI.Xaml.Controls.NavigationViewBackButtonVisible.Auto);
                 xamlType = userType;
                 break;
 
-            case 13:   //  Double
+            case 14:   //  Double
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 14:   //  System.Collections.Generic.IList`1<Object>
+            case 15:   //  System.Collections.Generic.IList`1<Object>
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, null);
-                userType.StaticInitializer = StaticInitializer_14_IList;
-                userType.CollectionAdd = VectorAdd_14_IList;
+                userType.StaticInitializer = StaticInitializer_15_IList;
+                userType.CollectionAdd = VectorAdd_15_IList;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 15:   //  Microsoft.UI.Xaml.Controls.AutoSuggestBox
+            case 16:   //  Microsoft.UI.Xaml.Controls.AutoSuggestBox
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 16:   //  Microsoft.UI.Xaml.UIElement
+            case 17:   //  Microsoft.UI.Xaml.UIElement
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 17:   //  Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode
+            case 18:   //  Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_17_NavigationViewDisplayMode;
+                userType.StaticInitializer = StaticInitializer_18_NavigationViewDisplayMode;
                 userType.AddEnumValue("Minimal", global::Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode.Minimal);
                 userType.AddEnumValue("Compact", global::Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode.Compact);
                 userType.AddEnumValue("Expanded", global::Microsoft.UI.Xaml.Controls.NavigationViewDisplayMode.Expanded);
                 xamlType = userType;
                 break;
 
-            case 18:   //  Microsoft.UI.Xaml.DataTemplate
+            case 19:   //  Microsoft.UI.Xaml.DataTemplate
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 19:   //  Microsoft.UI.Xaml.Style
+            case 20:   //  Microsoft.UI.Xaml.Style
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 20:   //  Microsoft.UI.Xaml.Controls.StyleSelector
+            case 21:   //  Microsoft.UI.Xaml.Controls.StyleSelector
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 21:   //  Microsoft.UI.Xaml.Controls.DataTemplateSelector
+            case 22:   //  Microsoft.UI.Xaml.Controls.DataTemplateSelector
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 22:   //  Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode
+            case 23:   //  Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_22_NavigationViewOverflowLabelMode;
+                userType.StaticInitializer = StaticInitializer_23_NavigationViewOverflowLabelMode;
                 userType.AddEnumValue("MoreLabel", global::Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode.MoreLabel);
                 userType.AddEnumValue("NoLabel", global::Microsoft.UI.Xaml.Controls.NavigationViewOverflowLabelMode.NoLabel);
                 xamlType = userType;
                 break;
 
-            case 23:   //  String
+            case 24:   //  String
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 24:   //  Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus
+            case 25:   //  Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_24_NavigationViewSelectionFollowsFocus;
+                userType.StaticInitializer = StaticInitializer_25_NavigationViewSelectionFollowsFocus;
                 userType.AddEnumValue("Disabled", global::Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus.Disabled);
                 userType.AddEnumValue("Enabled", global::Microsoft.UI.Xaml.Controls.NavigationViewSelectionFollowsFocus.Enabled);
                 xamlType = userType;
                 break;
 
-            case 25:   //  Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled
+            case 26:   //  Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_25_NavigationViewShoulderNavigationEnabled;
+                userType.StaticInitializer = StaticInitializer_26_NavigationViewShoulderNavigationEnabled;
                 userType.AddEnumValue("WhenSelectionFollowsFocus", global::Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled.WhenSelectionFollowsFocus);
                 userType.AddEnumValue("Always", global::Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled.Always);
                 userType.AddEnumValue("Never", global::Microsoft.UI.Xaml.Controls.NavigationViewShoulderNavigationEnabled.Never);
                 xamlType = userType;
                 break;
 
-            case 26:   //  Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings
+            case 27:   //  Microsoft.UI.Xaml.Controls.NavigationViewTemplateSettings
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.DependencyObject"));
-                userType.StaticInitializer = StaticInitializer_26_NavigationViewTemplateSettings;
+                userType.StaticInitializer = StaticInitializer_27_NavigationViewTemplateSettings;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 27:   //  Microsoft.UI.Xaml.DependencyObject
+            case 28:   //  Microsoft.UI.Xaml.DependencyObject
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 28:   //  Microsoft.UI.Xaml.Controls.NavigationViewItem
+            case 29:   //  Microsoft.UI.Xaml.Controls.NavigationViewItem
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.NavigationViewItemBase"));
-                userType.Activator = Activate_28_NavigationViewItem;
-                userType.StaticInitializer = StaticInitializer_28_NavigationViewItem;
+                userType.Activator = Activate_29_NavigationViewItem;
+                userType.StaticInitializer = StaticInitializer_29_NavigationViewItem;
                 userType.AddMemberName("Icon");
                 userType.AddMemberName("CompactPaneLength");
                 userType.AddMemberName("HasUnrealizedChildren");
@@ -749,67 +759,67 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 29:   //  Microsoft.UI.Xaml.Controls.NavigationViewItemBase
+            case 30:   //  Microsoft.UI.Xaml.Controls.NavigationViewItemBase
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.ContentControl"));
-                userType.StaticInitializer = StaticInitializer_29_NavigationViewItemBase;
+                userType.StaticInitializer = StaticInitializer_30_NavigationViewItemBase;
                 userType.AddMemberName("IsSelected");
                 xamlType = userType;
                 break;
 
-            case 30:   //  Microsoft.UI.Xaml.Controls.IconElement
+            case 31:   //  Microsoft.UI.Xaml.Controls.IconElement
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 31:   //  Microsoft.UI.Xaml.Controls.InfoBadge
+            case 32:   //  Microsoft.UI.Xaml.Controls.InfoBadge
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Control"));
-                userType.StaticInitializer = StaticInitializer_31_InfoBadge;
+                userType.StaticInitializer = StaticInitializer_32_InfoBadge;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 32:   //  Microsoft.UI.Xaml.Controls.Control
+            case 33:   //  Microsoft.UI.Xaml.Controls.Control
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 33:   //  WarpGameAccelerator.MainWindow
+            case 34:   //  WarpGameAccelerator.MainWindow
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Window"));
-                userType.StaticInitializer = StaticInitializer_33_MainWindow;
+                userType.StaticInitializer = StaticInitializer_34_MainWindow;
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 34:   //  Microsoft.UI.Xaml.Window
+            case 35:   //  Microsoft.UI.Xaml.Window
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 35:   //  WarpGameAccelerator.Converters.BoolToVisibilityConverter
+            case 36:   //  WarpGameAccelerator.Converters.BoolToVisibilityConverter
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.Activator = Activate_35_BoolToVisibilityConverter;
-                userType.StaticInitializer = StaticInitializer_35_BoolToVisibilityConverter;
+                userType.Activator = Activate_36_BoolToVisibilityConverter;
+                userType.StaticInitializer = StaticInitializer_36_BoolToVisibilityConverter;
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 36:   //  WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter
+            case 37:   //  WarpGameAccelerator.Converters.InverseBoolToVisibilityConverter
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.Activator = Activate_36_InverseBoolToVisibilityConverter;
-                userType.StaticInitializer = StaticInitializer_36_InverseBoolToVisibilityConverter;
+                userType.Activator = Activate_37_InverseBoolToVisibilityConverter;
+                userType.StaticInitializer = StaticInitializer_37_InverseBoolToVisibilityConverter;
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 37:   //  WarpGameAccelerator.Converters.PingColorConverter
+            case 38:   //  WarpGameAccelerator.Converters.PingColorConverter
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.Activator = Activate_37_PingColorConverter;
-                userType.StaticInitializer = StaticInitializer_37_PingColorConverter;
+                userType.Activator = Activate_38_PingColorConverter;
+                userType.StaticInitializer = StaticInitializer_38_PingColorConverter;
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 38:   //  Microsoft.UI.Xaml.Controls.InfoBar
+            case 39:   //  Microsoft.UI.Xaml.Controls.InfoBar
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Control"));
-                userType.Activator = Activate_38_InfoBar;
-                userType.StaticInitializer = StaticInitializer_38_InfoBar;
+                userType.Activator = Activate_39_InfoBar;
+                userType.StaticInitializer = StaticInitializer_39_InfoBar;
                 userType.SetContentPropertyName("Microsoft.UI.Xaml.Controls.InfoBar.Content");
                 userType.AddMemberName("Content");
                 userType.AddMemberName("Severity");
@@ -828,9 +838,9 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 39:   //  Microsoft.UI.Xaml.Controls.InfoBarSeverity
+            case 40:   //  Microsoft.UI.Xaml.Controls.InfoBarSeverity
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_39_InfoBarSeverity;
+                userType.StaticInitializer = StaticInitializer_40_InfoBarSeverity;
                 userType.AddEnumValue("Informational", global::Microsoft.UI.Xaml.Controls.InfoBarSeverity.Informational);
                 userType.AddEnumValue("Success", global::Microsoft.UI.Xaml.Controls.InfoBarSeverity.Success);
                 userType.AddEnumValue("Warning", global::Microsoft.UI.Xaml.Controls.InfoBarSeverity.Warning);
@@ -838,36 +848,36 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 40:   //  Microsoft.UI.Xaml.Controls.Primitives.ButtonBase
+            case 41:   //  Microsoft.UI.Xaml.Controls.Primitives.ButtonBase
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 41:   //  System.Windows.Input.ICommand
+            case 42:   //  System.Windows.Input.ICommand
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, null);
-                userType.StaticInitializer = StaticInitializer_41_ICommand;
+                userType.StaticInitializer = StaticInitializer_42_ICommand;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 42:   //  Microsoft.UI.Xaml.Controls.IconSource
+            case 43:   //  Microsoft.UI.Xaml.Controls.IconSource
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 43:   //  Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings
+            case 44:   //  Microsoft.UI.Xaml.Controls.InfoBarTemplateSettings
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.DependencyObject"));
-                userType.StaticInitializer = StaticInitializer_43_InfoBarTemplateSettings;
+                userType.StaticInitializer = StaticInitializer_44_InfoBarTemplateSettings;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 44:   //  Microsoft.UI.Xaml.Controls.Button
+            case 45:   //  Microsoft.UI.Xaml.Controls.Button
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 45:   //  Microsoft.UI.Xaml.Controls.ProgressRing
+            case 46:   //  Microsoft.UI.Xaml.Controls.ProgressRing
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Control"));
-                userType.Activator = Activate_45_ProgressRing;
-                userType.StaticInitializer = StaticInitializer_45_ProgressRing;
+                userType.Activator = Activate_46_ProgressRing;
+                userType.StaticInitializer = StaticInitializer_46_ProgressRing;
                 userType.AddMemberName("IsActive");
                 userType.AddMemberName("IsIndeterminate");
                 userType.AddMemberName("Maximum");
@@ -877,17 +887,17 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 46:   //  Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings
+            case 47:   //  Microsoft.UI.Xaml.Controls.ProgressRingTemplateSettings
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.DependencyObject"));
-                userType.StaticInitializer = StaticInitializer_46_ProgressRingTemplateSettings;
+                userType.StaticInitializer = StaticInitializer_47_ProgressRingTemplateSettings;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 47:   //  Microsoft.UI.Xaml.Media.RadialGradientBrush
+            case 48:   //  Microsoft.UI.Xaml.Media.RadialGradientBrush
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Media.XamlCompositionBrushBase"));
-                userType.Activator = Activate_47_RadialGradientBrush;
-                userType.StaticInitializer = StaticInitializer_47_RadialGradientBrush;
+                userType.Activator = Activate_48_RadialGradientBrush;
+                userType.StaticInitializer = StaticInitializer_48_RadialGradientBrush;
                 userType.SetContentPropertyName("Microsoft.UI.Xaml.Media.RadialGradientBrush.GradientStops");
                 userType.AddMemberName("GradientStops");
                 userType.AddMemberName("Center");
@@ -900,29 +910,29 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 48:   //  Microsoft.UI.Xaml.Media.XamlCompositionBrushBase
+            case 49:   //  Microsoft.UI.Xaml.Media.XamlCompositionBrushBase
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 49:   //  Windows.Foundation.Collections.IObservableVector`1<Microsoft.UI.Xaml.Media.GradientStop>
+            case 50:   //  Windows.Foundation.Collections.IObservableVector`1<Microsoft.UI.Xaml.Media.GradientStop>
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, null);
-                userType.StaticInitializer = StaticInitializer_49_IObservableVector;
-                userType.CollectionAdd = VectorAdd_49_IObservableVector;
+                userType.StaticInitializer = StaticInitializer_50_IObservableVector;
+                userType.CollectionAdd = VectorAdd_50_IObservableVector;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 50:   //  Microsoft.UI.Xaml.Media.GradientStop
+            case 51:   //  Microsoft.UI.Xaml.Media.GradientStop
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 51:   //  Windows.Foundation.Point
+            case 52:   //  Windows.Foundation.Point
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 52:   //  Microsoft.UI.Composition.CompositionColorSpace
+            case 53:   //  Microsoft.UI.Composition.CompositionColorSpace
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Enum"));
-                userType.StaticInitializer = StaticInitializer_52_CompositionColorSpace;
+                userType.StaticInitializer = StaticInitializer_53_CompositionColorSpace;
                 userType.AddEnumValue("Auto", global::Microsoft.UI.Composition.CompositionColorSpace.Auto);
                 userType.AddEnumValue("Hsl", global::Microsoft.UI.Composition.CompositionColorSpace.Hsl);
                 userType.AddEnumValue("Rgb", global::Microsoft.UI.Composition.CompositionColorSpace.Rgb);
@@ -931,66 +941,66 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 53:   //  Microsoft.UI.Xaml.Media.BrushMappingMode
+            case 54:   //  Microsoft.UI.Xaml.Media.BrushMappingMode
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 54:   //  Microsoft.UI.Xaml.Media.GradientSpreadMethod
+            case 55:   //  Microsoft.UI.Xaml.Media.GradientSpreadMethod
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 55:   //  WarpGameAccelerator.Views.DashboardPage
+            case 56:   //  WarpGameAccelerator.Views.DashboardPage
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Page"));
-                userType.Activator = Activate_55_DashboardPage;
-                userType.StaticInitializer = StaticInitializer_55_DashboardPage;
+                userType.Activator = Activate_56_DashboardPage;
+                userType.StaticInitializer = StaticInitializer_56_DashboardPage;
                 userType.AddMemberName("ViewModel");
                 userType.AddMemberName("Loc");
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 56:   //  Microsoft.UI.Xaml.Controls.Page
+            case 57:   //  Microsoft.UI.Xaml.Controls.Page
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 57:   //  Microsoft.UI.Xaml.Controls.UserControl
+            case 58:   //  Microsoft.UI.Xaml.Controls.UserControl
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 58:   //  WarpGameAccelerator.ViewModels.DashboardViewModel
+            case 59:   //  WarpGameAccelerator.ViewModels.DashboardViewModel
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("CommunityToolkit.Mvvm.ComponentModel.ObservableObject"));
-                userType.StaticInitializer = StaticInitializer_58_DashboardViewModel;
+                userType.StaticInitializer = StaticInitializer_59_DashboardViewModel;
                 userType.SetIsReturnTypeStub();
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 59:   //  CommunityToolkit.Mvvm.ComponentModel.ObservableObject
+            case 60:   //  CommunityToolkit.Mvvm.ComponentModel.ObservableObject
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.StaticInitializer = StaticInitializer_59_ObservableObject;
+                userType.StaticInitializer = StaticInitializer_60_ObservableObject;
                 xamlType = userType;
                 break;
 
-            case 60:   //  WarpGameAccelerator.Services.LocalizationService
+            case 61:   //  WarpGameAccelerator.Services.LocalizationService
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("CommunityToolkit.Mvvm.ComponentModel.ObservableObject"));
-                userType.StaticInitializer = StaticInitializer_60_LocalizationService;
+                userType.StaticInitializer = StaticInitializer_61_LocalizationService;
                 userType.SetIsReturnTypeStub();
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 61:   //  WarpGameAccelerator.Views.MultiClientPage
+            case 62:   //  WarpGameAccelerator.Views.MultiClientPage
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Page"));
-                userType.Activator = Activate_61_MultiClientPage;
-                userType.StaticInitializer = StaticInitializer_61_MultiClientPage;
+                userType.Activator = Activate_62_MultiClientPage;
+                userType.StaticInitializer = StaticInitializer_62_MultiClientPage;
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 62:   //  WarpGameAccelerator.Views.ProcessPickerPage
+            case 63:   //  WarpGameAccelerator.Views.ProcessPickerPage
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Page"));
-                userType.Activator = Activate_62_ProcessPickerPage;
-                userType.StaticInitializer = StaticInitializer_62_ProcessPickerPage;
+                userType.Activator = Activate_63_ProcessPickerPage;
+                userType.StaticInitializer = StaticInitializer_63_ProcessPickerPage;
                 userType.AddMemberName("ViewModel");
                 userType.AddMemberName("Loc");
                 userType.AddMemberName("FilteredProcesses");
@@ -998,34 +1008,34 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 63:   //  WarpGameAccelerator.ViewModels.ProcessPickerViewModel
+            case 64:   //  WarpGameAccelerator.ViewModels.ProcessPickerViewModel
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("CommunityToolkit.Mvvm.ComponentModel.ObservableObject"));
-                userType.StaticInitializer = StaticInitializer_63_ProcessPickerViewModel;
+                userType.StaticInitializer = StaticInitializer_64_ProcessPickerViewModel;
                 userType.SetIsReturnTypeStub();
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 64:   //  System.Collections.ObjectModel.ObservableCollection`1<WarpGameAccelerator.Models.GameProcess>
+            case 65:   //  System.Collections.ObjectModel.ObservableCollection`1<WarpGameAccelerator.Models.GameProcess>
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("System.Collections.ObjectModel.Collection`1<WarpGameAccelerator.Models.GameProcess>"));
-                userType.StaticInitializer = StaticInitializer_64_ObservableCollection;
-                userType.CollectionAdd = VectorAdd_64_ObservableCollection;
+                userType.StaticInitializer = StaticInitializer_65_ObservableCollection;
+                userType.CollectionAdd = VectorAdd_65_ObservableCollection;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;
 
-            case 65:   //  System.Collections.ObjectModel.Collection`1<WarpGameAccelerator.Models.GameProcess>
+            case 66:   //  System.Collections.ObjectModel.Collection`1<WarpGameAccelerator.Models.GameProcess>
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.Activator = Activate_65_Collection;
-                userType.StaticInitializer = StaticInitializer_65_Collection;
-                userType.CollectionAdd = VectorAdd_65_Collection;
+                userType.Activator = Activate_66_Collection;
+                userType.StaticInitializer = StaticInitializer_66_Collection;
+                userType.CollectionAdd = VectorAdd_66_Collection;
                 xamlType = userType;
                 break;
 
-            case 66:   //  WarpGameAccelerator.Models.GameProcess
+            case 67:   //  WarpGameAccelerator.Models.GameProcess
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Object"));
-                userType.Activator = Activate_66_GameProcess;
-                userType.StaticInitializer = StaticInitializer_66_GameProcess;
+                userType.Activator = Activate_67_GameProcess;
+                userType.StaticInitializer = StaticInitializer_67_GameProcess;
                 userType.AddMemberName("ProcessName");
                 userType.AddMemberName("ExePath");
                 userType.AddMemberName("ProcessId");
@@ -1035,40 +1045,40 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 67:   //  Int32
+            case 68:   //  Int32
                 xamlType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlSystemBaseType(typeName, type);
                 break;
 
-            case 68:   //  WarpGameAccelerator.Views.SettingsPage
+            case 69:   //  WarpGameAccelerator.Views.SettingsPage
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Page"));
-                userType.Activator = Activate_68_SettingsPage;
-                userType.StaticInitializer = StaticInitializer_68_SettingsPage;
+                userType.Activator = Activate_69_SettingsPage;
+                userType.StaticInitializer = StaticInitializer_69_SettingsPage;
                 userType.AddMemberName("ViewModel");
                 userType.AddMemberName("Loc");
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 69:   //  WarpGameAccelerator.ViewModels.SettingsViewModel
+            case 70:   //  WarpGameAccelerator.ViewModels.SettingsViewModel
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("CommunityToolkit.Mvvm.ComponentModel.ObservableObject"));
-                userType.StaticInitializer = StaticInitializer_69_SettingsViewModel;
+                userType.StaticInitializer = StaticInitializer_70_SettingsViewModel;
                 userType.SetIsReturnTypeStub();
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 70:   //  WarpGameAccelerator.Views.WarpAccountPage
+            case 71:   //  WarpGameAccelerator.Views.WarpAccountPage
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.Controls.Page"));
-                userType.Activator = Activate_70_WarpAccountPage;
-                userType.StaticInitializer = StaticInitializer_70_WarpAccountPage;
+                userType.Activator = Activate_71_WarpAccountPage;
+                userType.StaticInitializer = StaticInitializer_71_WarpAccountPage;
                 userType.SetIsLocalType();
                 xamlType = userType;
                 break;
 
-            case 71:   //  Microsoft.UI.Xaml.Controls.TreeViewNode
+            case 72:   //  Microsoft.UI.Xaml.Controls.TreeViewNode
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, GetXamlTypeByName("Microsoft.UI.Xaml.DependencyObject"));
-                userType.Activator = Activate_71_TreeViewNode;
-                userType.StaticInitializer = StaticInitializer_71_TreeViewNode;
+                userType.Activator = Activate_72_TreeViewNode;
+                userType.StaticInitializer = StaticInitializer_72_TreeViewNode;
                 userType.AddMemberName("Children");
                 userType.AddMemberName("Content");
                 userType.AddMemberName("Depth");
@@ -1080,10 +1090,10 @@ namespace WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo
                 xamlType = userType;
                 break;
 
-            case 72:   //  System.Collections.Generic.IList`1<Microsoft.UI.Xaml.Controls.TreeViewNode>
+            case 73:   //  System.Collections.Generic.IList`1<Microsoft.UI.Xaml.Controls.TreeViewNode>
                 userType = new global::WarpGameAccelerator.WarpGameAccelerator_XamlTypeInfo.XamlUserType(this, typeName, type, null);
-                userType.StaticInitializer = StaticInitializer_72_IList;
-                userType.CollectionAdd = VectorAdd_72_IList;
+                userType.StaticInitializer = StaticInitializer_73_IList;
+                userType.CollectionAdd = VectorAdd_73_IList;
                 userType.SetIsReturnTypeStub();
                 xamlType = userType;
                 break;

@@ -27,16 +27,19 @@ public partial class App : Application
 
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
-            try { System.IO.File.AppendAllText(logFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] AppDomain Exception: {e.ExceptionObject}\n\n"); } catch { }
+            if (e.ExceptionObject is Exception ex)
+                CrashReportService.RecordCrash(ex, "AppDomain");
         };
         TaskScheduler.UnobservedTaskException += (s, e) =>
         {
-            try { System.IO.File.AppendAllText(logFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Task Exception: {e.Exception}\n\n"); } catch { }
+            if (e.Exception != null)
+                CrashReportService.RecordCrash(e.Exception, "TaskScheduler");
             e.SetObserved();
         };
         Microsoft.UI.Xaml.Application.Current.UnhandledException += (s, e) =>
         {
-            try { System.IO.File.AppendAllText(logFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] WinUI Exception: {e.Exception}\n\n"); } catch { }
+            if (e.Exception != null)
+                CrashReportService.RecordCrash(e.Exception, "WinUI");
             e.Handled = true; // Ngăn chặn crash app trên luồng XAML UI
         };
 

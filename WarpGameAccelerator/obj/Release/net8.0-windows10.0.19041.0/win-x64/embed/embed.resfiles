@@ -1,4 +1,5 @@
 App.xbf
+Dialogs\CrashReportDialog.xbf
 Dialogs\NodeSelectionDialog.xbf
 MainWindow.xbf
 Styles\AppStyles.xbf
