@@ -218,7 +218,7 @@ public sealed partial class MultiClientPage : Page
             string folder = _gameFolder;
             string token = _currentToken;
 
-            var (launched, msg) = await Task.Run(() => MultiClientService.LaunchAdditionalClients(folder, token, count));
+            var (launched, msg) = await MultiClientService.LaunchAdditionalClientsAsync(folder, token, count);
 
             LaunchMoreBtn.IsEnabled = true;
             LaunchMoreBtn.Content   = $"▶  Mở {_clientCount} Client";

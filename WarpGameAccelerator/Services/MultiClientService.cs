@@ -82,11 +82,12 @@ public class MultiClientService
             {
                 FileName         = launcher,
                 WorkingDirectory = Path.GetDirectoryName(launcher)!,
-                UseShellExecute  = true
+                UseShellExecute  = false
             };
             Process.Start(psi);
             return Task.FromResult((true, "Đã gọi fxlaunch.exe. Chờ vài giây để game khởi động..."));
-        }        catch (Exception ex)
+        }
+        catch (Exception ex)
         {
             return Task.FromResult((false, $"Lỗi: {ex.Message}"));
         }
@@ -180,7 +181,7 @@ public class MultiClientService
     }
 
     // ── Bước 3: Mở thêm client với token đã lưu ─────────────
-    public static (int Launched, string Message) LaunchAdditionalClients(
+    public static async Task<(int Launched, string Message)> LaunchAdditionalClientsAsync(
         string gameFolder, string token, int count)
     {
         var gamePath = FindGameExe(gameFolder, "fxgame.exe");
@@ -199,7 +200,7 @@ public class MultiClientService
                     FileName         = gamePath,
                     Arguments        = token,
                     WorkingDirectory = Path.GetDirectoryName(gamePath)!,
-                    UseShellExecute  = true
+                    UseShellExecute  = false
                 };
                 var proc = Process.Start(psi);
                 try { proc?.Dispose(); } catch { }
@@ -207,7 +208,7 @@ public class MultiClientService
                 
                 if (i < count - 1)
                 {
-                    Thread.Sleep(3000); // Chờ 3 giây đồng bộ trong background thread
+                    await Task.Delay(3000); // Chờ 3 giây đồng bộ
                 }
             }
             catch (Exception ex)
