@@ -53,6 +53,10 @@ public partial class App : Application
         DispatcherQueue = _mainWindow.DispatcherQueue;
         MainWindowHandle = WindowNative.GetWindowHandle(_mainWindow);
         _mainWindow.Activate();
+
+        // Chuẩn bị sẵn tài khoản WARP (tự đăng ký qua wgcf nếu chưa có) ngay khi
+        // app khởi động, để lúc người dùng bấm Boost không phải chờ đăng ký.
+        _ = WarpAccountService.GetOrCreateAccountAsync();
     }
 
     private static IServiceProvider ConfigureServices()
@@ -76,6 +80,7 @@ public partial class App : Application
             sp.GetRequiredService<PingMonitorService>(),
             sp.GetRequiredService<MihomoService>(),
             sp.GetRequiredService<LocalizationService>(),
+            sp.GetRequiredService<GameProfileService>(),
             DispatcherQueue.GetForCurrentThread()
                 ?? Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()!
         ));

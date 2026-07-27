@@ -69,7 +69,7 @@ public class GameProfileService
 
     public GameProfileService()
     {
-        var dataDir = Path.Combine(AppContext.BaseDirectory, "Data");
+        var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WarpGameAccelerator", "Data");
         if (!Directory.Exists(dataDir))
             Directory.CreateDirectory(dataDir);
 

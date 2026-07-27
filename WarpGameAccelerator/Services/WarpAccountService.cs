@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -17,6 +18,7 @@ public class WarpAccountInfo
     public string IPv6          { get; set; } = string.Empty;
     public string PeerPublicKey { get; set; } = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
     public string Endpoint      { get; set; } = "162.159.192.1:2408";
+    public string ClientId      { get; set; } = string.Empty;
 }
 
 public class WarpAccountService
@@ -25,6 +27,11 @@ public class WarpAccountService
     private static readonly string AccountFilePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                      "WarpGameAccelerator", "Data", "warp_account.json");
+
+    private static readonly string CoreDir =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                     "WarpGameAccelerator", "Core");
+    private static readonly string WgcfExePath = Path.Combine(CoreDir, "wgcf.exe");
 
     public static async Task<WarpAccountInfo> GetOrCreateAccountAsync()
     {
@@ -37,7 +44,10 @@ public class WarpAccountService
                 var acc = JsonSerializer.Deserialize<WarpAccountInfo>(json);
                 if (acc != null && !string.IsNullOrEmpty(acc.PrivateKey) && !string.IsNullOrEmpty(acc.IPv4))
                 {
-                    return acc;
+                    if (!string.IsNullOrEmpty(acc.ClientId))
+                    {
+                        return acc;
+                    }
                 }
             }
             catch { }
@@ -57,7 +67,10 @@ public class WarpAccountService
             catch { }
         }
 
-        var newAcc = await RegisterNewWarpAccountAsync();
+        // Ưu tiên đăng ký qua wgcf: tài khoản tự đăng ký thẳng qua API (v0a1922)
+        // vẫn hợp lệ nhưng bị Cloudflare xếp vào nhóm chính sách MASQUE (mihomo
+        // không hỗ trợ) — wgcf hiện vẫn được Cloudflare cấp WireGuard cổ điển.
+        var newAcc = await RegisterViaWgcfAsync() ?? await RegisterNewWarpAccountAsync();
 
         // 3. Lưu vào AppData
         try
@@ -101,7 +114,7 @@ public class WarpAccountService
         };
 
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var response = await client.PostAsync("https://api.cloudflareclient.com/v0i1909051800/reg", content);
+        var response = await client.PostAsync("https://api.cloudflareclient.com/v0a1922/reg", content);
         response.EnsureSuccessStatusCode();
 
         var jsonResp = await response.Content.ReadAsStringAsync();
@@ -137,10 +150,209 @@ public class WarpAccountService
                     result.Endpoint = epv4El.GetString() ?? result.Endpoint;
                 }
             }
+
+            if (configEl.TryGetProperty("client_id", out var clientIdEl))
+            {
+                result.ClientId = clientIdEl.GetString() ?? "";
+            }
+        }
+
+        if (string.IsNullOrEmpty(result.IPv4)) result.IPv4 = "172.16.0.2";
+
+        // Kích hoạt WARP cho thiết bị vừa đăng ký — thiếu bước này thì Cloudflare
+        // vẫn trả về config hợp lệ nhưng sẽ âm thầm bỏ qua handshake WireGuard
+        // (peer coi như chưa "enabled" ở tầng edge).
+        if (!string.IsNullOrEmpty(result.Id) && !string.IsNullOrEmpty(result.Token))
+        {
+            try
+            {
+                client.DefaultRequestHeaders.Remove("Authorization");
+                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {result.Token}");
+                var enablePayload = new { warp_enabled = true };
+                var enableContent = new StringContent(
+                    JsonSerializer.Serialize(enablePayload), Encoding.UTF8, "application/json");
+                await client.PatchAsync(
+                    $"https://api.cloudflareclient.com/v0a1922/reg/{result.Id}", enableContent);
+            }
+            catch { }
+        }
+
+        return result;
+    }
+
+    // ── Đăng ký tài khoản WARP tự động qua wgcf (ViRb3/wgcf) ──────
+    // Tài khoản tự đăng ký thẳng qua API Cloudflare (RegisterNewWarpAccountAsync)
+    // bị Cloudflare xếp vào nhóm chính sách MASQUE, khiến WireGuard cổ điển
+    // (mihomo) không handshake được. wgcf hiện vẫn được cấp WireGuard cổ điển,
+    // nên app tự gọi wgcf.exe (nhúng sẵn) để đăng ký thay cho việc tự gọi API.
+    private static async Task<WarpAccountInfo?> RegisterViaWgcfAsync()
+    {
+        try
+        {
+            if (!EnsureWgcfExtracted()) return null;
+
+            var workDir = Path.Combine(CoreDir, "wgcf_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(workDir);
+
+            try
+            {
+                if (!await RunWgcfAsync(workDir, "register --accept-tos")) return null;
+                if (!await RunWgcfAsync(workDir, "generate")) return null;
+
+                var accountTomlPath = Path.Combine(workDir, "wgcf-account.toml");
+                var profileConfPath = Path.Combine(workDir, "wgcf-profile.conf");
+                if (!File.Exists(accountTomlPath) || !File.Exists(profileConfPath)) return null;
+
+                return ParseWgcfFiles(
+                    await File.ReadAllTextAsync(accountTomlPath),
+                    await File.ReadAllTextAsync(profileConfPath));
+            }
+            finally
+            {
+                try { Directory.Delete(workDir, recursive: true); } catch { }
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool EnsureWgcfExtracted()
+    {
+        try
+        {
+            if (File.Exists(WgcfExePath)) return true;
+            if (!Directory.Exists(CoreDir)) Directory.CreateDirectory(CoreDir);
+
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var resName = assembly.GetManifestResourceNames()
+                .FirstOrDefault(r => r.EndsWith(".wgcf.exe", StringComparison.OrdinalIgnoreCase));
+            if (resName == null) return false;
+
+            using var stream = assembly.GetManifestResourceStream(resName);
+            if (stream == null) return false;
+
+            using var fileStream = File.Create(WgcfExePath);
+            stream.CopyTo(fileStream);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> RunWgcfAsync(string workDir, string arguments)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = WgcfExePath,
+            Arguments = arguments,
+            WorkingDirectory = workDir,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        using var proc = Process.Start(psi);
+        if (proc == null) return false;
+
+        var waitTask = proc.WaitForExitAsync();
+        var completed = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(15)));
+        if (completed != waitTask)
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { }
+            return false;
+        }
+
+        return proc.ExitCode == 0;
+    }
+
+    // ── Import tài khoản wgcf có sẵn (Import Account thủ công) ───
+    public static async Task<(bool Success, string Message)> ImportFromWgcfFilesAsync(
+        string accountTomlContent, string profileConfContent)
+    {
+        try
+        {
+            var info = ParseWgcfFiles(accountTomlContent, profileConfContent);
+            if (string.IsNullOrEmpty(info.PrivateKey) || string.IsNullOrEmpty(info.IPv4))
+                return (false, "File không hợp lệ — thiếu PrivateKey hoặc Address.");
+
+            var dir = Path.GetDirectoryName(AccountFilePath)!;
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(AccountFilePath, json);
+
+            return (true, "Import tài khoản thành công!");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Lỗi khi đọc file: {ex.Message}");
+        }
+    }
+
+    private static WarpAccountInfo ParseWgcfFiles(string accountToml, string profileConf)
+    {
+        var toml = ParseSimpleToml(accountToml);
+        var result = new WarpAccountInfo
+        {
+            PrivateKey = toml.GetValueOrDefault("private_key", ""),
+            Id         = toml.GetValueOrDefault("device_id", ""),
+            Token      = toml.GetValueOrDefault("access_token", ""),
+            License    = toml.GetValueOrDefault("license_key", ""),
+            // wg-quick/wgcf không gửi reserved bytes (mặc định zero) — đã kiểm
+            // chứng zero reserved vẫn handshake thành công với tài khoản wgcf.
+            ClientId   = "AAAA"
+        };
+
+        foreach (var rawLine in profileConf.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            var eqIdx = line.IndexOf('=');
+            if (eqIdx < 0) continue;
+            var key = line[..eqIdx].Trim();
+            var value = line[(eqIdx + 1)..].Trim();
+
+            if (key.Equals("Address", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var part in value.Split(','))
+                {
+                    var ip = part.Trim().Split('/')[0];
+                    if (ip.Contains(':')) result.IPv6 = ip;
+                    else if (!string.IsNullOrEmpty(ip)) result.IPv4 = ip;
+                }
+            }
+            else if (key.Equals("PublicKey", StringComparison.OrdinalIgnoreCase))
+            {
+                result.PeerPublicKey = value;
+            }
+            else if (key.Equals("Endpoint", StringComparison.OrdinalIgnoreCase))
+            {
+                result.Endpoint = value;
+            }
         }
 
         if (string.IsNullOrEmpty(result.IPv4)) result.IPv4 = "172.16.0.2";
         return result;
+    }
+
+    private static Dictionary<string, string> ParseSimpleToml(string content)
+    {
+        var dict = new Dictionary<string, string>();
+        foreach (var rawLine in content.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            var eqIdx = line.IndexOf('=');
+            if (eqIdx < 0) continue;
+            var key = line[..eqIdx].Trim();
+            var value = line[(eqIdx + 1)..].Trim().Trim('\'', '"');
+            dict[key] = value;
+        }
+        return dict;
     }
 
     // ── Cập nhật License Key WARP+ ────────────────────────────
@@ -160,7 +372,7 @@ public class WarpAccountService
             var content = new StringContent(
                 JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-            var url = $"https://api.cloudflareclient.com/v0i1909051800/reg/{acc.Id}/account";
+            var url = $"https://api.cloudflareclient.com/v0a1922/reg/{acc.Id}/account";
             var response = await client.PutAsync(url, content);
 
             if (response.IsSuccessStatusCode)

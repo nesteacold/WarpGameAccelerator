@@ -2,6 +2,7 @@
 // Services/MultiClientService.cs
 // Quản lý việc mở nhiều client game AOW (Age of Wushu)
 // ============================================================
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Management;
@@ -70,56 +71,82 @@ public class MultiClientService
     }
 
     // ── Bước 1: Mở client đầu tiên qua fxlaunch ──────────
-    public static Task<(bool Success, string Message)> LaunchFirstClientAsync(string gameFolder)
+    public static async Task<(bool Success, string Message)> LaunchFirstClientAsync(string gameFolder)
     {
         try
         {
             var launcher = FindGameExe(gameFolder, "fxlaunch.exe");
             if (launcher == null)
-                return Task.FromResult((false, "Không tìm thấy fxlaunch.exe trong thư mục đã chọn."));
+                return (false, "Không tìm thấy fxlaunch.exe trong thư mục đã chọn.");
+
+            var workDir = Path.GetDirectoryName(launcher);
+            if (string.IsNullOrEmpty(workDir) || !Directory.Exists(workDir))
+                workDir = gameFolder;
 
             var psi = new ProcessStartInfo
             {
                 FileName         = launcher,
-                WorkingDirectory = Path.GetDirectoryName(launcher)!,
-                UseShellExecute  = false
+                WorkingDirectory = workDir,
+                UseShellExecute  = true
             };
-            Process.Start(psi);
-            return Task.FromResult((true, "Đã gọi fxlaunch.exe. Chờ vài giây để game khởi động..."));
+
+            using var proc = Process.Start(psi);
+            await Task.Delay(100); // Give it a tiny bit of time
+            return (true, "Đã gọi fxlaunch.exe. Chờ vài giây để game khởi động...");
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            return (false, "Thao tác khởi chạy đã bị hủy (UAC cancellation).");
         }
         catch (Exception ex)
         {
-            return Task.FromResult((false, $"Lỗi: {ex.Message}"));
+            return (false, $"Lỗi: {ex.Message}");
         }
     }
 
     // ── Bước 2: Detect token từ fxgame.exe đang chạy ────────
-    public static Task<(bool Success, string Token, string Message)> DetectTokenAsync()
+    public static async Task<(bool Success, string Token, string Message)> DetectTokenAsync()
     {
-        try
+        return await Task.Run(() =>
         {
-            using var searcher = new ManagementObjectSearcher(
-                "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'fxgame.exe'");
-
-            foreach (ManagementObject obj in searcher.Get())
+            try
             {
-                var cmdLine = obj["CommandLine"]?.ToString();
-                if (string.IsNullOrEmpty(cmdLine)) continue;
+                using var searcher = new ManagementObjectSearcher(
+                    "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'fxgame.exe'");
+                using var collection = searcher.Get();
 
-                // CommandLine: "C:\...\fxgame.exe" TOKEN
-                // Tách token ra khỏi phần exe path
-                string token = ParseTokenFromCommandLine(cmdLine);
-                if (!string.IsNullOrEmpty(token))
-                    return Task.FromResult((true, token, "Detect token thành công!"));
+                foreach (ManagementObject obj in collection)
+                {
+                    using (obj)
+                    {
+                        string? cmdLine = null;
+                        try
+                        {
+                            cmdLine = obj["CommandLine"]?.ToString();
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        if (string.IsNullOrEmpty(cmdLine)) continue;
+
+                        // CommandLine: "C:\...\fxgame.exe" TOKEN
+                        // Tách token ra khỏi phần exe path
+                        string token = ParseTokenFromCommandLine(cmdLine);
+                        if (!string.IsNullOrEmpty(token))
+                            return (true, token, "Detect token thành công!");
+                    }
+                }
+
+                return (false, string.Empty,
+                    "Không tìm thấy fxgame.exe đang chạy. Hãy mở client đầu tiên trước.");
             }
-
-            return Task.FromResult((false, string.Empty,
-                "Không tìm thấy fxgame.exe đang chạy. Hãy mở client đầu tiên trước."));
-        }
-        catch (Exception ex)
-        {
-            return Task.FromResult((false, string.Empty, $"Lỗi WMI: {ex.Message}"));
-        }
+            catch (Exception ex)
+            {
+                return (false, string.Empty, $"Lỗi WMI: {ex.Message}");
+            }
+        });
     }
 
     private static string ParseTokenFromCommandLine(string cmdLine)
@@ -188,6 +215,10 @@ public class MultiClientService
         if (gamePath == null)
             return (0, "Không tìm thấy fxgame.exe.");
 
+        var workDir = Path.GetDirectoryName(gamePath);
+        if (string.IsNullOrEmpty(workDir) || !Directory.Exists(workDir))
+            workDir = gameFolder;
+
         int launched = 0;
         var errors   = new List<string>();
 
@@ -199,17 +230,23 @@ public class MultiClientService
                 {
                     FileName         = gamePath,
                     Arguments        = token,
-                    WorkingDirectory = Path.GetDirectoryName(gamePath)!,
-                    UseShellExecute  = false
+                    WorkingDirectory = workDir,
+                    UseShellExecute  = true
                 };
-                var proc = Process.Start(psi);
-                try { proc?.Dispose(); } catch { }
+                using (var proc = Process.Start(psi))
+                {
+                    // Process handle safely disposed
+                }
                 launched++;
-                
+
                 if (i < count - 1)
                 {
-                    await Task.Delay(3000); // Chờ 3 giây đồng bộ
+                    await Task.Delay(3000); // Minimum 3000ms delay between launches
                 }
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                errors.Add($"Client {i + 1}: Thao tác đã bị hủy (UAC cancellation).");
             }
             catch (Exception ex)
             {
@@ -235,7 +272,17 @@ public class MultiClientService
             {
                 try
                 {
-                    if (p.HasExited) continue;
+                    bool hasExited = false;
+                    try
+                    {
+                        hasExited = p.HasExited;
+                    }
+                    catch
+                    {
+                        hasExited = true;
+                    }
+
+                    if (hasExited) continue;
 
                     string startTime = "Vừa mở";
                     try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
@@ -264,8 +311,18 @@ public class MultiClientService
     {
         try
         {
-            var p = Process.GetProcessById(pid);
-            if (!p.HasExited)
+            using var p = Process.GetProcessById(pid);
+            bool hasExited = false;
+            try
+            {
+                hasExited = p.HasExited;
+            }
+            catch
+            {
+                hasExited = true;
+            }
+
+            if (!hasExited)
             {
                 p.Kill(entireProcessTree: true);
             }

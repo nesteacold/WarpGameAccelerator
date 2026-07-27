@@ -77,22 +77,29 @@ public sealed partial class MultiClientPage : Page
 
     private void BrowseBtn_Click(object sender, RoutedEventArgs e)
     {
-        var bi = new BROWSEINFO
+        try
         {
-            hwndOwner      = ((App)Application.Current).MainWindowHandle,
-            lpszTitle      = "Chọn thư mục cài đặt Age of Wushu",
-            ulFlags        = 0x0001 | 0x0040, // BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
-            pszDisplayName = new string('\0', 260)
-        };
+            var bi = new BROWSEINFO
+            {
+                hwndOwner      = ((App)Application.Current).MainWindowHandle,
+                lpszTitle      = "Chọn thư mục cài đặt Age of Wushu",
+                ulFlags        = 0x0001 | 0x0040, // BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+                pszDisplayName = new string('\0', 260)
+            };
 
-        IntPtr pidl = SHBrowseForFolder(ref bi);
-        if (pidl == IntPtr.Zero) return;
+            IntPtr pidl = SHBrowseForFolder(ref bi);
+            if (pidl == IntPtr.Zero) return;
 
-        var sb = new System.Text.StringBuilder(260);
-        if (SHGetPathFromIDList(pidl, sb))
-            FolderPathBox.Text = sb.ToString();
+            var sb = new System.Text.StringBuilder(260);
+            if (SHGetPathFromIDList(pidl, sb))
+                FolderPathBox.Text = sb.ToString();
 
-        CoTaskMemFree(pidl);
+            CoTaskMemFree(pidl);
+        }
+        catch (Exception ex)
+        {
+            CrashReportService.RecordCrash(ex, "MultiClientPage.BrowseBtn_Click");
+        }
     }
 
     private void FolderPathBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -120,35 +127,55 @@ public sealed partial class MultiClientPage : Page
     // ── Card 2: Mở client đầu ───────────────────────────────
     private async void LaunchFirstBtn_Click(object sender, RoutedEventArgs e)
     {
-        LaunchFirstBtn.IsEnabled = false;
-        LaunchFirstBtn.Content   = "Đang mở...";
+        try
+        {
+            LaunchFirstBtn.IsEnabled = false;
+            LaunchFirstBtn.Content   = "Đang mở...";
 
-        var (ok, msg) = await MultiClientService.LaunchFirstClientAsync(_gameFolder);
+            var (ok, msg) = await MultiClientService.LaunchFirstClientAsync(_gameFolder);
 
-        LaunchFirstBtn.IsEnabled = true;
-        LaunchFirstBtn.Content   = "▶  Mở Client Đầu Tiên";
-        ShowMsg(LaunchFirstMsg, msg, !ok);
+            LaunchFirstBtn.IsEnabled = true;
+            LaunchFirstBtn.Content   = "▶  Mở Client Đầu Tiên";
+            ShowMsg(LaunchFirstMsg, msg, !ok);
+        }
+        catch (Exception ex)
+        {
+            CrashReportService.RecordCrash(ex, "MultiClientPage.LaunchFirstBtn_Click");
+            LaunchFirstBtn.IsEnabled = true;
+            LaunchFirstBtn.Content   = "▶  Mở Client Đầu Tiên";
+            ShowMsg(LaunchFirstMsg, $"Lỗi: {ex.Message}", isError: true);
+        }
     }
 
     // ── Card 3: Detect Token ─────────────────────────────────
     private async void DetectTokenBtn_Click(object sender, RoutedEventArgs e)
     {
-        DetectTokenBtn.IsEnabled = false;
-        DetectTokenBtn.Content   = "Đang quét...";
-
-        var (ok, token, msg) = await Task.Run(() => MultiClientService.DetectTokenAsync().Result);
-
-        DetectTokenBtn.IsEnabled = true;
-        DetectTokenBtn.Content   = "🔍  Detect Token từ fxgame.exe";
-        ShowMsg(DetectMsg, msg, !ok);
-
-        if (ok)
+        try
         {
-            _currentToken = token;
-            SetTokenStatus(hasToken: true);
+            DetectTokenBtn.IsEnabled = false;
+            DetectTokenBtn.Content   = "Đang quét...";
 
-            // Lưu token
-            await MultiClientService.SaveTokenAsync(token, _gameFolder);
+            var (ok, token, msg) = await MultiClientService.DetectTokenAsync();
+
+            DetectTokenBtn.IsEnabled = true;
+            DetectTokenBtn.Content   = "🔍  Detect Token từ fxgame.exe";
+            ShowMsg(DetectMsg, msg, !ok);
+
+            if (ok)
+            {
+                _currentToken = token;
+                SetTokenStatus(hasToken: true);
+
+                // Lưu token
+                await MultiClientService.SaveTokenAsync(token, _gameFolder);
+            }
+        }
+        catch (Exception ex)
+        {
+            CrashReportService.RecordCrash(ex, "MultiClientPage.DetectTokenBtn_Click");
+            DetectTokenBtn.IsEnabled = true;
+            DetectTokenBtn.Content   = "🔍  Detect Token từ fxgame.exe";
+            ShowMsg(DetectMsg, $"Lỗi: {ex.Message}", isError: true);
         }
     }
 
@@ -313,8 +340,15 @@ public sealed partial class MultiClientPage : Page
         };
         killBtn.Click += (_, _) =>
         {
-            MultiClientService.KillClient(pid);
-            RefreshClientList();
+            try
+            {
+                MultiClientService.KillClient(pid);
+                RefreshClientList();
+            }
+            catch (Exception ex)
+            {
+                CrashReportService.RecordCrash(ex, "MultiClientPage.KillBtn_Click");
+            }
         };
         Grid.SetColumn(killBtn, 2);
 
@@ -327,9 +361,16 @@ public sealed partial class MultiClientPage : Page
 
     private void KillAllBtn_Click(object sender, RoutedEventArgs e)
     {
-        foreach (var c in MultiClientService.GetRunningClients())
-            MultiClientService.KillClient(c.Pid);
-        RefreshClientList();
+        try
+        {
+            foreach (var c in MultiClientService.GetRunningClients())
+                MultiClientService.KillClient(c.Pid);
+            RefreshClientList();
+        }
+        catch (Exception ex)
+        {
+            CrashReportService.RecordCrash(ex, "MultiClientPage.KillAllBtn_Click");
+        }
     }
 
     // ── Helper ───────────────────────────────────────────────

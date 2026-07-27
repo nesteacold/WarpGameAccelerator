@@ -86,6 +86,34 @@
                 </StackPanel>
             </Border>
 
+            <!-- Import Account Section -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+
+                    <TextBlock Text="Import tài khoản WARP có sẵn (wgcf)"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+
+                    <TextBlock Text="Nếu bạn đã có tài khoản đăng ký sẵn bằng wgcf (wgcf-account.toml + wgcf-profile.conf), import vào đây để dùng cho Direct Mode."
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                    <Button x:Name="ImportAccountBtn"
+                            Content="📂  Chọn file wgcf-account.toml"
+                            HorizontalAlignment="Stretch"
+                            Click="ImportAccountBtn_Click"
+                            CornerRadius="6"/>
+
+                    <TextBlock x:Name="ImportMsg"
+                               Text=""
+                               FontSize="12" TextWrapping="Wrap"
+                               Visibility="Collapsed"/>
+
+                </StackPanel>
+            </Border>
+
             <!-- Reset Section -->
             <Border Background="#0AFF4444"
                     BorderBrush="#33FF4444"

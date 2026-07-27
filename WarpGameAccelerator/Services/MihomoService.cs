@@ -24,10 +24,29 @@ public class MihomoService
 
     private void ExtractCoreResources()
     {
+        StopProxy();
+
         if (!Directory.Exists(_coreDir))
             Directory.CreateDirectory(_coreDir);
 
         var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        var currentVersion = assembly.GetName().Version?.ToString() ?? "1.0.0";
+        var versionFilePath = Path.Combine(_coreDir, ".extracted_version");
+
+        if (!File.Exists(versionFilePath))
+        {
+        }
+        else
+        {
+            try
+            {
+                var savedVersion = File.ReadAllText(versionFilePath).Trim();
+            }
+            catch
+            {
+            }
+        }
+
         // EmbeddedResource namespace pattern: ProjectName.FolderName.FileName
         var resourcesToExtract = new[] {
             "mihomo.exe",
@@ -44,23 +63,28 @@ public class MihomoService
             if (resName != null)
             {
                 var destPath = Path.Combine(_coreDir, file);
-                // Chỉ extract nếu file chưa tồn tại hoặc bị lỗi
-                if (!File.Exists(destPath) || new FileInfo(destPath).Length == 0)
+                using var stream = assembly.GetManifestResourceStream(resName);
+                if (stream != null)
                 {
-                    using var stream = assembly.GetManifestResourceStream(resName);
-                    if (stream != null)
-                    {
-                        using var fileStream = File.Create(destPath);
-                        stream.CopyTo(fileStream);
-                    }
+                    using var fileStream = File.Create(destPath);
+                    stream.CopyTo(fileStream);
                 }
             }
         }
+
+        try
+        {
+            File.WriteAllText(versionFilePath, currentVersion);
+        }
+        catch { }
     }
 
     public async Task StartProxyAsync(string processName, bool isDirectWireGuard = true)
     {
         StopProxy(); // Stop any existing instance
+        await Task.Delay(1000); // Chờ 1 giây để Windows Kernel giải phóng card mạng Wintun Meta và Socket Bindings
+
+        string proxyName = isDirectWireGuard ? "WARP-Direct" : "WARP_OUT";
 
         // Tách chuỗi processName thành mảng các tên tiến trình
         var processes = processName.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
@@ -71,46 +95,75 @@ public class MihomoService
             if (cleanP.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 cleanP = cleanP.Substring(0, cleanP.Length - 4);
             
-            rulesBuilder.AppendLine($"  - PROCESS-NAME,{cleanP}.exe,WARP_OUT");
+            rulesBuilder.AppendLine($"  - PROCESS-NAME,{cleanP}.exe,{proxyName}");
         }
 
         string proxyConfig;
+        string excludeRoute = "";
+        
         if (isDirectWireGuard)
         {
-            // Chế độ Siêu Tốc (Direct WireGuard): Kết nối trực tiếp hạ tầng Cloudflare WARP
-            // Tích hợp WireGuard-go, Persistent Keepalive 25s chống rớt mạng, giảm 2-8ms trễ.
+            // Chế độ Siêu Tốc (Direct Mode Cloudflare WARP WireGuard)
             var acc = await WarpAccountService.GetOrCreateAccountAsync();
-            // Kiểm tra xem người dùng có chọn Node thủ công hay dùng Auto
             var selectedNode = CloudflareNodeService.GetSelectedNode();
             string host = "162.159.192.1";
-            string port = "2408";
+            int port = 2408;
 
             if (selectedNode != null && !selectedNode.IsAuto && !string.IsNullOrEmpty(selectedNode.EndpointIp))
             {
                 host = selectedNode.EndpointIp;
-                port = selectedNode.Port.ToString();
+                port = selectedNode.Port;
             }
-            else
+            else if (!string.IsNullOrEmpty(acc.Endpoint))
             {
-                var epParts = acc.Endpoint.Split(':');
-                if (epParts.Length > 0 && !string.IsNullOrEmpty(epParts[0])) host = epParts[0];
-                if (epParts.Length > 1 && !string.IsNullOrEmpty(epParts[1])) port = epParts[1];
+                // Dùng endpoint thật từ tài khoản (wgcf trả về host dạng
+                // "engage.cloudflareclient.com:2408" hoặc "IP:port")
+                var lastColon = acc.Endpoint.LastIndexOf(':');
+                if (lastColon > 0)
+                {
+                    host = acc.Endpoint[..lastColon];
+                    if (int.TryParse(acc.Endpoint[(lastColon + 1)..], out var parsedPort) && parsedPort > 0)
+                        port = parsedPort;
+                }
             }
+            acc.Endpoint = $"{host}:{port}";
 
-            var ipv6Line = !string.IsNullOrEmpty(acc.IPv6) ? $"\n    ipv6: {acc.IPv6}" : "";
+            byte[] clientBytes = new byte[3];
+            if (!string.IsNullOrEmpty(acc.ClientId))
+            {
+                try
+                {
+                    var b = Convert.FromBase64String(acc.ClientId);
+                    if (b.Length >= 3)
+                    {
+                        clientBytes[0] = b[0];
+                        clientBytes[1] = b[1];
+                        clientBytes[2] = b[2];
+                    }
+                }
+                catch { }
+            }
 
             proxyConfig = $@"
-  - name: ""WARP_OUT""
+  - name: {proxyName}
     type: wireguard
     server: {host}
     port: {port}
-    ip: {acc.IPv4}{ipv6Line}
+    ip: {acc.IPv4}
     public-key: {acc.PeerPublicKey}
     private-key: {acc.PrivateKey}
-    remote-dns-resolve: true
-    keepalive: 25
+    reserved: [{clientBytes[0]}, {clientBytes[1]}, {clientBytes[2]}]
+    mtu: 1280
     udp: true
-    skip-cert-verify: true";
+    remote-dns-resolve: true
+    keepalive: 25";
+            
+            // inet4-route-exclude-address chỉ nhận IP thuần, không nhận hostname
+            // (server có thể là "engage.cloudflareclient.com" khi lấy từ acc.Endpoint)
+            if (System.Net.IPAddress.TryParse(host, out _))
+            {
+                excludeRoute = $"\n  inet4-route-exclude-address:\n    - {host}/32";
+            }
         }
         else
         {
@@ -124,13 +177,25 @@ public class MihomoService
     skip-cert-verify: true";
         }
 
-        string dnsAndTunConfig = @"
+        string dnsAndTunConfig = $@"
+dns:
+  enable: true
+  listen: 0.0.0.0:1053
+  ipv6: false
+  enhanced-mode: redir-host
+  default-nameserver:
+    - 1.1.1.1
+    - 1.0.0.1
+  nameserver:
+    - 1.1.1.1
+    - 1.0.0.1
 tun:
   enable: true
   stack: mixed
   auto-route: true
-  auto-detect-interface: true
+  auto-detect-interface: true{excludeRoute}
   mtu: 1280
+  tcp-concurrent: true
   dns-hijack:
     - any:53";
 
@@ -147,15 +212,24 @@ proxies:
 {proxyConfig}
 
 rules:
+  - IP-CIDR,127.0.0.0/8,DIRECT
+  - IP-CIDR,192.168.0.0/16,DIRECT
+  - IP-CIDR,10.0.0.0/8,DIRECT
+  - IP-CIDR,172.16.0.0/12,DIRECT
+  - IP-CIDR,1.1.1.1/32,{proxyName}
+  - IP-CIDR,1.0.0.1/32,{proxyName}
   # Ép toàn bộ traffic của (các) process này qua WARP
 {rulesBuilder.ToString()}
-  # Bỏ qua toàn bộ traffic khác (không chui qua proxy, dùng mạng gốc)
+  # Giữ nguyên toàn bộ ứng dụng khác chạy trên mạng nhà (Split Tunneling chuẩn)
   - MATCH,DIRECT
 ";
         if (!Directory.Exists(_coreDir))
             Directory.CreateDirectory(_coreDir);
 
         await File.WriteAllTextAsync(_configPath, yaml, Encoding.UTF8);
+
+        var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
+        try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
 
         _mihomoProcess = new Process
         {
@@ -166,13 +240,28 @@ rules:
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
-                WorkingDirectory = _coreDir
+                WorkingDirectory = _coreDir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
             }
+        };
+
+        _mihomoProcess.OutputDataReceived += (s, e) =>
+        {
+            if (e.Data == null) return;
+            try { File.AppendAllText(runtimeLogPath, e.Data + Environment.NewLine); } catch { }
+        };
+        _mihomoProcess.ErrorDataReceived += (s, e) =>
+        {
+            if (e.Data == null) return;
+            try { File.AppendAllText(runtimeLogPath, e.Data + Environment.NewLine); } catch { }
         };
 
         try
         {
             _mihomoProcess.Start();
+            _mihomoProcess.BeginOutputReadLine();
+            _mihomoProcess.BeginErrorReadLine();
         }
         catch (Exception ex)
         {
@@ -187,6 +276,7 @@ rules:
             try
             {
                 _mihomoProcess.Kill();
+                _mihomoProcess.WaitForExit(1000);
                 _mihomoProcess.Dispose();
             }
             catch { }
@@ -194,9 +284,21 @@ rules:
         _mihomoProcess = null;
 
         // Cleanup any leftover instances just in case
-        foreach (var proc in Process.GetProcessesByName("mihomo"))
+        foreach (var procName in new[] { "mihomo" })
         {
-            try { proc.Kill(); } catch { }
+            foreach (var proc in Process.GetProcessesByName(procName))
+            {
+                try
+                {
+                    proc.Kill();
+                    proc.WaitForExit(1000);
+                }
+                catch { }
+                finally
+                {
+                    proc.Dispose();
+                }
+            }
         }
     }
 }

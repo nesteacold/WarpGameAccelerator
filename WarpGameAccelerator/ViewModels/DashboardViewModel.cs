@@ -15,6 +15,7 @@ public partial class DashboardViewModel : ObservableObject
     private readonly PingMonitorService _pingMonitor;
     private readonly MihomoService _mihomoService;
     private readonly LocalizationService _loc;
+    private readonly GameProfileService _profileService;
     private readonly DispatcherQueue _dispatcher;
     private readonly NetworkOptimizerService _networkOptimizer;
 
@@ -94,12 +95,14 @@ public partial class DashboardViewModel : ObservableObject
                               PingMonitorService pingMonitor,
                               MihomoService mihomoService,
                               LocalizationService loc,
+                              GameProfileService profileService,
                               DispatcherQueue dispatcher)
     {
         _warpService   = warpService;
         _pingMonitor   = pingMonitor;
         _mihomoService = mihomoService;
         _loc           = loc;
+        _profileService = profileService;
         _dispatcher    = dispatcher;
         _networkOptimizer = new NetworkOptimizerService();
 
@@ -113,6 +116,29 @@ public partial class DashboardViewModel : ObservableObject
             OnPropertyChanged(nameof(GameDisplayName));
             OnPropertyChanged(nameof(Loc));
         };
+
+        // Khôi phục & tự Boost lại phiên trước nếu app bị crash lúc đang Connected
+        _ = TryRestoreLastSessionAsync();
+    }
+
+    private async Task TryRestoreLastSessionAsync()
+    {
+        var state = BoostStateService.LoadState();
+        if (state == null || !state.WasConnected || string.IsNullOrWhiteSpace(state.ProcessName))
+            return;
+
+        if (!string.IsNullOrEmpty(state.ProfileName))
+        {
+            var profile = _profileService.All.FirstOrDefault(p => p.Name == state.ProfileName);
+            if (profile != null) SetSelectedProfile(profile);
+            else SetSelectedProcess(state.ProcessName);
+        }
+        else
+        {
+            SetSelectedProcess(state.ProcessName);
+        }
+
+        await ToggleBoostCommand.ExecuteAsync(null);
     }
 
     // ── Commands ─────────────────────────────────────────────
@@ -195,6 +221,7 @@ public partial class DashboardViewModel : ObservableObject
 
         CurrentState = AppState.Connected;
         await _networkOptimizer.OptimizeAsync();
+        SaveBoostState();
         BoostStarted?.Invoke();
     }
 
@@ -211,7 +238,16 @@ public partial class DashboardViewModel : ObservableObject
         CurrentState = AppState.Idle;
         CurrentPingMs = 0;
         PacketLossPercent = 0;
+        SaveBoostState();
         BoostStopped?.Invoke();
+    }
+
+    private void SaveBoostState()
+    {
+        BoostStateService.SaveState(
+            wasConnected: CurrentState == AppState.Connected,
+            processName: SelectedProcessName,
+            profileName: _selectedProfile?.Name ?? string.Empty);
     }
 
     private void SetError(string message)
@@ -219,6 +255,7 @@ public partial class DashboardViewModel : ObservableObject
         ErrorMessage = message;
         CurrentState = AppState.Error;
         _pingMonitor.Stop();
+        SaveBoostState();
     }
 
     private void OnPingUpdated(object? sender, PingStats stats)
@@ -241,6 +278,7 @@ public partial class DashboardViewModel : ObservableObject
         if (CurrentState == AppState.Connected)
         {
             _ = UpdateActiveProxyRulesAsync();
+            SaveBoostState();
         }
     }
 
@@ -254,6 +292,7 @@ public partial class DashboardViewModel : ObservableObject
         if (CurrentState == AppState.Connected)
         {
             _ = UpdateActiveProxyRulesAsync();
+            SaveBoostState();
         }
     }
 

@@ -26,8 +26,7 @@ public sealed partial class MainWindow : Window
         _loc         = App.Services.GetRequiredService<LocalizationService>();
 
         // Đọc version động từ Assembly metadata
-        var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        AppVersionText.Text = ver is not null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.4.0";
+        AppVersionText.Text = "Version 1.9.22";
 
         ConfigureWindow();
         ConfigureSystemBackdrop();

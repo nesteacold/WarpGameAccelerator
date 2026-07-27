@@ -94,7 +94,9 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
-    private readonly string _settingsFilePath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "ping_targets.json");
+    private readonly string _settingsFilePath = System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "WarpGameAccelerator", "Data", "ping_targets.json");
 
     private void LoadPingTargets()
     {
@@ -121,6 +123,8 @@ public partial class SettingsViewModel : ObservableObject
     {
         try
         {
+            var dir = System.IO.Path.GetDirectoryName(_settingsFilePath)!;
+            if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
             var json = JsonSerializer.Serialize(PingTargets.ToList());
             System.IO.File.WriteAllText(_settingsFilePath, json);
         }
@@ -138,7 +142,9 @@ public partial class SettingsViewModel : ObservableObject
         SaveEngineMode(value);
     }
 
-    private static readonly string _engineModeFilePath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "Data", "engine_mode.json");
+    private static readonly string _engineModeFilePath = System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "WarpGameAccelerator", "Data", "engine_mode.json");
 
     public static bool LoadEngineMode()
     {

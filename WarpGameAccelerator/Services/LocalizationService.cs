@@ -16,7 +16,8 @@ public enum AppLanguage { VI, EN }
 public partial class LocalizationService : ObservableObject
 {
     private static readonly string _settingsPath =
-        Path.Combine(AppContext.BaseDirectory, "Data", "language.json");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                     "WarpGameAccelerator", "Data", "language.json");
 
     [ObservableProperty] private AppLanguage _currentLanguage;
 

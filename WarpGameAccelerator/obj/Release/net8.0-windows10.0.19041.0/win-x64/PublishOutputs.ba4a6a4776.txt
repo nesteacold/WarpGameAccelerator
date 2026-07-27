@@ -1,2 +1,0 @@
-C:\Temp\WarpBuild_1.3.1_Fix\WarpGameAccelerator.pdb
-C:\Temp\WarpBuild_1.3.1_Fix\WarpGameAccelerator.exe
