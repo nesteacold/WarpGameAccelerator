@@ -86,14 +86,11 @@ public class MihomoService
         var token = cts.Token;
 
         KillMihomoProcess(); // Stop any existing instance (không hủy token của chính lệnh này)
-        try
-        {
-            await Task.Delay(1000, token); // Chờ 1 giây để Windows Kernel giải phóng card mạng Wintun Meta và Socket Bindings
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
+
+        // Chờ instance cũ thực sự nhả cổng (7890/7891) rồi mới khởi động lại.
+        // Trước đây chờ mù 1 giây: vừa chậm khi kernel nhả nhanh, vừa không đủ
+        // khi nhả chậm → instance mới bind cổng thất bại.
+        if (!await WaitForPortsReleasedAsync(token)) return;
 
         string proxyName = isDirectWireGuard ? "WARP-Direct" : "WARP_OUT";
 
@@ -295,6 +292,61 @@ rules:
     {
         _activeStartCts?.Cancel();
         KillMihomoProcess();
+    }
+
+    /// <summary>
+    /// Chờ tới khi cổng HTTP/SOCKS của mihomo được nhả hẳn (instance cũ đã
+    /// giải phóng socket + card mạng Wintun). Trả về false nếu bị hủy giữa
+    /// chừng; hết timeout thì vẫn trả true để không chặn người dùng vô hạn.
+    /// </summary>
+    private static async Task<bool> WaitForPortsReleasedAsync(CancellationToken token)
+    {
+        const int timeoutMs   = 5000;
+        const int pollInterval = 100;
+
+        for (int waited = 0; waited < timeoutMs; waited += pollInterval)
+        {
+            if (token.IsCancellationRequested) return false;
+
+            if (ArePortsFree())
+            {
+                if (waited > 0)
+                    DiagnosticLogService.Trace($"Mihomo: cổng được nhả sau {waited}ms");
+                return true;
+            }
+
+            try
+            {
+                await Task.Delay(pollInterval, token);
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+        }
+
+        DiagnosticLogService.Trace("Mihomo: hết 5s chờ nhả cổng, vẫn khởi động tiếp");
+        return true;
+    }
+
+    private static bool ArePortsFree()
+    {
+        try
+        {
+            var listeners = System.Net.NetworkInformation.IPGlobalProperties
+                .GetIPGlobalProperties()
+                .GetActiveTcpListeners();
+
+            foreach (var ep in listeners)
+            {
+                if (ep.Port == 7890 || ep.Port == 7891) return false;
+            }
+            return true;
+        }
+        catch
+        {
+            return true; // Không kiểm tra được thì đừng chặn việc khởi động
+        }
     }
 
 

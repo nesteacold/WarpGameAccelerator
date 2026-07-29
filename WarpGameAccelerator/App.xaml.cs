@@ -75,6 +75,10 @@ public partial class App : Application
         // Chuẩn bị sẵn tài khoản WARP (tự đăng ký qua wgcf nếu chưa có) ngay khi
         // app khởi động, để lúc người dùng bấm Boost không phải chờ đăng ký.
         _ = WarpAccountService.GetOrCreateAccountAsync();
+
+        // Khôi phục tinh chỉnh mạng còn sót từ phiên trước bị kill giữa chừng,
+        // và dọn MTU 1420 do các bản cũ để lại (chỉ chạy một lần).
+        _ = Services.GetRequiredService<NetworkOptimizerService>().RecoverPendingChangesAsync();
     }
 
     private static IServiceProvider ConfigureServices()
