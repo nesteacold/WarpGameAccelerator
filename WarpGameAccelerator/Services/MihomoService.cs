@@ -214,6 +214,16 @@ socks-port: 7891
 allow-lan: false
 mode: rule
 log-level: warning
+# BẮT BUỘC 'always' — mặc định 'strict' khiến mihomo bỏ qua việc tra cứu tiến
+# trình với một số kết nối đi qua TUN. Khi đó luật PROCESS-NAME không khớp và
+# kết nối tụt xuống MATCH,DIRECT, đi thẳng ra ISP rồi timeout (~20s) vì server
+# game chỉ vào được qua tunnel — biểu hiện là đăng nhập rất chậm.
+# Bằng chứng: log ghi 'dial DIRECT (match Match/) ... --> dd.woniu.com:80'
+# KHÔNG kèm tên tiến trình trong ngoặc, tức là không nhận diện được.
+# Đây là cách sửa đúng gốc, giữ nguyên Split Tunneling theo tiến trình —
+# KHÔNG dùng luật DOMAIN-SUFFIX để vá, vì như vậy mọi ứng dụng (kể cả trình
+# duyệt) truy cập domain đó đều bị kéo qua tunnel, ăn vào băng thông WARP+.
+find-process-mode: always
 {dnsAndTunConfig}
 
 proxies:

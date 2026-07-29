@@ -25,6 +25,29 @@ public class RunningClient
 
 public class MultiClientService
 {
+    /// <summary>
+    /// Giãn cách giữa hai lần mở client liên tiếp, tính từ thời điểm gọi
+    /// launch (không phải từ lúc xác nhận xong).
+    ///
+    /// SKILL.md mục 5 ghi mức sàn 3000ms cho việc tránh tranh chấp tài nguyên
+    /// / crash launcher DXVK. Nhưng thực nghiệm cho thấy còn một ràng buộc
+    /// KHẮT KHE HƠN: mỗi client cần ~10 giây để xác thực xong với server. Mở
+    /// client kế tiếp trong lúc client trước còn đang xác thực (cùng một
+    /// token) sẽ khiến nó bị "Mạng đứt kết nối" rồi mới tự vào lại sau ~10s.
+    /// Quan sát thực tế: mở 4 client cách nhau 3s → client 3 và 4 đều dính.
+    ///
+    /// Nay đã phát hiện được thời điểm client kết nối xong bằng cách đọc bảng
+    /// TCP theo PID (xem WaitForClientConnectedAsync), nên con số cứng này
+    /// chỉ còn giữ vai trò SÀN cho ràng buộc DXVK — trả về 3000ms.
+    /// </summary>
+    private const int MinLaunchIntervalMs = 3000;
+
+    /// <summary>
+    /// Giới hạn thời gian chờ một client kết nối vào server. Hết giờ thì vẫn
+    /// mở tiếp thay vì treo — có thể người dùng chưa chọn nhân vật/vào game.
+    /// </summary>
+    private const int ConnectWaitTimeoutMs = 60000;
+
     private static readonly string TokenFilePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                      "WarpGameAccelerator", "Data", "aow_token.json");
@@ -212,8 +235,13 @@ public class MultiClientService
     /// tính cả các client đang chạy sẵn — người dùng nghĩ theo "tôi muốn chơi
     /// N acc", không phải "mở thêm N cái nữa".
     /// </summary>
+    /// <param name="progress">
+    /// Nhận thông báo tiến độ để hiển thị lên UI. Giãn cách giữa các client
+    /// khá dài (xem MinLaunchIntervalMs) nên bắt buộc phải cho người dùng
+    /// thấy app đang chờ chứ không phải treo.
+    /// </param>
     public static async Task<(int Launched, string Message)> LaunchClientsToTotalAsync(
-        string gameFolder, string token, int targetTotal)
+        string gameFolder, string token, int targetTotal, IProgress<string>? progress = null)
     {
         var gamePath = FindGameExe(gameFolder, "fxgame.exe");
         if (gamePath == null)
@@ -235,25 +263,41 @@ public class MultiClientService
         {
             try
             {
-                int countBefore = CountRunningFxgame();
-                DiagnosticLogService.Trace($"[client {i + 1}/{count}] trước khi start: {countBefore} fxgame đang chạy");
+                var pidsBefore = GetFxgamePids();
+                DiagnosticLogService.Trace($"[client {i + 1}/{count}] trước khi start: {pidsBefore.Count} fxgame đang chạy");
+
+                var launchedAt = System.Diagnostics.Stopwatch.StartNew();
 
                 // Mở qua helper, KHÔNG gọi Process.Start(fxgame) trực tiếp:
                 // fxgame.exe giết tiến trình cha của nó (cơ chế tự đóng
                 // launcher của game) — nếu gọi thẳng thì app này bị giết.
+                progress?.Report($"Đang mở cửa sổ {alreadyRunning + i + 1}/{targetTotal}...");
                 LauncherHelper.LaunchGameViaHelper(gamePath, token);
                 launched++;
-                DiagnosticLogService.Trace($"[client {i + 1}/{count}] đã gọi helper, chờ xác nhận...");
+                DiagnosticLogService.Trace($"[client {i + 1}/{count}] đã gọi helper, chờ tiến trình xuất hiện...");
 
-                // Chờ xác nhận client này thực sự đã mở (process fxgame.exe mới
-                // xuất hiện) trước khi mở client kế tiếp — launcher DXVK của
-                // game ghi log ra 1 file chung, mở 2 client cùng lúc dễ tranh
-                // chấp file lock và crash launcher (đã thấy thực tế).
-                await WaitForNewFxgameProcessAsync(countBefore, timeoutMs: 15000);
+                int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
 
                 if (i < count - 1)
                 {
-                    await Task.Delay(1000); // Đệm thêm 1 giây cho launcher DXVK giải phóng file log
+                    // Chờ client vừa mở KẾT NỐI XONG vào server rồi mới mở cái
+                    // tiếp theo. Hai client cùng xác thực một token gần như
+                    // đồng thời sẽ khiến một cái bị "Mạng đứt kết nối".
+                    if (newPid > 0)
+                    {
+                        await WaitForClientConnectedAsync(
+                            newPid, alreadyRunning + launched, targetTotal, progress);
+                    }
+
+                    // Vẫn giữ sàn tối thiểu của SKILL.md mục 5: launcher DXVK
+                    // ghi log vào một file chung, mở quá sát nhau gây tranh
+                    // chấp file lock và crash launcher.
+                    var remaining = MinLaunchIntervalMs - (int)launchedAt.ElapsedMilliseconds;
+                    if (remaining > 0)
+                    {
+                        DiagnosticLogService.Trace($"[client {i + 1}/{count}] giữ sàn giãn cách thêm {remaining}ms");
+                        await Task.Delay(remaining);
+                    }
                 }
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
@@ -280,6 +324,39 @@ public class MultiClientService
     public static int CountRunningClients() => CountRunningFxgame();
 
     /// <summary>
+    /// Chờ tới khi CÓ ÍT NHẤT MỘT client đã kết nối vào server game. Dùng sau
+    /// khi người dùng đăng nhập client đầu tiên: token xuất hiện ngay lúc
+    /// fxgame.exe vừa chạy, nhưng lúc đó nó MỚI BẮT ĐẦU xác thực. Mở client
+    /// thứ hai ngay sẽ khiến hai bên cùng xác thực một token → đứt kết nối.
+    /// </summary>
+    public static async Task WaitForAnyClientConnectedAsync(IProgress<string>? progress = null)
+    {
+        const int pollInterval = 500;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        while (sw.ElapsedMilliseconds < ConnectWaitTimeoutMs)
+        {
+            foreach (var pid in GetFxgamePids())
+            {
+                if (TcpTableHelper.HasEstablishedPublicConnection(pid))
+                {
+                    var remote = TcpTableHelper.GetFirstRemoteAddress(pid);
+                    DiagnosticLogService.Trace(
+                        $"Client đầu (PID={pid}) đã kết nối server ({remote}) sau {sw.ElapsedMilliseconds}ms");
+                    return;
+                }
+            }
+
+            progress?.Report(
+                $"Chờ client đầu kết nối vào server ({sw.ElapsedMilliseconds / 1000}s)...");
+            await Task.Delay(pollInterval);
+        }
+
+        DiagnosticLogService.Trace(
+            $"Client đầu chưa kết nối sau {ConnectWaitTimeoutMs}ms — vẫn mở tiếp");
+    }
+
+    /// <summary>
     /// Đếm số fxgame.exe đang chạy, giải phóng handle ngay sau khi đếm.
     /// Process.GetProcessesByName cấp phát 1 handle cho MỖI process trả về —
     /// không Dispose sẽ rò rỉ handle, đặc biệt khi gọi lặp trong vòng poll.
@@ -300,34 +377,83 @@ public class MultiClientService
         }
     }
 
-    // ── Chờ tới khi số lượng fxgame.exe tăng thêm (client mới đã mở) ──
-    private static async Task WaitForNewFxgameProcessAsync(int countBefore, int timeoutMs)
+    /// <summary>Tập PID của các fxgame.exe đang chạy.</summary>
+    private static HashSet<int> GetFxgamePids()
     {
-        var elapsed = 0;
+        var procs = Process.GetProcessesByName("fxgame");
+        try
+        {
+            return procs.Select(p => p.Id).ToHashSet();
+        }
+        finally
+        {
+            foreach (var p in procs)
+            {
+                try { p.Dispose(); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Chờ một fxgame.exe MỚI xuất hiện và trả về PID của nó (0 nếu hết giờ).
+    /// </summary>
+    private static async Task<int> WaitForNewFxgamePidAsync(HashSet<int> pidsBefore, int timeoutMs)
+    {
         const int pollInterval = 500;
 
-        while (elapsed < timeoutMs)
+        for (int elapsed = 0; elapsed < timeoutMs; elapsed += pollInterval)
         {
             await Task.Delay(pollInterval);
-            elapsed += pollInterval;
 
             try
             {
-                if (CountRunningFxgame() > countBefore)
+                var newPid = GetFxgamePids().FirstOrDefault(pid => !pidsBefore.Contains(pid));
+                if (newPid != 0)
                 {
-                    DiagnosticLogService.Trace($"  client mới đã xuất hiện sau {elapsed}ms");
-                    return;
+                    DiagnosticLogService.Trace($"  client mới PID={newPid} xuất hiện sau {elapsed + pollInterval}ms");
+                    return newPid;
                 }
             }
             catch (Exception ex)
             {
-                DiagnosticLogService.Trace($"  WaitForNewFxgame EXCEPTION: {ex.Message}");
+                DiagnosticLogService.Trace($"  WaitForNewFxgamePid EXCEPTION: {ex.Message}");
             }
         }
 
-        // Hết timeout mà chưa thấy — vẫn tiếp tục (không chặn vô hạn), có thể
-        // do UAC prompt đang chờ người dùng hoặc client chậm khởi động.
         DiagnosticLogService.Trace($"  TIMEOUT {timeoutMs}ms — chưa thấy client mới, vẫn tiếp tục");
+        return 0;
+    }
+
+    /// <summary>
+    /// Chờ tới khi client (PID cho trước) thật sự thiết lập được kết nối TCP
+    /// tới server game. Đây là tín hiệu chính xác cho biết nó đã xác thực
+    /// xong, thay vì đoán mò bằng số giây cố định.
+    /// </summary>
+    private static async Task WaitForClientConnectedAsync(
+        int pid, int openedSoFar, int targetTotal, IProgress<string>? progress)
+    {
+        const int pollInterval = 500;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        while (sw.ElapsedMilliseconds < ConnectWaitTimeoutMs)
+        {
+            if (TcpTableHelper.HasEstablishedPublicConnection(pid))
+            {
+                var remote = TcpTableHelper.GetFirstRemoteAddress(pid);
+                DiagnosticLogService.Trace(
+                    $"  PID={pid} đã kết nối server ({remote}) sau {sw.ElapsedMilliseconds}ms");
+                return;
+            }
+
+            progress?.Report(
+                $"Đã mở {openedSoFar}/{targetTotal} cửa sổ — " +
+                $"chờ client vừa mở kết nối vào server ({sw.ElapsedMilliseconds / 1000}s)...");
+
+            await Task.Delay(pollInterval);
+        }
+
+        DiagnosticLogService.Trace(
+            $"  PID={pid} chưa thấy kết nối server sau {ConnectWaitTimeoutMs}ms — vẫn mở tiếp");
     }
 
     // ── Quản lý client đang chạy ─────────────────────────────

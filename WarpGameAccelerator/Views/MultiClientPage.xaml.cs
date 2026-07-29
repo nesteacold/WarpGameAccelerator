@@ -37,6 +37,19 @@ public sealed partial class MultiClientPage : Page
     /// tối đa 60s để người dùng có thời gian đăng nhập trong launcher.
     /// Trả về true nếu lấy được.
     /// </summary>
+    /// <summary>
+    /// Chờ client đầu tiên thật sự kết nối được vào server game (đọc bảng TCP
+    /// theo PID) rồi mới mở tiếp — chính xác hơn và thường nhanh hơn nhiều so
+    /// với chờ cứng một số giây.
+    /// </summary>
+    private async Task WaitForFirstClientReadyAsync()
+    {
+        StartBtn.Content = "Chờ client đầu vào game...";
+
+        var reporter = new Progress<string>(text => SetProgress(text));
+        await MultiClientService.WaitForAnyClientConnectedAsync(reporter);
+    }
+
     private async Task<bool> WaitForTokenAsync()
     {
         for (int i = 0; i < 30; i++)
@@ -199,14 +212,31 @@ public sealed partial class MultiClientPage : Page
                         isError: true);
                     return;
                 }
+
+                // Token xuất hiện ngay khi fxgame.exe vừa khởi động, tức là
+                // client đầu MỚI BẮT ĐẦU đăng nhập chứ chưa vào game xong.
+                // Mở client thứ hai ngay lúc này sẽ có hai client cùng xác
+                // thực một token → server đá một cái ra ("Mạng đứt kết nối").
+                // Luồng thủ công cũ vô tình tránh được vì người dùng phải bấm
+                // tay 3 bước, tạo khoảng nghỉ đủ dài.
+                if (target > MultiClientService.CountRunningClients())
+                {
+                    await WaitForFirstClientReadyAsync();
+                }
             }
 
             // ── Giai đoạn 2: mở nốt cho đủ tổng ──
             StartBtn.Content = "Đang mở các cửa sổ...";
             SetProgress("Đang mở, chờ xác nhận từng cửa sổ trước khi mở tiếp...");
 
+            var reporter = new Progress<string>(text =>
+            {
+                SetProgress(text);
+                StartBtn.Content = text.Length > 40 ? "Đang mở..." : text;
+            });
+
             var (launched, msg) = await MultiClientService.LaunchClientsToTotalAsync(
-                _gameFolder, _currentToken, target);
+                _gameFolder, _currentToken, target, reporter);
 
             SetTokenStatus(hasToken: true);
             ShowMsg(StatusMsg, msg, isError: false);

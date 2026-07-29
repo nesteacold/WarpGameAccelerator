@@ -40,16 +40,20 @@ public static class LauncherHelper
         {
             if (string.IsNullOrWhiteSpace(gamePath) || !File.Exists(gamePath)) return;
 
-            var workDir = Path.GetDirectoryName(gamePath);
-            if (string.IsNullOrEmpty(workDir) || !Directory.Exists(workDir))
-                workDir = Path.GetDirectoryName(gamePath) ?? string.Empty;
+            var workDir = Path.GetDirectoryName(gamePath) ?? string.Empty;
 
             var psi = new ProcessStartInfo
             {
                 FileName         = gamePath,
                 Arguments        = token,
                 WorkingDirectory = workDir,
-                UseShellExecute  = false
+                // PHẢI dùng UseShellExecute = true, đúng như cách bản cũ khởi
+                // chạy game. Với false, game được tạo bằng CreateProcess và kế
+                // thừa môi trường/handle của helper (vốn chạy ẩn, không cửa sổ)
+                // → client vào game bị báo mất kết nối một lúc mới ổn định.
+                // Dùng true vẫn giữ nguyên quan hệ cha–con nên helper vẫn làm
+                // đúng vai trò hứng đòn thay app chính.
+                UseShellExecute  = true
             };
 
             using var game = Process.Start(psi);
