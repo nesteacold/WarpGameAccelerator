@@ -32,6 +32,34 @@ public sealed partial class MultiClientPage : Page
         Unloaded += (_, _) => _refreshTimer.Stop();
     }
 
+    /// <summary>
+    /// Chờ tới khi lấy được token từ fxgame.exe đang chạy — thử mỗi 2s trong
+    /// tối đa 60s để người dùng có thời gian đăng nhập trong launcher.
+    /// Trả về true nếu lấy được.
+    /// </summary>
+    private async Task<bool> WaitForTokenAsync()
+    {
+        for (int i = 0; i < 30; i++)
+        {
+            await Task.Delay(2000);
+
+            var (ok, token, _) = await MultiClientService.DetectTokenAsync();
+            if (ok && !string.IsNullOrEmpty(token))
+            {
+                _currentToken = token;
+                SetTokenStatus(hasToken: true);
+                await MultiClientService.SaveTokenAsync(token, _gameFolder);
+                DiagnosticLogService.Trace($"  lấy được token sau {(i + 1) * 2}s");
+                return true;
+            }
+
+            SetProgress($"Đang chờ bạn đăng nhập... ({(i + 1) * 2}s)");
+        }
+
+        DiagnosticLogService.Trace("  TIMEOUT 60s — không lấy được token");
+        return false;
+    }
+
     // ── Khởi động: nạp token + folder đã lưu ────────────────
     private void LoadSavedState()
     {
@@ -109,74 +137,103 @@ public sealed partial class MultiClientPage : Page
 
     private async void ValidateFolder(string folder)
     {
-        _gameFolder = folder;
-        var (valid, msg) = MultiClientService.ValidateGameFolder(folder);
-        FolderStatusText.Text       = msg;
-        FolderStatusText.Foreground = valid
-            ? new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100))
-            : new SolidColorBrush(ColorHelper.FromArgb(255, 136, 136, 136));
-
-        LaunchFirstBtn.IsEnabled = valid;
-
-        if (valid)
-        {
-            await MultiClientService.SaveTokenAsync(_currentToken, _gameFolder);
-        }
-    }
-
-    // ── Card 2: Mở client đầu ───────────────────────────────
-    private async void LaunchFirstBtn_Click(object sender, RoutedEventArgs e)
-    {
+        // async void: mọi exception thoát ra khỏi đây sẽ giết process ngay
+        // lập tức mà không handler nào bắt được → bắt buộc bọc try/catch.
         try
         {
-            LaunchFirstBtn.IsEnabled = false;
-            LaunchFirstBtn.Content   = "Đang mở...";
+            _gameFolder = folder;
+            var (valid, msg) = MultiClientService.ValidateGameFolder(folder);
+            FolderStatusText.Text       = msg;
+            FolderStatusText.Foreground = valid
+                ? new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100))
+                : new SolidColorBrush(ColorHelper.FromArgb(255, 136, 136, 136));
 
-            var (ok, msg) = await MultiClientService.LaunchFirstClientAsync(_gameFolder);
+            StartBtn.IsEnabled = valid;
 
-            LaunchFirstBtn.IsEnabled = true;
-            LaunchFirstBtn.Content   = "▶  Mở Client Đầu Tiên";
-            ShowMsg(LaunchFirstMsg, msg, !ok);
-        }
-        catch (Exception ex)
-        {
-            CrashReportService.RecordCrash(ex, "MultiClientPage.LaunchFirstBtn_Click");
-            LaunchFirstBtn.IsEnabled = true;
-            LaunchFirstBtn.Content   = "▶  Mở Client Đầu Tiên";
-            ShowMsg(LaunchFirstMsg, $"Lỗi: {ex.Message}", isError: true);
-        }
-    }
-
-    // ── Card 3: Detect Token ─────────────────────────────────
-    private async void DetectTokenBtn_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            DetectTokenBtn.IsEnabled = false;
-            DetectTokenBtn.Content   = "Đang quét...";
-
-            var (ok, token, msg) = await MultiClientService.DetectTokenAsync();
-
-            DetectTokenBtn.IsEnabled = true;
-            DetectTokenBtn.Content   = "🔍  Detect Token từ fxgame.exe";
-            ShowMsg(DetectMsg, msg, !ok);
-
-            if (ok)
+            if (valid)
             {
-                _currentToken = token;
-                SetTokenStatus(hasToken: true);
-
-                // Lưu token
-                await MultiClientService.SaveTokenAsync(token, _gameFolder);
+                await MultiClientService.SaveTokenAsync(_currentToken, _gameFolder);
             }
         }
         catch (Exception ex)
         {
-            CrashReportService.RecordCrash(ex, "MultiClientPage.DetectTokenBtn_Click");
-            DetectTokenBtn.IsEnabled = true;
-            DetectTokenBtn.Content   = "🔍  Detect Token từ fxgame.exe";
-            ShowMsg(DetectMsg, $"Lỗi: {ex.Message}", isError: true);
+            DiagnosticLogService.Trace($"ValidateFolder EXCEPTION: {ex}");
+            CrashReportService.RecordCrash(ex, "MultiClientPage.ValidateFolder");
         }
+    }
+
+    /// <summary>
+    /// MỘT nút duy nhất lo trọn quy trình: mở launcher (nếu chưa có client nào
+    /// chạy) → chờ người dùng đăng nhập & tự dò token → mở nốt cho đủ tổng số
+    /// cửa sổ mong muốn.
+    /// </summary>
+    private async void StartBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            int target = _clientCount;
+            DiagnosticLogService.Trace($"StartBtn_Click — mục tiêu tổng {target} cửa sổ");
+
+            _refreshTimer.Stop();
+            StartBtn.IsEnabled = false;
+
+            // ── Giai đoạn 1: đảm bảo đã có client đầu tiên + token ──
+            if (MultiClientService.CountRunningClients() == 0 || string.IsNullOrEmpty(_currentToken))
+            {
+                SetProgress("Đang mở launcher, hãy đăng nhập vào game...");
+                StartBtn.Content = "Đang mở launcher...";
+
+                var (launcherOk, launcherMsg) = await MultiClientService.LaunchFirstClientAsync(_gameFolder);
+                if (!launcherOk)
+                {
+                    ShowMsg(StatusMsg, launcherMsg, isError: true);
+                    return;
+                }
+
+                StartBtn.Content = "Đang chờ đăng nhập...";
+                if (!await WaitForTokenAsync())
+                {
+                    SetProgress("Chưa lấy được token — hãy đăng nhập rồi bấm MỞ lại");
+                    ShowMsg(StatusMsg,
+                        "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.",
+                        isError: true);
+                    return;
+                }
+            }
+
+            // ── Giai đoạn 2: mở nốt cho đủ tổng ──
+            StartBtn.Content = "Đang mở các cửa sổ...";
+            SetProgress("Đang mở, chờ xác nhận từng cửa sổ trước khi mở tiếp...");
+
+            var (launched, msg) = await MultiClientService.LaunchClientsToTotalAsync(
+                _gameFolder, _currentToken, target);
+
+            SetTokenStatus(hasToken: true);
+            ShowMsg(StatusMsg, msg, isError: false);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"StartBtn_Click EXCEPTION: {ex}");
+            CrashReportService.RecordCrash(ex, "MultiClientPage.StartBtn_Click");
+            ShowMsg(StatusMsg, $"Lỗi: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            StartBtn.IsEnabled = true;
+            UpdateCount();
+            _refreshTimer.Start();
+            RefreshClientList();
+            DiagnosticLogService.Trace("StartBtn_Click hoàn tất");
+        }
+    }
+
+    /// <summary>Cập nhật dòng trạng thái tiến trình (badge màu cam/xanh)</summary>
+    private void SetProgress(string text)
+    {
+        TokenDot.Fill                = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 149, 0));
+        TokenStatusBadge.Background  = new SolidColorBrush(ColorHelper.FromArgb(26, 255, 149, 0));
+        TokenStatusBadge.BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(51, 255, 149, 0));
+        TokenStatusText.Text         = text;
     }
 
     private void SetTokenStatus(bool hasToken)
@@ -193,24 +250,18 @@ public sealed partial class MultiClientPage : Page
                 ? _currentToken[..12] + "•••" + _currentToken[^8..]
                 : _currentToken;
             TokenPreviewText.Text = $"Token: {preview}";
-
-            LaunchMoreBtn.IsEnabled = true;
         }
         else
         {
-            TokenDot.Fill                  = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 149, 0));
-            TokenStatusBadge.Background    = new SolidColorBrush(ColorHelper.FromArgb(26, 255, 149, 0));
-            TokenStatusBadge.BorderBrush   = new SolidColorBrush(ColorHelper.FromArgb(51, 255, 149, 0));
-            TokenStatusText.Text           = "Chưa có token — mở client đầu tiên trước";
-            TokenPreviewText.Text          = "Token: —";
-            LaunchMoreBtn.IsEnabled        = false;
+            SetProgress("Sẵn sàng — chọn số cửa sổ rồi bấm MỞ");
+            TokenPreviewText.Text = "Token: —";
         }
     }
 
-    // ── Card 4: Spinner + Launch ─────────────────────────────
+    // ── Spinner chọn tổng số cửa sổ ──────────────────────────
     private void IncBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (_clientCount < 10) { _clientCount++; UpdateCount(); }
+        if (_clientCount < 30) { _clientCount++; UpdateCount(); }
     }
 
     private void DecBtn_Click(object sender, RoutedEventArgs e)
@@ -220,51 +271,11 @@ public sealed partial class MultiClientPage : Page
 
     private void UpdateCount()
     {
-        CountText.Text            = _clientCount.ToString();
-        LaunchMoreBtn.Content     = $"▶  Mở {_clientCount} Client";
+        CountText.Text   = _clientCount.ToString();
+        StartBtn.Content = $"▶  MỞ {_clientCount} CỬA SỔ";
     }
 
-    private async void LaunchMoreBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (string.IsNullOrEmpty(_currentToken))
-        {
-            ShowMsg(LaunchMoreMsg, "Chưa có token. Hãy thực hiện Bước 2 trước.", isError: true);
-            return;
-        }
-
-        try
-        {
-            // Tạm dừng timer tự động làm tươi để tránh xung đột UI thread khi đang launch
-            _refreshTimer.Stop();
-
-            LaunchMoreBtn.IsEnabled = false;
-            LaunchMoreBtn.Content   = "Đang mở...";
-            ShowMsg(LaunchMoreMsg, "Đang khởi chạy các client, vui lòng đợi (chờ 3s mỗi client)...", isError: false);
-
-            int count = _clientCount;
-            string folder = _gameFolder;
-            string token = _currentToken;
-
-            var (launched, msg) = await MultiClientService.LaunchAdditionalClientsAsync(folder, token, count);
-
-            LaunchMoreBtn.IsEnabled = true;
-            LaunchMoreBtn.Content   = $"▶  Mở {_clientCount} Client";
-            ShowMsg(LaunchMoreMsg, msg, launched == 0);
-        }
-        catch (Exception ex)
-        {
-            ShowMsg(LaunchMoreMsg, $"Lỗi: {ex.Message}", isError: true);
-            LaunchMoreBtn.IsEnabled = true;
-            LaunchMoreBtn.Content   = $"▶  Mở {_clientCount} Client";
-        }
-        finally
-        {
-            _refreshTimer.Start();
-            RefreshClientList();
-        }
-    }
-
-    // ── Card 5: Danh sách client đang chạy ──────────────────
+    // ── Card 3: Danh sách client đang chạy ──────────────────
     private void RefreshClientList()
     {
         try

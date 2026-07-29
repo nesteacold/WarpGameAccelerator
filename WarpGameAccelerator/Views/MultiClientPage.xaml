@@ -54,114 +54,20 @@
                 </StackPanel>
             </Border>
 
-            <!-- Card 2: Bước 1 - Mở client đầu -->
+            <!-- Card 2: Mở nhiều cửa sổ game (tổng số) -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="10">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Border Background="#1A0078D4" CornerRadius="12"
-                                Padding="6,2">
-                            <TextBlock Text="BƯỚC 1" FontSize="11" FontWeight="Bold"
-                                       Foreground="#0078D4"/>
-                        </Border>
-                        <TextBlock Text="Mở Client Đầu Tiên"
-                                   FontSize="13" FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
+                <StackPanel Spacing="12">
+                    <TextBlock Text="🚀  Mở nhiều cửa sổ game"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
 
-                    <TextBlock Text="App sẽ gọi fxlaunch.exe để đăng nhập và khởi động game."
+                    <TextBlock Text="Nhập TỔNG số cửa sổ game cần mở rồi bấm MỞ. App sẽ gọi launcher, chờ bạn đăng nhập, rồi tự động mở nốt những cửa sổ còn lại."
                                FontSize="12" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
-                    <Button x:Name="LaunchFirstBtn"
-                            Content="▶  Mở Client Đầu Tiên"
-                            HorizontalAlignment="Stretch"
-                            Style="{StaticResource AccentButtonStyle}"
-                            IsEnabled="False"
-                            Click="LaunchFirstBtn_Click"
-                            CornerRadius="6"/>
-
-                    <TextBlock x:Name="LaunchFirstMsg" Text="" FontSize="12"
-                               TextWrapping="Wrap" Visibility="Collapsed"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Card 3: Bước 2 - Detect Token -->
-            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="10">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Border Background="#1A0078D4" CornerRadius="12"
-                                Padding="6,2">
-                            <TextBlock Text="BƯỚC 2" FontSize="11" FontWeight="Bold"
-                                       Foreground="#0078D4"/>
-                        </Border>
-                        <TextBlock Text="Lấy Token"
-                                   FontSize="13" FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <!-- Token status badge -->
-                    <Border x:Name="TokenStatusBadge"
-                            Background="#1AFF9500"
-                            BorderBrush="#33FF9500"
-                            BorderThickness="1" CornerRadius="6" Padding="10,8">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse x:Name="TokenDot" Width="8" Height="8"
-                                     Fill="#FF9500" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TokenStatusText"
-                                       Text="Chưa có token — mở client đầu tiên trước"
-                                       FontSize="12" VerticalAlignment="Center"
-                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Token preview -->
-                    <Border Background="#0AFFFFFF" CornerRadius="6" Padding="10,8">
-                        <TextBlock x:Name="TokenPreviewText"
-                                   Text="Token: —"
-                                   FontFamily="Consolas" FontSize="12"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   TextTrimming="CharacterEllipsis"/>
-                    </Border>
-
-                    <Button x:Name="DetectTokenBtn"
-                            Content="🔍  Detect Token từ fxgame.exe"
-                            HorizontalAlignment="Stretch"
-                            CornerRadius="6"
-                            Click="DetectTokenBtn_Click"/>
-
-                    <TextBlock Text="Token được lưu lại và tái sử dụng đến khi game cập nhật phiên bản mới."
-                               FontSize="11" TextWrapping="Wrap"
-                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
-
-                    <TextBlock x:Name="DetectMsg" Text="" FontSize="12"
-                               TextWrapping="Wrap" Visibility="Collapsed"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Card 4: Mở thêm client -->
-            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="10">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Border Background="#1A107C10" CornerRadius="12"
-                                Padding="6,2">
-                            <TextBlock Text="BƯỚC 3" FontSize="11" FontWeight="Bold"
-                                       Foreground="#107C10"/>
-                        </Border>
-                        <TextBlock Text="Mở Thêm Client"
-                                   FontSize="13" FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <!-- Count spinner + Launch button -->
+                    <!-- Tổng số cửa sổ -->
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -184,16 +90,48 @@
                         <Button Grid.Column="2" Content="+" Width="36" Height="36"
                                 x:Name="IncBtn" CornerRadius="6"
                                 Click="IncBtn_Click"/>
-                        <Button Grid.Column="3" x:Name="LaunchMoreBtn"
-                                Content="▶  Mở Client"
-                                HorizontalAlignment="Stretch"
-                                Background="#107C10" Foreground="White"
-                                IsEnabled="False"
-                                CornerRadius="6"
-                                Click="LaunchMoreBtn_Click"/>
+                        <TextBlock Grid.Column="3" Text="tổng số cửa sổ"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                     </Grid>
 
-                    <TextBlock x:Name="LaunchMoreMsg" Text="" FontSize="12"
+                    <!-- MỘT nút duy nhất lo trọn quy trình -->
+                    <Button x:Name="StartBtn"
+                            Content="▶  MỞ 2 CỬA SỔ"
+                            HorizontalAlignment="Stretch"
+                            Height="40"
+                            Style="{StaticResource AccentButtonStyle}"
+                            IsEnabled="False"
+                            Click="StartBtn_Click"
+                            CornerRadius="6"/>
+
+                    <!-- Trạng thái tiến trình -->
+                    <Border x:Name="TokenStatusBadge"
+                            Background="#1AFF9500"
+                            BorderBrush="#33FF9500"
+                            BorderThickness="1" CornerRadius="6" Padding="10,8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="TokenDot" Width="8" Height="8"
+                                     Fill="#FF9500" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TokenStatusText"
+                                       Text="Sẵn sàng — chọn số cửa sổ rồi bấm MỞ"
+                                       FontSize="12" VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Token preview -->
+                    <Border Background="#0AFFFFFF" CornerRadius="6" Padding="10,8">
+                        <TextBlock x:Name="TokenPreviewText"
+                                   Text="Token: —"
+                                   FontFamily="Consolas" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </Border>
+
+                    <TextBlock x:Name="StatusMsg" Text="" FontSize="12"
                                TextWrapping="Wrap" Visibility="Collapsed"/>
                 </StackPanel>
             </Border>

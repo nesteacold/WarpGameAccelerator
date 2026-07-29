@@ -7,6 +7,7 @@ namespace WarpGameAccelerator.Services;
 public class MihomoService
 {
     private Process? _mihomoProcess;
+    private CancellationTokenSource? _activeStartCts;
     private readonly string _coreDir;
     private readonly string _exePath;
     private readonly string _configPath;
@@ -33,18 +34,13 @@ public class MihomoService
         var currentVersion = assembly.GetName().Version?.ToString() ?? "1.0.0";
         var versionFilePath = Path.Combine(_coreDir, ".extracted_version");
 
-        if (!File.Exists(versionFilePath))
+        // Bỏ qua re-extract nếu version không đổi và mihomo.exe đã tồn tại —
+        // tránh ghi lại ~50MB ra đĩa mỗi lần app khởi động.
+        if (File.Exists(versionFilePath) && File.Exists(_exePath))
         {
-        }
-        else
-        {
-            try
-            {
-                var savedVersion = File.ReadAllText(versionFilePath).Trim();
-            }
-            catch
-            {
-            }
+            string savedVersion = "";
+            try { savedVersion = File.ReadAllText(versionFilePath).Trim(); } catch { }
+            if (savedVersion == currentVersion) return;
         }
 
         // EmbeddedResource namespace pattern: ProjectName.FolderName.FileName
@@ -81,8 +77,23 @@ public class MihomoService
 
     public async Task StartProxyAsync(string processName, bool isDirectWireGuard = true)
     {
-        StopProxy(); // Stop any existing instance
-        await Task.Delay(1000); // Chờ 1 giây để Windows Kernel giải phóng card mạng Wintun Meta và Socket Bindings
+        // Hủy mọi lệnh Start đang dở trước khi bắt đầu lệnh mới — tránh 2 lệnh
+        // Start chồng chéo ghi đè config lẫn nhau, hoặc lệnh cũ "hồi sinh" tunnel
+        // sau khi StopProxy() đã được gọi (disconnect) trong lúc nó đang chờ.
+        _activeStartCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _activeStartCts = cts;
+        var token = cts.Token;
+
+        KillMihomoProcess(); // Stop any existing instance (không hủy token của chính lệnh này)
+        try
+        {
+            await Task.Delay(1000, token); // Chờ 1 giây để Windows Kernel giải phóng card mạng Wintun Meta và Socket Bindings
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
 
         string proxyName = isDirectWireGuard ? "WARP-Direct" : "WARP_OUT";
 
@@ -223,10 +234,14 @@ rules:
   # Giữ nguyên toàn bộ ứng dụng khác chạy trên mạng nhà (Split Tunneling chuẩn)
   - MATCH,DIRECT
 ";
+        if (token.IsCancellationRequested) return;
+
         if (!Directory.Exists(_coreDir))
             Directory.CreateDirectory(_coreDir);
 
         await File.WriteAllTextAsync(_configPath, yaml, Encoding.UTF8);
+
+        if (token.IsCancellationRequested) return;
 
         var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
         try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
@@ -267,9 +282,23 @@ rules:
         {
             throw new Exception($"Không thể khởi chạy Mihomo Core tại {_exePath}. Lỗi: {ex.Message}");
         }
+
+        if (token.IsCancellationRequested)
+        {
+            // Bị hủy ngay trước khi kịp start xong (ví dụ user vừa Disconnect) —
+            // dừng lại ngay, không để tunnel treo lại sau khi đã bị yêu cầu ngắt.
+            KillMihomoProcess();
+        }
     }
 
     public void StopProxy()
+    {
+        _activeStartCts?.Cancel();
+        KillMihomoProcess();
+    }
+
+
+    private void KillMihomoProcess()
     {
         if (_mihomoProcess != null && !_mihomoProcess.HasExited)
         {
@@ -284,20 +313,17 @@ rules:
         _mihomoProcess = null;
 
         // Cleanup any leftover instances just in case
-        foreach (var procName in new[] { "mihomo" })
+        foreach (var proc in Process.GetProcessesByName("mihomo"))
         {
-            foreach (var proc in Process.GetProcessesByName(procName))
+            try
             {
-                try
-                {
-                    proc.Kill();
-                    proc.WaitForExit(1000);
-                }
-                catch { }
-                finally
-                {
-                    proc.Dispose();
-                }
+                proc.Kill();
+                proc.WaitForExit(1000);
+            }
+            catch { }
+            finally
+            {
+                proc.Dispose();
             }
         }
     }

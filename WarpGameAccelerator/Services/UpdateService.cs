@@ -81,7 +81,7 @@ title WARP Game Accelerator Updater
 echo Đang cài đặt bản cập nhật, vui lòng đợi...
 timeout /t 2 /nobreak > nul
 copy /y ""{tempExePath}"" ""{currentExePath}""
-start """" ""{currentExePath}""
+powershell -Command ""Start-Process -FilePath '{currentExePath}' -Verb RunAs""
 del ""{tempExePath}""
 del ""%~f0""
 ";
@@ -95,6 +95,8 @@ del ""%~f0""
             };
             Process.Start(startInfo);
 
+            // Không kill mihomo.exe ở đây — để tunnel WireGuard tiếp tục chạy
+            // xuyên suốt lúc app tự restart, tránh game bị rớt kết nối giữa chừng.
             Environment.Exit(0);
         }
         catch (Exception ex)

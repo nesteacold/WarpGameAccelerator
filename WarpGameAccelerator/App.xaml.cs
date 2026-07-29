@@ -25,22 +25,40 @@ public partial class App : Application
         try { if (!System.IO.Directory.Exists(logDir)) System.IO.Directory.CreateDirectory(logDir); } catch { }
         string logFile = System.IO.Path.Combine(logDir, "crash.log");
 
+        // Đánh dấu mốc khởi động. Nếu lần chạy sau thấy trace.log kết thúc mà
+        // KHÔNG có dòng "=== THOÁT SẠCH ===" thì biết chắc phiên trước bị kết
+        // thúc đột ngột (silent exit) chứ không phải người dùng tự thoát.
+        DiagnosticLogService.Trace("================ APP KHỞI ĐỘNG ================");
+
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
             if (e.ExceptionObject is Exception ex)
+            {
+                DiagnosticLogService.Trace($"!!! AppDomain UNHANDLED: {ex}");
                 CrashReportService.RecordCrash(ex, "AppDomain");
+            }
         };
         TaskScheduler.UnobservedTaskException += (s, e) =>
         {
             if (e.Exception != null)
+            {
+                DiagnosticLogService.Trace($"!!! TaskScheduler UNOBSERVED: {e.Exception}");
                 CrashReportService.RecordCrash(e.Exception, "TaskScheduler");
+            }
             e.SetObserved();
         };
         Microsoft.UI.Xaml.Application.Current.UnhandledException += (s, e) =>
         {
             if (e.Exception != null)
+            {
+                DiagnosticLogService.Trace($"!!! WinUI UNHANDLED: {e.Exception}");
                 CrashReportService.RecordCrash(e.Exception, "WinUI");
+            }
             e.Handled = true; // Ngăn chặn crash app trên luồng XAML UI
+        };
+        AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+        {
+            DiagnosticLogService.Trace("=== THOÁT SẠCH (ProcessExit) ===");
         };
 
         InitializeComponent();

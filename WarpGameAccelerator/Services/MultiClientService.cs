@@ -207,17 +207,26 @@ public class MultiClientService
         if (File.Exists(TokenFilePath)) File.Delete(TokenFilePath);
     }
 
-    // ── Bước 3: Mở thêm client với token đã lưu ─────────────
-    public static async Task<(int Launched, string Message)> LaunchAdditionalClientsAsync(
-        string gameFolder, string token, int count)
+    /// <summary>
+    /// Mở game cho tới khi đạt ĐỦ TỔNG số cửa sổ mong muốn (targetTotal),
+    /// tính cả các client đang chạy sẵn — người dùng nghĩ theo "tôi muốn chơi
+    /// N acc", không phải "mở thêm N cái nữa".
+    /// </summary>
+    public static async Task<(int Launched, string Message)> LaunchClientsToTotalAsync(
+        string gameFolder, string token, int targetTotal)
     {
         var gamePath = FindGameExe(gameFolder, "fxgame.exe");
         if (gamePath == null)
             return (0, "Không tìm thấy fxgame.exe.");
 
-        var workDir = Path.GetDirectoryName(gamePath);
-        if (string.IsNullOrEmpty(workDir) || !Directory.Exists(workDir))
-            workDir = gameFolder;
+        int alreadyRunning = CountRunningFxgame();
+        int count = targetTotal - alreadyRunning;
+
+        DiagnosticLogService.Trace(
+            $"LaunchClientsToTotal — mục tiêu {targetTotal}, đang chạy {alreadyRunning} → cần mở thêm {count}");
+
+        if (count <= 0)
+            return (0, $"Đã có đủ {alreadyRunning}/{targetTotal} cửa sổ game đang chạy.");
 
         int launched = 0;
         var errors   = new List<string>();
@@ -226,39 +235,99 @@ public class MultiClientService
         {
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName         = gamePath,
-                    Arguments        = token,
-                    WorkingDirectory = workDir,
-                    UseShellExecute  = true
-                };
-                using (var proc = Process.Start(psi))
-                {
-                    // Process handle safely disposed
-                }
+                int countBefore = CountRunningFxgame();
+                DiagnosticLogService.Trace($"[client {i + 1}/{count}] trước khi start: {countBefore} fxgame đang chạy");
+
+                // Mở qua helper, KHÔNG gọi Process.Start(fxgame) trực tiếp:
+                // fxgame.exe giết tiến trình cha của nó (cơ chế tự đóng
+                // launcher của game) — nếu gọi thẳng thì app này bị giết.
+                LauncherHelper.LaunchGameViaHelper(gamePath, token);
                 launched++;
+                DiagnosticLogService.Trace($"[client {i + 1}/{count}] đã gọi helper, chờ xác nhận...");
+
+                // Chờ xác nhận client này thực sự đã mở (process fxgame.exe mới
+                // xuất hiện) trước khi mở client kế tiếp — launcher DXVK của
+                // game ghi log ra 1 file chung, mở 2 client cùng lúc dễ tranh
+                // chấp file lock và crash launcher (đã thấy thực tế).
+                await WaitForNewFxgameProcessAsync(countBefore, timeoutMs: 15000);
 
                 if (i < count - 1)
                 {
-                    await Task.Delay(3000); // Minimum 3000ms delay between launches
+                    await Task.Delay(1000); // Đệm thêm 1 giây cho launcher DXVK giải phóng file log
                 }
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
+                DiagnosticLogService.Trace($"[client {i + 1}/{count}] UAC bị hủy");
                 errors.Add($"Client {i + 1}: Thao tác đã bị hủy (UAC cancellation).");
             }
             catch (Exception ex)
             {
+                DiagnosticLogService.Trace($"[client {i + 1}/{count}] EXCEPTION: {ex}");
                 errors.Add($"Client {i + 1}: {ex.Message}");
             }
         }
 
         string msg = launched == count
-            ? $"Đã mở {launched} client thành công!"
-            : $"Mở được {launched}/{count} client. Lỗi: {string.Join(", ", errors)}";
+            ? $"Đã mở đủ {alreadyRunning + launched}/{targetTotal} cửa sổ game!"
+            : $"Mở được {alreadyRunning + launched}/{targetTotal} cửa sổ. Lỗi: {string.Join(", ", errors)}";
 
+        DiagnosticLogService.Trace($"LaunchClientsToTotal KẾT THÚC — {alreadyRunning + launched}/{targetTotal}");
         return (launched, msg);
+    }
+
+    /// <summary>Số cửa sổ game (fxgame.exe) đang chạy.</summary>
+    public static int CountRunningClients() => CountRunningFxgame();
+
+    /// <summary>
+    /// Đếm số fxgame.exe đang chạy, giải phóng handle ngay sau khi đếm.
+    /// Process.GetProcessesByName cấp phát 1 handle cho MỖI process trả về —
+    /// không Dispose sẽ rò rỉ handle, đặc biệt khi gọi lặp trong vòng poll.
+    /// </summary>
+    private static int CountRunningFxgame()
+    {
+        var procs = Process.GetProcessesByName("fxgame");
+        try
+        {
+            return procs.Length;
+        }
+        finally
+        {
+            foreach (var p in procs)
+            {
+                try { p.Dispose(); } catch { }
+            }
+        }
+    }
+
+    // ── Chờ tới khi số lượng fxgame.exe tăng thêm (client mới đã mở) ──
+    private static async Task WaitForNewFxgameProcessAsync(int countBefore, int timeoutMs)
+    {
+        var elapsed = 0;
+        const int pollInterval = 500;
+
+        while (elapsed < timeoutMs)
+        {
+            await Task.Delay(pollInterval);
+            elapsed += pollInterval;
+
+            try
+            {
+                if (CountRunningFxgame() > countBefore)
+                {
+                    DiagnosticLogService.Trace($"  client mới đã xuất hiện sau {elapsed}ms");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLogService.Trace($"  WaitForNewFxgame EXCEPTION: {ex.Message}");
+            }
+        }
+
+        // Hết timeout mà chưa thấy — vẫn tiếp tục (không chặn vô hạn), có thể
+        // do UAC prompt đang chờ người dùng hoặc client chậm khởi động.
+        DiagnosticLogService.Trace($"  TIMEOUT {timeoutMs}ms — chưa thấy client mới, vẫn tiếp tục");
     }
 
     // ── Quản lý client đang chạy ─────────────────────────────

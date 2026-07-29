@@ -13,6 +13,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Dùng Main tự viết (Program.cs) để chặn sớm chế độ helper trước khi
+         khởi tạo WinUI — xem Program.cs và LauncherHelper.cs -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <!-- TrayIcon dùng P/Invoke Shell_NotifyIcon — không cần WinForms -->
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <WindowsPackageType>None</WindowsPackageType>
@@ -20,9 +23,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <AssemblyVersion>1.9.22.0</AssemblyVersion>
-    <FileVersion>1.9.22.0</FileVersion>
-    <Version>1.9.22</Version>
+    <AssemblyVersion>1.10.0.0</AssemblyVersion>
+    <FileVersion>1.10.0.0</FileVersion>
+    <Version>1.10.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

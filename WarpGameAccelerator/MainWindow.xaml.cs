@@ -25,8 +25,12 @@ public sealed partial class MainWindow : Window
         _dashboardVm = dashboardVm;
         _loc         = App.Services.GetRequiredService<LocalizationService>();
 
-        // Đọc version động từ Assembly metadata
-        AppVersionText.Text = "Version 1.9.22";
+        // Đọc version động từ Assembly metadata — KHÔNG hard-code, tránh
+        // trường hợp bump version trong .csproj mà quên sửa UI.
+        var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        AppVersionText.Text = ver is not null
+            ? $"Version {ver.Major}.{ver.Minor}.{ver.Build}"
+            : "Version —";
 
         ConfigureWindow();
         ConfigureSystemBackdrop();
@@ -203,12 +207,16 @@ public sealed partial class MainWindow : Window
                 var warpSvc = App.Services.GetRequiredService<IWarpService>();
                 var mihomoSvc = App.Services.GetRequiredService<MihomoService>();
 
-                // Ngắt Cloudflare WARP trước
-                await warpSvc.DisconnectAsync();
-                
-                // Dừng Mihomo và Dashboard
+                // Dừng Mihomo TRƯỚC (nhanh, không phụ thuộc network) — nếu bước
+                // warpSvc.DisconnectAsync() bên dưới bị treo và hết timeout 3s,
+                // Environment.Exit(0) vẫn đảm bảo mihomo.exe đã được kill, không
+                // để lại tiến trình mồ côi giữ nguyên tunnel WireGuard sau khi
+                // app đã tắt.
                 mihomoSvc.StopProxy();
                 await _dashboardVm.HandleAppExitAsync();
+
+                // Ngắt Cloudflare WARP (có thể chậm nếu warp-cli phản hồi trễ)
+                await warpSvc.DisconnectAsync();
             });
 
             await Task.WhenAny(cleanupTask, Task.Delay(3000));
