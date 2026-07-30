@@ -95,6 +95,11 @@
                         <FontIcon Glyph="&#xE90F;"/>
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Tag="aowbooster" Content="AoW Booster">
+                    <NavigationViewItem.Icon>
+                        <FontIcon FontFamily="Segoe UI Emoji" Glyph="🚀"/>
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Tag="warpaccount" Content="WARP+ Account">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8D4;"/>

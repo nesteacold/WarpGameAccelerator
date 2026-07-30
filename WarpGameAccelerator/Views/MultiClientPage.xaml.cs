@@ -288,10 +288,15 @@ public sealed partial class MultiClientPage : Page
         }
     }
 
-    // ── Spinner chọn tổng số cửa sổ ──────────────────────────
+    // ── Chọn tổng số cửa sổ: spinner +/- hoặc gõ tay trực tiếp ──────
+    private const int MaxClientCount = 30;
+
+    /// <summary>Chặn TextChanged tự bắn lại khi chính code này gán CountText.Text.</summary>
+    private bool _suppressCountTextChanged = false;
+
     private void IncBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (_clientCount < 30) { _clientCount++; UpdateCount(); }
+        if (_clientCount < MaxClientCount) { _clientCount++; UpdateCount(); }
     }
 
     private void DecBtn_Click(object sender, RoutedEventArgs e)
@@ -299,9 +304,33 @@ public sealed partial class MultiClientPage : Page
         if (_clientCount > 1) { _clientCount--; UpdateCount(); }
     }
 
+    /// <summary>Gõ tay: chỉ cập nhật _clientCount nếu hợp lệ, không ép định dạng ngay
+    /// (để không giật con trỏ khi đang gõ) — chuẩn hoá hiển thị lúc mất focus.</summary>
+    private void CountText_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressCountTextChanged) return;
+
+        if (int.TryParse(CountText.Text, out int value) && value >= 1 && value <= MaxClientCount)
+        {
+            _clientCount = value;
+            StartBtn.Content = $"▶  MỞ {_clientCount} CỬA SỔ";
+        }
+        // Giá trị rỗng/ngoài khoảng trong lúc đang gõ: giữ nguyên _clientCount
+        // cũ, chờ LostFocus chuẩn hoá lại ô nhập.
+    }
+
+    /// <summary>Rời khỏi ô nhập: ép về giá trị hợp lệ đã lưu (vd gõ "0", để trống, "999"...).</summary>
+    private void CountText_LostFocus(object sender, RoutedEventArgs e)
+    {
+        UpdateCount();
+    }
+
     private void UpdateCount()
     {
-        CountText.Text   = _clientCount.ToString();
+        _suppressCountTextChanged = true;
+        CountText.Text = _clientCount.ToString();
+        _suppressCountTextChanged = false;
+
         StartBtn.Content = $"▶  MỞ {_clientCount} CỬA SỔ";
     }
 

@@ -1,0 +1,158 @@
+<!-- ============================================================
+     Views/AowBoosterPage.xaml — AoW Booster (DXVK/FSR/Frame-Gen)
+     Giao diện điều khiển AOW_DXVK302_Launcher.exe (orchestrate, không sửa
+     code của project DXVK_Project — xem CLAUDE.md mục "Ranh giới với dự án khác").
+     ============================================================ -->
+<Page
+    x:Class="WarpGameAccelerator.Views.AowBoosterPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="Transparent">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="16,10,16,14" Spacing="10">
+
+            <TextBlock Text="AOW BOOSTER"
+                       FontSize="12" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       CharacterSpacing="80"/>
+
+            <!-- Card: Thư mục Game + Trạng thái (gộp chung để tiết kiệm chiều cao) -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="14,12">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="🎮  Thư mục Game (Age of Wushu)"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="FolderPathBox"
+                                 Grid.Column="0"
+                                 PlaceholderText="C:\Program Files\AOW"
+                                 CornerRadius="6"
+                                 TextChanged="FolderPathBox_TextChanged"/>
+                        <Button Grid.Column="1"
+                                x:Name="BrowseBtn"
+                                Content="📂"
+                                FontSize="16"
+                                Width="40" Height="32"
+                                CornerRadius="6"
+                                Click="BrowseBtn_Click"
+                                ToolTipService.ToolTip="Chọn thư mục game"/>
+                    </Grid>
+
+                    <TextBlock x:Name="FolderStatusText"
+                               FontSize="11" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Nhập hoặc chọn thư mục cài đặt AoW"/>
+
+                    <!-- Trạng thái cài đặt -->
+                    <Grid ColumnSpacing="10" Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock x:Name="StatusIcon" Grid.Column="0"
+                                   Text="⚡" FontSize="22" VerticalAlignment="Center"/>
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
+                            <TextBlock x:Name="StatusTitle" Text="Chưa xác định"
+                                       FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock x:Name="StatusSubtitle" Text="Chọn thư mục game để kiểm tra"
+                                       FontSize="11"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+
+                        <Border x:Name="StatusBadge" Grid.Column="2"
+                                Background="#332ECC71" CornerRadius="10"
+                                Padding="8,3" VerticalAlignment="Center" Visibility="Collapsed">
+                            <TextBlock x:Name="StatusBadgeText" Text="Đang hoạt động"
+                                       FontSize="10" FontWeight="SemiBold" Foreground="#2ECC71"/>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Card: Phím tắt trong game (read-only, không phải toggle) -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="14,12">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="⌨️  Phím tắt trong game (bật/tắt khi đang chơi)"
+                               FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+
+                    <Grid ColumnSpacing="8" RowSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Grid.Column="0" Background="{ThemeResource ControlFillColorSecondaryBrush}" CornerRadius="6" Padding="8,6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="FSR" FontSize="12" VerticalAlignment="Center"/>
+                                <TextBlock Text="Tab+F1" FontFamily="Consolas" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="0" Grid.Column="1" Background="{ThemeResource ControlFillColorSecondaryBrush}" CornerRadius="6" Padding="8,6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="Frame Gen" FontSize="12" VerticalAlignment="Center"/>
+                                <TextBlock Text="Tab+F2" FontFamily="Consolas" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Grid.Column="0" Background="{ThemeResource ControlFillColorSecondaryBrush}" CornerRadius="6" Padding="8,6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="Eco Mode" FontSize="12" VerticalAlignment="Center"/>
+                                <TextBlock Text="Tab+F3" FontFamily="Consolas" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Grid.Column="1" Background="{ThemeResource ControlFillColorSecondaryBrush}" CornerRadius="6" Padding="8,6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="RAM dọn" FontSize="12" VerticalAlignment="Center"/>
+                                <TextBlock Text="Tab+F4" FontFamily="Consolas" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Tiến trình / log ngắn -->
+            <TextBlock x:Name="ProgressText"
+                       FontSize="11" TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text=""/>
+
+            <!-- Buttons -->
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" x:Name="UninstallBtn" Content="Gỡ cài đặt"
+                        HorizontalAlignment="Stretch" Height="36" CornerRadius="8"
+                        Click="UninstallBtn_Click"/>
+                <Button Grid.Column="1" x:Name="CleanLogsBtn" Content="Dọn log rác"
+                        HorizontalAlignment="Stretch" Height="36" CornerRadius="8"
+                        Click="CleanLogsBtn_Click"/>
+            </Grid>
+
+            <Button x:Name="InstallBtn" Content="Cài đặt lại"
+                    HorizontalAlignment="Stretch" Height="40" CornerRadius="8"
+                    Style="{ThemeResource AccentButtonStyle}"
+                    Click="InstallBtn_Click"/>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

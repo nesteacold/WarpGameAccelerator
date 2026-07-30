@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/bin/**)",
+      "Read(**/obj/**)",
+      "Read(**/.vs/**)",
+      "Read(Publish/**)",
+      "Read(Publish_*/**)",
+      "Read(.agents/**)",
+      "Read(**/*.exe)",
+      "Read(**/*.dll)",
+      "Read(**/*.pdb)",
+      "Read(**/*.log)",
+      "Read(**/*.dat)",
+      "Read(**/*.zip)"
+    ]
+  }
+}

@@ -8,3 +8,9 @@ Publish_*/
 *.exe
 *.pdb
 test_exit.cs
+
+# Agent orchestration scratch (not project source)
+.agents/
+
+# Logs
+*.log
