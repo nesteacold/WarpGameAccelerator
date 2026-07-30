@@ -9,6 +9,7 @@
 // ============================================================
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 
 namespace WarpGameAccelerator.Services;
 
@@ -17,6 +18,56 @@ public static class DxvkBoosterService
     private const string LauncherExeName = "AOW_DXVK302_Launcher.exe";
     // Phải khớp chính xác MarkerFileName trong AOWLauncher/Program.cs.
     private const string MarkerFileName = "dxvk302_install_marker.txt";
+
+    // AOWLauncher.csproj đặt SelfContained=false — máy chưa cài .NET 8 Desktop
+    // Runtime sẽ không chạy được exe (lỗi "hostfxr.dll not found"). Link chính
+    // thức Microsoft, luôn trỏ tới bản win-x64 mới nhất của major version 8.
+    private const string RuntimeInstallerUrl = "https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe";
+
+    public static bool IsMissingRuntimeError(string output)
+        => output.Contains("hostfxr.dll", StringComparison.OrdinalIgnoreCase)
+        || output.Contains("You must install .NET", StringComparison.OrdinalIgnoreCase);
+
+    // Tải installer chính thức từ Microsoft rồi cài /quiet /norestart. App đã
+    // chạy admin sẵn (requireAdministrator) nên không cần UAC prompt thêm.
+    public static async Task<(bool Success, string Message)> InstallDotNetRuntimeSilentlyAsync()
+    {
+        try
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "WarpGameAccelerator");
+            Directory.CreateDirectory(tempDir);
+            var installerPath = Path.Combine(tempDir, "windowsdesktop-runtime-win-x64.exe");
+
+            using var http = new HttpClient();
+            http.Timeout = TimeSpan.FromMinutes(3);
+            using (var response = await http.GetAsync(RuntimeInstallerUrl, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                using var fs = File.Create(installerPath);
+                await response.Content.CopyToAsync(fs);
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName        = installerPath,
+                Arguments       = "/install /quiet /norestart",
+                UseShellExecute = false,
+                CreateNoWindow  = true,
+            };
+
+            using var process = Process.Start(psi)
+                ?? throw new InvalidOperationException("Không khởi động được installer .NET Runtime.");
+            await process.WaitForExitAsync();
+
+            // 0 = thành công, 3010 = thành công nhưng cần reboot (không chặn dùng ngay).
+            bool ok = process.ExitCode is 0 or 3010;
+            return (ok, ok ? "Đã cài .NET Runtime." : $"Installer trả về mã lỗi {process.ExitCode}.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Tải/cài .NET Runtime thất bại: {ex.Message}");
+        }
+    }
 
     private static readonly string DataFilePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -82,43 +133,52 @@ public static class DxvkBoosterService
 
     private static async Task<(bool Success, string Output)> RunMenuChoiceAsync(string gameFolder, string menuChoice)
     {
-        var exePath = ExtractLauncherExe(gameFolder);
-
-        var psi = new ProcessStartInfo
+        try
         {
-            FileName               = exePath,
-            WorkingDirectory       = gameFolder,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
-            RedirectStandardInput  = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-        };
+            var exePath = ExtractLauncherExe(gameFolder);
 
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        var output = new System.Text.StringBuilder();
-        process.OutputDataReceived += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
-        process.ErrorDataReceived  += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
+            var psi = new ProcessStartInfo
+            {
+                FileName               = exePath,
+                WorkingDirectory       = gameFolder,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+                RedirectStandardInput  = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+            };
 
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
+            using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+            var output = new System.Text.StringBuilder();
+            process.OutputDataReceived += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
+            process.ErrorDataReceived  += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
 
-        // menuChoice → Pause() ReadLine() → "0" thoát vòng lặp menu.
-        await process.StandardInput.WriteLineAsync(menuChoice);
-        await process.StandardInput.WriteLineAsync(); // Pause()
-        await process.StandardInput.WriteLineAsync("0");
-        process.StandardInput.Close();
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
 
-        var waitTask = process.WaitForExitAsync();
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(60));
-        if (await Task.WhenAny(waitTask, timeoutTask) == timeoutTask)
-        {
-            try { process.Kill(entireProcessTree: true); } catch { }
-            return (false, output + "\n[TIMEOUT] Launcher không phản hồi sau 60s.");
+            // menuChoice → Pause() ReadLine() → "0" thoát vòng lặp menu.
+            await process.StandardInput.WriteLineAsync(menuChoice);
+            await process.StandardInput.WriteLineAsync(); // Pause()
+            await process.StandardInput.WriteLineAsync("0");
+            process.StandardInput.Close();
+
+            var waitTask = process.WaitForExitAsync();
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(60));
+            if (await Task.WhenAny(waitTask, timeoutTask) == timeoutTask)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return (false, output + "\n[TIMEOUT] Launcher không phản hồi sau 60s.");
+            }
+
+            return (process.ExitCode == 0, output.ToString());
         }
-
-        return (process.ExitCode == 0, output.ToString());
+        catch (Exception ex)
+        {
+            // Không throw ra ngoài — trả về lỗi thật (ví dụ elevation, file bị khoá,
+            // exe thiếu resource) để UI hiển thị trực tiếp thay vì chỉ báo "thất bại".
+            return (false, $"[EXCEPTION] {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     public static Task<(bool Success, string Output)> InstallAsync(string gameFolder)
@@ -129,37 +189,44 @@ public static class DxvkBoosterService
 
     public static async Task<(bool Success, string Output)> UninstallAsync(string gameFolder)
     {
-        var exePath = ExtractLauncherExe(gameFolder);
-
-        var psi = new ProcessStartInfo
+        try
         {
-            FileName               = exePath,
-            WorkingDirectory       = gameFolder,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-        };
-        psi.ArgumentList.Add("uninstall");
+            var exePath = ExtractLauncherExe(gameFolder);
 
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        var output = new System.Text.StringBuilder();
-        process.OutputDataReceived += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
-        process.ErrorDataReceived  += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
+            var psi = new ProcessStartInfo
+            {
+                FileName               = exePath,
+                WorkingDirectory       = gameFolder,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+            };
+            psi.ArgumentList.Add("uninstall");
 
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
+            using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+            var output = new System.Text.StringBuilder();
+            process.OutputDataReceived += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
+            process.ErrorDataReceived  += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
 
-        var waitTask = process.WaitForExitAsync();
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
-        if (await Task.WhenAny(waitTask, timeoutTask) == timeoutTask)
-        {
-            try { process.Kill(entireProcessTree: true); } catch { }
-            return (false, output + "\n[TIMEOUT] Launcher không phản hồi sau 30s.");
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            var waitTask = process.WaitForExitAsync();
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
+            if (await Task.WhenAny(waitTask, timeoutTask) == timeoutTask)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return (false, output + "\n[TIMEOUT] Launcher không phản hồi sau 30s.");
+            }
+
+            return (process.ExitCode == 0, output.ToString());
         }
-
-        return (process.ExitCode == 0, output.ToString());
+        catch (Exception ex)
+        {
+            return (false, $"[EXCEPTION] {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private class BoosterFolderInfo

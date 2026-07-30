@@ -176,20 +176,41 @@ public sealed partial class AowBoosterPage : Page
         ProgressText.Text = progressText;
     }
 
+    // Chạy 1 hành động của launcher; nếu thất bại do thiếu .NET Runtime, tự
+    // tải + cài silent rồi thử lại đúng 1 lần — người dùng chỉ cần bấm 1 nút,
+    // không phải tự đi cài .NET rồi bấm lại.
+    private async Task<(bool Success, string Output)> RunWithRuntimeAutoInstallAsync(
+        Func<Task<(bool Success, string Output)>> action, string actionLabel)
+    {
+        var (ok, output) = await action();
+        if (ok || !DxvkBoosterService.IsMissingRuntimeError(output))
+            return (ok, output);
+
+        SetBusy(true, "Chưa có .NET Runtime trên máy — đang tự tải & cài (im lặng)...");
+        var (runtimeOk, runtimeMsg) = await DxvkBoosterService.InstallDotNetRuntimeSilentlyAsync();
+        DiagnosticLogService.Trace($"[AowBooster] Auto-install .NET Runtime ok={runtimeOk}: {runtimeMsg}");
+        if (!runtimeOk)
+            return (false, $"Không cài được .NET Runtime tự động: {runtimeMsg}");
+
+        SetBusy(true, $"Đã cài .NET Runtime — đang thử {actionLabel} lại...");
+        return await action();
+    }
+
     private async void InstallBtn_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             SetBusy(true, "Đang triển khai AoW Booster...");
-            var (ok, output) = await DxvkBoosterService.InstallAsync(_gameFolder);
+            var (ok, output) = await RunWithRuntimeAutoInstallAsync(
+                () => DxvkBoosterService.InstallAsync(_gameFolder), "cài đặt");
             DiagnosticLogService.Trace($"[AowBooster] Install ok={ok}\n{output}");
-            SetBusy(false, ok ? "Cài đặt xong." : "Cài đặt thất bại — xem Logs\\trace.log để biết chi tiết.");
+            SetBusy(false, ok ? "Cài đặt xong." : $"Cài đặt thất bại: {Tail(output)}");
             RefreshStatus();
         }
         catch (Exception ex)
         {
             CrashReportService.RecordCrash(ex, "AowBoosterPage.InstallBtn_Click");
-            SetBusy(false, "Có lỗi xảy ra khi cài đặt.");
+            SetBusy(false, $"Có lỗi xảy ra khi cài đặt: {ex.Message}");
         }
     }
 
@@ -198,15 +219,16 @@ public sealed partial class AowBoosterPage : Page
         try
         {
             SetBusy(true, "Đang gỡ cài đặt, khôi phục file gốc...");
-            var (ok, output) = await DxvkBoosterService.UninstallAsync(_gameFolder);
+            var (ok, output) = await RunWithRuntimeAutoInstallAsync(
+                () => DxvkBoosterService.UninstallAsync(_gameFolder), "gỡ cài đặt");
             DiagnosticLogService.Trace($"[AowBooster] Uninstall ok={ok}\n{output}");
-            SetBusy(false, ok ? "Đã gỡ cài đặt." : "Gỡ cài đặt thất bại — xem Logs\\trace.log để biết chi tiết.");
+            SetBusy(false, ok ? "Đã gỡ cài đặt." : $"Gỡ cài đặt thất bại: {Tail(output)}");
             RefreshStatus();
         }
         catch (Exception ex)
         {
             CrashReportService.RecordCrash(ex, "AowBoosterPage.UninstallBtn_Click");
-            SetBusy(false, "Có lỗi xảy ra khi gỡ cài đặt.");
+            SetBusy(false, $"Có lỗi xảy ra khi gỡ cài đặt: {ex.Message}");
         }
     }
 
@@ -215,14 +237,24 @@ public sealed partial class AowBoosterPage : Page
         try
         {
             SetBusy(true, "Đang dọn log rác...");
-            var (ok, output) = await DxvkBoosterService.CleanLogsAsync(_gameFolder);
+            var (ok, output) = await RunWithRuntimeAutoInstallAsync(
+                () => DxvkBoosterService.CleanLogsAsync(_gameFolder), "dọn log");
             DiagnosticLogService.Trace($"[AowBooster] CleanLogs ok={ok}\n{output}");
-            SetBusy(false, ok ? "Đã dọn log rác." : "Dọn log thất bại — xem Logs\\trace.log để biết chi tiết.");
+            SetBusy(false, ok ? "Đã dọn log rác." : $"Dọn log thất bại: {Tail(output)}");
         }
         catch (Exception ex)
         {
             CrashReportService.RecordCrash(ex, "AowBoosterPage.CleanLogsBtn_Click");
-            SetBusy(false, "Có lỗi xảy ra khi dọn log.");
+            SetBusy(false, $"Có lỗi xảy ra khi dọn log: {ex.Message}");
         }
+    }
+
+    // Cắt output của launcher (nhiều dòng, có cả banner menu) xuống phần cuối
+    // cùng, ngắn gọn đủ hiện trực tiếp trên UI mà không cần mở file log.
+    private static string Tail(string output)
+    {
+        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var relevant = lines.Length > 4 ? lines[^4..] : lines;
+        return string.Join(" · ", relevant);
     }
 }
