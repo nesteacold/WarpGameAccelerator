@@ -18,6 +18,12 @@ public sealed partial class MultiClientPage : Page
     private string _currentToken = string.Empty;
     private string _gameFolder   = string.Empty;
 
+    // Windows tự tạo lại/hiện lại cửa sổ "Default IME" theo mỗi lần đổi focus
+    // bàn phím — độc lập với lần ShowWindow(SW_HIDE) ban đầu của mình. Phải
+    // nhớ PID nào người dùng CHỦ Ý muốn ẩn rồi re-assert lại mỗi tick refresh
+    // (2s/lần) để dập những cửa sổ hệ thống bị OS tự hiện lại giữa chừng.
+    private readonly HashSet<int> _hiddenPids = new();
+
     private readonly DispatcherTimer _refreshTimer;
 
     public MultiClientPage()
@@ -341,6 +347,17 @@ public sealed partial class MultiClientPage : Page
         try
         {
             var clients = MultiClientService.GetRunningClients();
+
+            // Dọn PID đã đóng khỏi danh sách "muốn ẩn" (tránh leak), rồi
+            // re-assert hide cho các PID còn sống mà người dùng chọn ẩn —
+            // dập những cửa sổ hệ thống (Default IME...) bị OS tự hiện lại.
+            var runningPids = clients.Select(c => c.Pid).ToHashSet();
+            foreach (var deadPid in _hiddenPids.Where(pid => !runningPids.Contains(pid)).ToList())
+                WindowHelper.ForgetPid(deadPid);
+            _hiddenPids.RemoveWhere(pid => !runningPids.Contains(pid));
+            foreach (var pid in _hiddenPids)
+                WindowHelper.HideClient(pid);
+
             ClientListPanel.Children.Clear();
 
             if (clients.Count == 0)
@@ -425,8 +442,16 @@ public sealed partial class MultiClientPage : Page
         {
             try
             {
-                if (isVisible) WindowHelper.HideClient(pid);
-                else            WindowHelper.UnhideClient(pid);
+                if (isVisible)
+                {
+                    _hiddenPids.Add(pid);
+                    WindowHelper.HideClient(pid);
+                }
+                else
+                {
+                    _hiddenPids.Remove(pid);
+                    WindowHelper.UnhideClient(pid);
+                }
                 RefreshClientList();
             }
             catch (Exception ex)
@@ -492,8 +517,16 @@ public sealed partial class MultiClientPage : Page
 
             foreach (var c in clients)
             {
-                if (anyVisible) WindowHelper.HideClient(c.Pid);
-                else            WindowHelper.UnhideClient(c.Pid);
+                if (anyVisible)
+                {
+                    _hiddenPids.Add(c.Pid);
+                    WindowHelper.HideClient(c.Pid);
+                }
+                else
+                {
+                    _hiddenPids.Remove(c.Pid);
+                    WindowHelper.UnhideClient(c.Pid);
+                }
             }
             RefreshClientList();
         }

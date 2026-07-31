@@ -117,21 +117,58 @@ public static class WindowHelper
         return list;
     }
 
+    // Nhớ đúng những HWND MÀ MÌNH đã tự tay ẩn theo từng PID — để Unhide chỉ
+    // khôi phục lại đúng những cái đó. Không được unhide "mọi cửa sổ của PID"
+    // một cách mù quáng: game có những cửa sổ nội bộ tự nó giữ ẩn từ đầu
+    // (vd: "GDI+ Window" — helper window của GDI+, chưa bao giờ hiện ra
+    // ngoài taskbar) — nếu vô tình ShowWindow lên chúng sẽ làm lộ ra những
+    // thứ mà bản thân game chưa từng định hiện.
+    private static readonly Dictionary<int, HashSet<IntPtr>> _hiddenByUs = new();
+
+    /// <summary>
+    /// Ẩn mọi cửa sổ ĐANG HIỆN của PID (không đụng cửa sổ vốn đã ẩn sẵn),
+    /// ghi nhớ lại chính xác cái nào mình vừa ẩn. Gọi lại nhiều lần (mỗi lần
+    /// refresh) trong lúc client đang ở chế độ "ẩn" để dập những cửa sổ hệ
+    /// thống bị Windows tự hiện lại giữa chừng (vd: "Default IME" theo focus
+    /// bàn phím) — mỗi lần gọi chỉ ẩn thêm cái MỚI xuất hiện, không lặp lại
+    /// việc với cái đã ẩn từ trước.
+    /// </summary>
     public static bool HideClient(int pid)
     {
-        var windows = FindAllWindowsForPid(pid);
+        var set = _hiddenByUs.TryGetValue(pid, out var existing) ? existing : (_hiddenByUs[pid] = new HashSet<IntPtr>());
+
         bool any = false;
-        foreach (var hWnd in windows)
+        foreach (var hWnd in FindAllWindowsForPid(pid))
+        {
+            if (!IsWindowVisible(hWnd)) continue; // đã ẩn sẵn (do mình hoặc do chính game) — bỏ qua
             any |= ShowWindow(hWnd, SW_HIDE);
+            set.Add(hWnd);
+        }
         return any;
     }
 
+    /// <summary>
+    /// Chỉ hiện lại đúng những HWND mà <see cref="HideClient"/> đã từng ẩn
+    /// cho PID này — KHÔNG enumerate/show lại toàn bộ cửa sổ của PID.
+    /// </summary>
     public static bool UnhideClient(int pid)
     {
-        var windows = FindAllWindowsForPid(pid);
+        if (!_hiddenByUs.TryGetValue(pid, out var set)) return false;
+
         bool any = false;
-        foreach (var hWnd in windows)
+        foreach (var hWnd in set)
+        {
+            if (!IsWindow(hWnd)) continue; // cửa sổ đã bị đóng từ khi ẩn tới giờ
             any |= ShowWindow(hWnd, SW_SHOWNA);
+        }
+        _hiddenByUs.Remove(pid);
         return any;
+    }
+
+    /// <summary>Dọn state nội bộ khi client đã đóng hẳn (tránh leak dần).</summary>
+    public static void ForgetPid(int pid)
+    {
+        _hiddenByUs.Remove(pid);
+        _hwndCache.Remove(pid);
     }
 }
