@@ -1,6 +1,7 @@
 // ============================================================
 // Views/MultiClientPage.xaml.cs — Code-behind Multi-Client Launcher
 // ============================================================
+using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -347,6 +348,7 @@ public sealed partial class MultiClientPage : Page
                 EmptyState.Visibility      = Visibility.Visible;
                 ClientListPanel.Visibility = Visibility.Collapsed;
                 KillAllBtn.Visibility      = Visibility.Collapsed;
+                HideAllBtn.Visibility      = Visibility.Collapsed;
                 RunningHeader.Text         = "📋  Client đang chạy (0)";
                 return;
             }
@@ -354,11 +356,17 @@ public sealed partial class MultiClientPage : Page
             EmptyState.Visibility      = Visibility.Collapsed;
             ClientListPanel.Visibility = Visibility.Visible;
             KillAllBtn.Visibility      = Visibility.Visible;
+            HideAllBtn.Visibility      = Visibility.Visible;
             RunningHeader.Text         = $"📋  Client đang chạy ({clients.Count})";
+
+            // Còn client nào đang hiện → nút gộp là "Ẩn tất cả"; ngược lại đổi
+            // thành "Hiện tất cả" để không cần bấm 2 hành động khác nhau.
+            bool anyVisible = clients.Any(c => c.IsVisible);
+            HideAllBtn.Content = anyVisible ? "Ẩn tất cả" : "Hiện tất cả";
 
             foreach (var c in clients)
             {
-                var row = BuildClientRow(c.Pid, c.StartTime);
+                var row = BuildClientRow(c.Pid, c.StartTime, c.IsVisible);
                 ClientListPanel.Children.Add(row);
             }
         }
@@ -368,7 +376,7 @@ public sealed partial class MultiClientPage : Page
         }
     }
 
-    private UIElement BuildClientRow(int pid, string startTime)
+    private UIElement BuildClientRow(int pid, string startTime, bool isVisible)
     {
         var border = new Border
         {
@@ -380,6 +388,7 @@ public sealed partial class MultiClientPage : Page
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var dot = new Ellipse
@@ -393,20 +402,50 @@ public sealed partial class MultiClientPage : Page
 
         var info = new TextBlock
         {
-            Text = $"PID {pid}  ·  {startTime}",
+            Text = $"PID {pid}  ·  {startTime}" + (isVisible ? "" : "  ·  (đang ẩn)"),
             FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = isVisible
+                ? (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"]
+                : new SolidColorBrush(ColorHelper.FromArgb(255, 136, 136, 136))
         };
         Grid.SetColumn(info, 1);
 
+        var hideBtn = new Button
+        {
+            Content      = isVisible ? "Ẩn" : "Hiện",
+            FontSize     = 11,
+            Width         = 44, Height = 28,
+            Padding       = new Thickness(0),
+            CornerRadius = new CornerRadius(4),
+            Tag          = pid
+        };
+        ToolTipService.SetToolTip(hideBtn, isVisible ? "Ẩn cửa sổ client này" : "Hiện lại cửa sổ client này");
+        hideBtn.Click += (_, _) =>
+        {
+            try
+            {
+                if (isVisible) WindowHelper.HideClient(pid);
+                else            WindowHelper.UnhideClient(pid);
+                RefreshClientList();
+            }
+            catch (Exception ex)
+            {
+                CrashReportService.RecordCrash(ex, "MultiClientPage.HideBtn_Click");
+            }
+        };
+        Grid.SetColumn(hideBtn, 2);
+
         var killBtn = new Button
         {
-            Content       = "✕",
-            FontSize      = 12,
-            Width         = 28, Height = 28,
+            Content       = "Đóng",
+            FontSize      = 11,
+            Width         = 44, Height = 28,
+            Padding       = new Thickness(0),
             CornerRadius  = new CornerRadius(4),
             Foreground    = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 100, 100)),
-            Tag           = pid
+            Tag           = pid,
+            Margin        = new Thickness(6, 0, 0, 0)
         };
         killBtn.Click += (_, _) =>
         {
@@ -420,10 +459,11 @@ public sealed partial class MultiClientPage : Page
                 CrashReportService.RecordCrash(ex, "MultiClientPage.KillBtn_Click");
             }
         };
-        Grid.SetColumn(killBtn, 2);
+        Grid.SetColumn(killBtn, 3);
 
         grid.Children.Add(dot);
         grid.Children.Add(info);
+        grid.Children.Add(hideBtn);
         grid.Children.Add(killBtn);
         border.Child = grid;
         return border;
@@ -440,6 +480,26 @@ public sealed partial class MultiClientPage : Page
         catch (Exception ex)
         {
             CrashReportService.RecordCrash(ex, "MultiClientPage.KillAllBtn_Click");
+        }
+    }
+
+    private void HideAllBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var clients = MultiClientService.GetRunningClients();
+            bool anyVisible = clients.Any(c => c.IsVisible);
+
+            foreach (var c in clients)
+            {
+                if (anyVisible) WindowHelper.HideClient(c.Pid);
+                else            WindowHelper.UnhideClient(c.Pid);
+            }
+            RefreshClientList();
+        }
+        catch (Exception ex)
+        {
+            CrashReportService.RecordCrash(ex, "MultiClientPage.HideAllBtn_Click");
         }
     }
 

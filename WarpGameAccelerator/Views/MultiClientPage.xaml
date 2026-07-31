@@ -143,9 +143,10 @@
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1" CornerRadius="8" Padding="16">
                 <StackPanel Spacing="10">
-                    <Grid>
+                    <Grid ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock x:Name="RunningHeader"
@@ -154,7 +155,13 @@
                                    FontSize="13" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                    VerticalAlignment="Center"/>
-                        <Button Grid.Column="1" x:Name="KillAllBtn"
+                        <Button Grid.Column="1" x:Name="HideAllBtn"
+                                Content="Ẩn tất cả"
+                                Visibility="Collapsed"
+                                FontSize="12" CornerRadius="6"
+                                Click="HideAllBtn_Click"
+                                ToolTipService.ToolTip="Ẩn hết cửa sổ client đang hiện"/>
+                        <Button Grid.Column="2" x:Name="KillAllBtn"
                                 Content="Dừng tất cả"
                                 Foreground="#FF6666"
                                 Visibility="Collapsed"

@@ -21,6 +21,9 @@ public class RunningClient
 {
     public int    Pid       { get; set; }
     public string StartTime { get; set; } = string.Empty;
+    // Hỏi thẳng WinAPI (WindowHelper.IsClientVisible) mỗi lần refresh thay vì
+    // tự lưu cờ nội bộ — tránh lệch trạng thái nếu app tắt/mở lại giữa lúc ẩn.
+    public bool   IsVisible { get; set; } = true;
 }
 
 public class MultiClientService
@@ -485,7 +488,8 @@ public class MultiClientService
                     result.Add(new RunningClient
                     {
                         Pid       = p.Id,
-                        StartTime = startTime
+                        StartTime = startTime,
+                        IsVisible = WindowHelper.IsClientVisible(p.Id)
                     });
                 }
                 catch
