@@ -4,6 +4,21 @@ C# .NET 8 / WinUI 3 desktop app. Tăng tốc & chống rớt mạng game (Age of
 
 Version hiện tại: xem `<Version>` trong `WarpGameAccelerator/WarpGameAccelerator.csproj` (v1.10.2 tại thời điểm viết file này).
 
+## Build & chạy thử (test cục bộ)
+
+**Chỉ dùng lệnh CLI này để build** — không dùng Visual Studio (mở solution bằng VS tạo ra output ở path KHÁC `bin\x64\Debug\...`, gây nhầm lẫn "sao sửa rồi mà vẫn chạy bản cũ"):
+
+```bash
+dotnet build WarpGameAccelerator/WarpGameAccelerator.csproj -c Debug -r win-x64
+```
+
+**File exe để chạy test luôn là** (path cố định, không đổi giữa các lần build):
+```
+WarpGameAccelerator\bin\Debug\net8.0-windows10.0.19041.0\win-x64\WarpGameAccelerator.exe
+```
+
+Trước khi build lại, **phải đóng hẳn app đang chạy** — nếu không MSBuild báo lỗi file bị khoá (`MSB3027`/`MSB3021`). Nếu từng build bằng Visual Studio trước đó, xoá thư mục `bin\x64\` (build output riêng của VS, không liên quan tới path trên) để tránh chạy nhầm bản cũ.
+
 ## Kiến trúc mạng
 
 Hai chế độ, chọn ở Settings:
@@ -39,6 +54,12 @@ Hai chế độ, chọn ở Settings:
 - **`async void` event handler không có try/catch → exception crash cả process, không handler nào (kể cả `AppDomain.UnhandledException`) bắt được nếu kill đến từ `TerminateProcess` của process khác.** Mọi button click handler phải wrap try/catch, ghi vào `CrashReportService` + `DiagnosticLogService.Trace`.
 - Debug "app biến mất không rõ lý do": dùng **SilentProcessExit + IFEO** (`HKLM\...\SilentProcessExit\<exe>`, `GlobalFlag=512`), không chỉ dựa vào Event Viewer / WER thông thường — WER và managed exception handler đều KHÔNG fire khi bị kill sạch từ process khác.
 - **Mihomo cố ý sống sót khi app chính crash bất ngờ** (giữ game không bị disconnect giữa chừng) — chỉ kill mihomo khi user bấm Exit tường minh (`MainWindow.ExitApp()`, thứ tự: `StopProxy()` trước `DisconnectAsync()` để tránh timeout làm mihomo bị mồ côi ngay cả khi exit chủ động). **Không** thêm `AppDomain.ProcessExit` hay update-flow kill mihomo tự động — đã thử và bị revert theo yêu cầu người dùng.
+
+## WireGuard for Windows conflict (`WireGuardConflictGuard.cs`)
+
+- Một VPN cá nhân (WireGuard for Windows chạy dạng Windows Service `WireGuardTunnel$*`, dùng để remote-access vào máy khi Chrome Remote Desktop lỗi) có thể xung đột tầng thấp (TUN/WFP) với Mihomo, gây mất kết nối chập chờn khó lường cả khi chơi game lẫn duyệt web bình thường — dấu hiệu: ping/loss trong app vẫn báo bình thường nhưng `mihomo_runtime.log` đầy `context deadline exceeded` cho traffic thật.
+- Fix: `PauseAsync()` (gọi lúc Start Boost) tự phát hiện mọi service `WireGuardTunnel$*` đang Running và dừng tạm; `ResumeAsync()` (gọi lúc Stop Boost) bật lại đúng service đã dừng. Không hardcode tên tunnel cụ thể.
+- **KHÔNG thêm cơ chế tự resume ở lần khởi động app kế tiếp** nếu bị bỏ dở do app crash lúc đang Boost — Mihomo cố ý sống sót sau crash để không ngắt game (xem mục Process lifecycle bên dưới); tự resume ngay lúc mở lại app trong khi Mihomo vẫn đang chạy ngầm phục vụ game sẽ tái tạo đúng xung đột ban đầu NGAY LÚC đang chơi. Đã thử và bị yêu cầu bỏ.
 
 ## Network Optimizer (`NetworkOptimizerService.cs`)
 
