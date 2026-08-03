@@ -1,12 +1,13 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace WarpGameAccelerator.Services;
 
 public class MihomoService
 {
-    private Process? _mihomoProcess;
+    private GracefulProcessLauncher.LaunchedProcess? _launched;
     private CancellationTokenSource? _activeStartCts;
     private readonly string _coreDir;
     private readonly string _exePath;
@@ -134,23 +135,15 @@ public class MihomoService
                         port = parsedPort;
                 }
             }
-            acc.Endpoint = $"{host}:{port}";
+            byte[] clientBytes = ExtractClientBytes(acc.ClientId);
 
-            byte[] clientBytes = new byte[3];
-            if (!string.IsNullOrEmpty(acc.ClientId))
-            {
-                try
-                {
-                    var b = Convert.FromBase64String(acc.ClientId);
-                    if (b.Length >= 3)
-                    {
-                        clientBytes[0] = b[0];
-                        clientBytes[1] = b[1];
-                        clientBytes[2] = b[2];
-                    }
-                }
-                catch { }
-            }
+            // Cổng 2408 (mặc định WireGuard/WARP) bị router/ISP bóp riêng
+            // chiều upload trên máy đã test (đo được ~1 Mbps cố định, lặp lại
+            // nhiều lần). Đổi sang 4500 — đã kiểm chứng đạt băng thông tốt hơn
+            // rõ rệt trên cùng mạng này.
+            port = 4500;
+
+            acc.Endpoint = $"{host}:{port}";
 
             proxyConfig = $@"
   - name: {proxyName}
@@ -253,37 +246,12 @@ rules:
         var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
         try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
 
-        _mihomoProcess = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = _exePath,
-                Arguments = $"-d \"{_coreDir}\" -f \"{_configPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-                WorkingDirectory = _coreDir,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            }
-        };
-
-        _mihomoProcess.OutputDataReceived += (s, e) =>
-        {
-            if (e.Data == null) return;
-            try { File.AppendAllText(runtimeLogPath, e.Data + Environment.NewLine); } catch { }
-        };
-        _mihomoProcess.ErrorDataReceived += (s, e) =>
-        {
-            if (e.Data == null) return;
-            try { File.AppendAllText(runtimeLogPath, e.Data + Environment.NewLine); } catch { }
-        };
-
         try
         {
-            _mihomoProcess.Start();
-            _mihomoProcess.BeginOutputReadLine();
-            _mihomoProcess.BeginErrorReadLine();
+            _launched = GracefulProcessLauncher.Start(
+                _exePath, $"-d \"{_coreDir}\" -f \"{_configPath}\"", _coreDir);
+            PumpLogAsync(_launched.StdOutRead, runtimeLogPath);
+            PumpLogAsync(_launched.StdErrRead, runtimeLogPath);
         }
         catch (Exception ex)
         {
@@ -298,10 +266,77 @@ rules:
         }
     }
 
+    private static byte[] ExtractClientBytes(string clientId)
+    {
+        var clientBytes = new byte[3];
+        if (!string.IsNullOrEmpty(clientId))
+        {
+            try
+            {
+                var b = Convert.FromBase64String(clientId);
+                if (b.Length >= 3)
+                {
+                    clientBytes[0] = b[0];
+                    clientBytes[1] = b[1];
+                    clientBytes[2] = b[2];
+                }
+            }
+            catch { }
+        }
+        return clientBytes;
+    }
+
     public void StopProxy()
     {
         _activeStartCts?.Cancel();
+        TryGracefulStop();
         KillMihomoProcess();
+    }
+
+    /// <summary>
+    /// Gửi CTRL_BREAK_EVENT để mihomo tự chạy cleanup (gỡ route, khôi phục DNS,
+    /// đóng TUN adapter) trước khi thoát. Process.Kill() ngay không cho nó cơ
+    /// hội này → để lại route/DNS bẩn trỏ vào adapter đã mất, gây mất internet
+    /// sau khi Stop Boost. KillMihomoProcess() vẫn được gọi ngay sau đây làm
+    /// lưới an toàn (fallback) nếu mihomo không thoát kịp.
+    /// </summary>
+    private void TryGracefulStop()
+    {
+        var launched = _launched;
+        if (launched == null) return;
+
+        try
+        {
+            Process? proc = null;
+            try { proc = Process.GetProcessById(launched.ProcessId); } catch { }
+
+            if (proc != null && !proc.HasExited && launched.TrySendCtrlBreak())
+                proc.WaitForExit(3000);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"[MihomoService] Graceful stop lỗi: {ex.Message}");
+        }
+        finally
+        {
+            launched.Dispose();
+            _launched = null;
+        }
+    }
+
+    private static async void PumpLogAsync(SafeFileHandle readHandle, string logPath)
+    {
+        try
+        {
+            using var stream = new FileStream(readHandle, FileAccess.Read);
+            using var reader = new StreamReader(stream);
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                try { File.AppendAllText(logPath, line + Environment.NewLine); } catch { }
+            }
+        }
+        catch { }
     }
 
     /// <summary>
@@ -362,17 +397,24 @@ rules:
 
     private void KillMihomoProcess()
     {
-        if (_mihomoProcess != null && !_mihomoProcess.HasExited)
+        if (_launched != null)
         {
             try
             {
-                _mihomoProcess.Kill();
-                _mihomoProcess.WaitForExit(1000);
-                _mihomoProcess.Dispose();
+                var proc = Process.GetProcessById(_launched.ProcessId);
+                if (!proc.HasExited)
+                {
+                    proc.Kill();
+                    proc.WaitForExit(1000);
+                }
             }
             catch { }
+            finally
+            {
+                _launched.Dispose();
+                _launched = null;
+            }
         }
-        _mihomoProcess = null;
 
         // Cleanup any leftover instances just in case
         foreach (var proc in Process.GetProcessesByName("mihomo"))
