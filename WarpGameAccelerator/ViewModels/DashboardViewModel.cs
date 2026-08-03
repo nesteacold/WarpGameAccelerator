@@ -166,7 +166,7 @@ public partial class DashboardViewModel : ObservableObject
         // xung đột tầng thấp gây mất kết nối chập chờn khó lường.
         await WireGuardConflictGuard.PauseAsync();
 
-        bool isDirectWireGuard = SettingsViewModel.LoadEngineMode();
+        EngineMode engineMode = SettingsViewModel.LoadEngineMode();
 
         // Lấy Node được chọn để đo ping thực tế khớp 100% với Node Dialog
         var selectedNode = CloudflareNodeService.GetSelectedNode();
@@ -186,9 +186,9 @@ public partial class DashboardViewModel : ObservableObject
         _pingMonitor.SetTargetProcess(exesToBoost);
         await _pingMonitor.StartAsync(recordBaseline: true);
 
-        // 1. Chế độ Siêu Tốc (Direct WireGuard):
-        // Không cần chạy warp-cli! Ngắt warp-cli nếu đang kết nối để tránh xung đột proxy.
-        if (isDirectWireGuard)
+        // 1. Chế độ Siêu Tốc (Direct WireGuard) & Direct MASQUE (Beta):
+        // Cả hai không cần warp-cli — ngắt nếu đang kết nối để tránh xung đột proxy.
+        if (engineMode is EngineMode.DirectWireGuard or EngineMode.DirectMasqueBeta)
         {
             await _warpService.DisconnectAsync();
         }
@@ -215,7 +215,7 @@ public partial class DashboardViewModel : ObservableObject
         {
             try
             {
-                await _mihomoService.StartProxyAsync(exesToBoost, isDirectWireGuard);
+                await _mihomoService.StartProxyAsync(exesToBoost, engineMode);
             }
             catch (Exception ex)
             {
@@ -311,8 +311,8 @@ public partial class DashboardViewModel : ObservableObject
         {
             try
             {
-                bool isDirectWireGuard = SettingsViewModel.LoadEngineMode();
-                await _mihomoService.StartProxyAsync(exesToBoost, isDirectWireGuard);
+                EngineMode engineMode = SettingsViewModel.LoadEngineMode();
+                await _mihomoService.StartProxyAsync(exesToBoost, engineMode);
             }
             catch (Exception ex)
             {

@@ -1,12 +1,18 @@
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using WarpGameAccelerator.Models;
 
 namespace WarpGameAccelerator.Services;
 
 public class MihomoService
 {
+    // IP anycast Cloudflare cho consumer-masque.cloudflareclient.com — dùng khi resolver
+    // hệ thống không trả bản ghi A (fallback, không phải giá trị chính).
+    private const string MasqueFallbackIp = "162.159.198.2";
+
     private GracefulProcessLauncher.LaunchedProcess? _launched;
     private CancellationTokenSource? _activeStartCts;
     private readonly string _coreDir;
@@ -76,7 +82,10 @@ public class MihomoService
         catch { }
     }
 
-    public async Task StartProxyAsync(string processName, bool isDirectWireGuard = true)
+    public Task StartProxyAsync(string processName, bool isDirectWireGuard) =>
+        StartProxyAsync(processName, isDirectWireGuard ? EngineMode.DirectWireGuard : EngineMode.WarpClientProxy);
+
+    public async Task StartProxyAsync(string processName, EngineMode mode = EngineMode.DirectWireGuard)
     {
         // Hủy mọi lệnh Start đang dở trước khi bắt đầu lệnh mới — tránh 2 lệnh
         // Start chồng chéo ghi đè config lẫn nhau, hoặc lệnh cũ "hồi sinh" tunnel
@@ -93,7 +102,12 @@ public class MihomoService
         // khi nhả chậm → instance mới bind cổng thất bại.
         if (!await WaitForPortsReleasedAsync(token)) return;
 
-        string proxyName = isDirectWireGuard ? "WARP-Direct" : "WARP_OUT";
+        string proxyName = mode switch
+        {
+            EngineMode.DirectWireGuard   => "WARP-Direct",
+            EngineMode.DirectMasqueBeta  => "WARP-Masque",
+            _                            => "WARP_OUT"
+        };
 
         // Tách chuỗi processName thành mảng các tên tiến trình
         var processes = processName.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
@@ -109,8 +123,8 @@ public class MihomoService
 
         string proxyConfig;
         string excludeRoute = "";
-        
-        if (isDirectWireGuard)
+
+        if (mode == EngineMode.DirectWireGuard)
         {
             // Chế độ Siêu Tốc (Direct Mode Cloudflare WARP WireGuard)
             var acc = await WarpAccountService.GetOrCreateAccountAsync();
@@ -164,6 +178,55 @@ public class MihomoService
             if (System.Net.IPAddress.TryParse(host, out _))
             {
                 excludeRoute = $"\n  inet4-route-exclude-address:\n    - {host}/32";
+            }
+        }
+        else if (mode == EngineMode.DirectMasqueBeta)
+        {
+            // BETA — Direct Mode qua MASQUE (QUIC/HTTP-3). Tài khoản/key HOÀN
+            // TOÀN riêng (WarpMasqueAccountInfo) — không đụng, không ảnh hưởng
+            // gì tới tài khoản/config của Direct WireGuard ở nhánh trên.
+            var masqueAcc = await WarpAccountService.GetOrCreateMasqueAccountAsync();
+
+            // mihomo masque adapter tự resolve field "server" bằng resolver riêng của nó
+            // (không đi qua fake-ip DNS của app) — dùng hostname trực tiếp bị "dns resolve
+            // failed: couldn't find ip" cho MỌI traffic. Toàn bộ nhánh WireGuard ở trên luôn
+            // dùng IP thô cho "server" (không phải hostname) — áp dụng lại quy tắc đó ở đây:
+            // resolve hostname ra IP thật, giữ hostname gốc ở field "sni" để TLS ClientHello
+            // vẫn đúng.
+            string masqueServerIp = masqueAcc.Server;
+            if (!System.Net.IPAddress.TryParse(masqueAcc.Server, out _))
+            {
+                try
+                {
+                    var addrs = await System.Net.Dns.GetHostAddressesAsync(masqueAcc.Server);
+                    var v4 = addrs.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                    if (v4 != null) masqueServerIp = v4.ToString();
+                    else masqueServerIp = MasqueFallbackIp;
+                }
+                catch
+                {
+                    // Resolver hệ thống lỗi/không có bản ghi A cho hostname MASQUE consumer —
+                    // fallback về IP anycast Cloudflare cố định (giữ hostname gốc ở "sni").
+                    masqueServerIp = MasqueFallbackIp;
+                }
+            }
+
+            proxyConfig = $@"
+  - name: {proxyName}
+    type: masque
+    server: {masqueServerIp}
+    sni: {masqueAcc.Server}
+    port: {masqueAcc.Port}
+    ip: {masqueAcc.IPv4}
+    private-key: {masqueAcc.PrivateKey}
+    public-key: {masqueAcc.PeerPublicKey}
+    mtu: 1280
+    udp: true
+    remote-dns-resolve: true";
+
+            if (System.Net.IPAddress.TryParse(masqueServerIp, out _))
+            {
+                excludeRoute = $"\n  inet4-route-exclude-address:\n    - {masqueServerIp}/32";
             }
         }
         else

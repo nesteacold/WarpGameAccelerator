@@ -26,15 +26,30 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<PingTarget> _pingTargets = new();
     [ObservableProperty] private string       _appVersion         = GetVersion();
 
-    // Connection Engine Mode (Direct WireGuard vs WARP Client Proxy)
+    // Connection Engine Mode (Direct WireGuard / WARP Client Proxy / Direct MASQUE Beta)
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDirectWireGuard))]
     [NotifyPropertyChangedFor(nameof(IsWarpClientProxy))]
-    private bool _isDirectWireGuard = LoadEngineMode();
+    [NotifyPropertyChangedFor(nameof(IsDirectMasqueBeta))]
+    private WarpGameAccelerator.Models.EngineMode _engineMode = LoadEngineMode();
+
+    public bool IsDirectWireGuard
+    {
+        get => EngineMode == WarpGameAccelerator.Models.EngineMode.DirectWireGuard;
+        set { if (value) EngineMode = WarpGameAccelerator.Models.EngineMode.DirectWireGuard; }
+    }
 
     public bool IsWarpClientProxy
     {
-        get => !IsDirectWireGuard;
-        set => IsDirectWireGuard = !value;
+        get => EngineMode == WarpGameAccelerator.Models.EngineMode.WarpClientProxy;
+        set { if (value) EngineMode = WarpGameAccelerator.Models.EngineMode.WarpClientProxy; }
+    }
+
+    /// <summary>BETA — MASQUE (QUIC/HTTP-3), độc lập hoàn toàn với DirectWireGuard.</summary>
+    public bool IsDirectMasqueBeta
+    {
+        get => EngineMode == WarpGameAccelerator.Models.EngineMode.DirectMasqueBeta;
+        set { if (value) EngineMode = WarpGameAccelerator.Models.EngineMode.DirectMasqueBeta; }
     }
 
     public LocalizationService Loc => _loc;
@@ -137,7 +152,7 @@ public partial class SettingsViewModel : ObservableObject
         else       StartupHelper.DisableAutoStart();
     }
 
-    partial void OnIsDirectWireGuardChanged(bool value)
+    partial void OnEngineModeChanged(WarpGameAccelerator.Models.EngineMode value)
     {
         SaveEngineMode(value);
     }
@@ -146,7 +161,7 @@ public partial class SettingsViewModel : ObservableObject
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WarpGameAccelerator", "Data", "engine_mode.json");
 
-    public static bool LoadEngineMode()
+    public static WarpGameAccelerator.Models.EngineMode LoadEngineMode()
     {
         try
         {
@@ -154,21 +169,39 @@ public partial class SettingsViewModel : ObservableObject
             {
                 var json = System.IO.File.ReadAllText(_engineModeFilePath);
                 using var doc = JsonDocument.Parse(json);
+
+                // Định dạng mới: chuỗi enum "engineMode"
+                if (doc.RootElement.TryGetProperty("engineMode", out var modeEl) &&
+                    Enum.TryParse<WarpGameAccelerator.Models.EngineMode>(modeEl.GetString(), out var parsed))
+                {
+                    return parsed;
+                }
+
+                // Tương thích ngược: file cũ chỉ có "isDirectWireGuard" (bool)
                 if (doc.RootElement.TryGetProperty("isDirectWireGuard", out var el))
-                    return el.GetBoolean();
+                {
+                    return el.GetBoolean()
+                        ? WarpGameAccelerator.Models.EngineMode.DirectWireGuard
+                        : WarpGameAccelerator.Models.EngineMode.WarpClientProxy;
+                }
             }
         }
         catch { }
-        return true; // Default: Direct WireGuard
+        return WarpGameAccelerator.Models.EngineMode.DirectWireGuard; // Default
     }
 
-    private static void SaveEngineMode(bool isDirectWireGuard)
+    private static void SaveEngineMode(WarpGameAccelerator.Models.EngineMode mode)
     {
         try
         {
             var dir = System.IO.Path.GetDirectoryName(_engineModeFilePath)!;
             if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
-            var json = JsonSerializer.Serialize(new { isDirectWireGuard });
+            var json = JsonSerializer.Serialize(new
+            {
+                engineMode = mode.ToString(),
+                // Giữ field cũ để bản build trước (nếu rollback) vẫn đọc được gần đúng.
+                isDirectWireGuard = mode == WarpGameAccelerator.Models.EngineMode.DirectWireGuard
+            });
             System.IO.File.WriteAllText(_engineModeFilePath, json);
         }
         catch { }

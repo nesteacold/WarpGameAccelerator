@@ -134,6 +134,9 @@ public partial class LocalizationService : ObservableObject
     public string SettEngineWarpTitle    => VI("Chế độ Tương Thích (WARP Client)", "WARP Client Proxy (Compatibility Mode)");
     public string SettEngineWarpDesc     => VI("Dành cho duyệt Web / App thông thường. Yêu cầu ứng dụng Cloudflare WARP gốc.",
                                                "For general browsing & apps. Requires official Cloudflare WARP app.");
+    public string SettEngineMasqueTitle  => VI("Direct Mode (MASQUE) 🧪 Beta", "Direct Mode (MASQUE) 🧪 Beta");
+    public string SettEngineMasqueDesc   => VI("THỬ NGHIỆM — giao thức khác WireGuard, dùng tài khoản riêng, không liên quan Direct WireGuard. Có thể không ổn định.",
+                                               "EXPERIMENTAL — different protocol from WireGuard, uses its own separate account, unrelated to Direct WireGuard. May be unstable.");
 
     // ── Update Dialog ────────────────────────────────────────
     public string UpdateDialogTitle      => VI("Có Phiên Bản Mới",          "Update Available");

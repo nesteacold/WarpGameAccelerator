@@ -20,6 +20,31 @@ public class WarpAccountInfo
     public string PeerPublicKey { get; set; } = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
     public string Endpoint      { get; set; } = "162.159.192.1:2408";
     public string ClientId      { get; set; } = string.Empty;
+    /// <summary>Đã đặt tên thiết bị trên Cloudflare (phân biệt trong app 1.1.1.1) hay chưa.</summary>
+    public bool   DeviceNameSet { get; set; } = false;
+}
+
+/// <summary>
+/// Tài khoản riêng cho Direct Mode MASQUE (Beta) — HOÀN TOÀN độc lập với
+/// <see cref="WarpAccountInfo"/> (dùng cho Direct WireGuard). Đăng ký thiết
+/// bị riêng, key ECDSA riêng, lưu file riêng — không đụng/không ảnh hưởng
+/// tới tài khoản WireGuard đang dùng.
+/// </summary>
+public class WarpMasqueAccountInfo
+{
+    public string Id            { get; set; } = string.Empty;
+    public string Token         { get; set; } = string.Empty;
+    public string License       { get; set; } = string.Empty;
+    /// <summary>ECDSA P-256 private key, PKCS8 DER, base64.</summary>
+    public string PrivateKey    { get; set; } = string.Empty;
+    /// <summary>Public key của Cloudflare relay (để pin/verify) — ECDSA P-256 SPKI DER, base64.</summary>
+    public string PeerPublicKey { get; set; } = string.Empty;
+    public string IPv4          { get; set; } = string.Empty;
+    public string IPv6          { get; set; } = string.Empty;
+    public string Server        { get; set; } = "consumer-masque.cloudflareclient.com";
+    public int    Port          { get; set; } = 443;
+    /// <summary>Đã đặt tên thiết bị trên Cloudflare (phân biệt trong app 1.1.1.1) hay chưa.</summary>
+    public bool   DeviceNameSet { get; set; } = false;
 }
 
 public class WarpAccountService
@@ -47,6 +72,7 @@ public class WarpAccountService
                 {
                     if (!string.IsNullOrEmpty(acc.ClientId) && !IsZeroClientId(acc.ClientId))
                     {
+                        await EnsureDeviceNamedAsync(acc);
                         return acc;
                     }
 
@@ -68,6 +94,7 @@ public class WarpAccountService
                                 await File.WriteAllTextAsync(AccountFilePath, patchedJson);
                             }
                             catch { }
+                            await EnsureDeviceNamedAsync(acc);
                             return acc;
                         }
                     }
@@ -111,7 +138,107 @@ public class WarpAccountService
             await UpdateLicenseAsync(oldLicense);
         }
 
+        await EnsureDeviceNamedAsync(newAcc);
         return newAcc;
+    }
+
+    /// <summary>
+    /// Hỏi thẳng Cloudflare tài khoản đã thực sự là WARP+ hay chưa. Field
+    /// <see cref="WarpAccountInfo.License"/> KHÔNG dùng để suy ra điều này —
+    /// Cloudflare gán license_key cho mọi thiết bị đăng ký (cả tài khoản Free,
+    /// dùng cho mục đích referral), nên có giá trị License không đồng nghĩa
+    /// đã là WARP+.
+    /// </summary>
+    public static async Task<(bool WarpPlus, string AccountType)?> GetAccountStatusAsync(WarpAccountInfo acc)
+    {
+        if (string.IsNullOrEmpty(acc.Id) || string.IsNullOrEmpty(acc.Token)) return null;
+        try
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {acc.Token}");
+            client.DefaultRequestHeaders.Add("CF-Client-Version", "a-6.30");
+
+            var response = await client.GetAsync($"https://api.cloudflareclient.com/v0a1922/reg/{acc.Id}/account");
+            if (!response.IsSuccessStatusCode) return null;
+
+            var jsonResp = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonResp);
+            var root = doc.RootElement.TryGetProperty("result", out var resEl) ? resEl : doc.RootElement;
+
+            bool warpPlus = root.TryGetProperty("warp_plus", out var wpEl) && wpEl.ValueKind == JsonValueKind.True;
+            string accountType = root.TryGetProperty("account_type", out var atEl) ? (atEl.GetString() ?? "") : "";
+            return (warpPlus, accountType);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Đặt tên hiển thị của thiết bị trên Cloudflare (hiện trong app 1.1.1.1 →
+    /// Settings → Account → danh sách device) — giúp phân biệt slot nào của
+    /// máy/engine nào khi tài khoản có nhiều thiết bị dùng chung 1 license.
+    /// </summary>
+    private static async Task<bool> TrySetDeviceNameAsync(HttpClient client, string id, string token, string apiVersion, string name)
+    {
+        try
+        {
+            client.DefaultRequestHeaders.Remove("Authorization");
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+            var payload = new { name };
+            var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var response = await client.PatchAsync($"https://api.cloudflareclient.com/{apiVersion}/reg/{id}", content);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Đặt tên thiết bị WireGuard 1 lần duy nhất (dạng "{tên máy} - WireGuard")
+    /// để phân biệt trong danh sách device 1.1.1.1 khi tài khoản có nhiều máy/
+    /// nhiều engine dùng chung license — không gọi lại nếu đã đặt thành công.
+    /// </summary>
+    private static async Task EnsureDeviceNamedAsync(WarpAccountInfo acc)
+    {
+        if (acc.DeviceNameSet || string.IsNullOrEmpty(acc.Id) || string.IsNullOrEmpty(acc.Token)) return;
+        try
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "okhttp/3.12.1");
+            var ok = await TrySetDeviceNameAsync(client, acc.Id, acc.Token, "v0a1922",
+                $"{Environment.MachineName} - WireGuard (AOW Booster)");
+            if (ok)
+            {
+                acc.DeviceNameSet = true;
+                var json = JsonSerializer.Serialize(acc, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(AccountFilePath, json);
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>Tương tự <see cref="EnsureDeviceNamedAsync(WarpAccountInfo)"/> nhưng cho tài khoản MASQUE riêng.</summary>
+    private static async Task EnsureMasqueDeviceNamedAsync(WarpMasqueAccountInfo acc)
+    {
+        if (acc.DeviceNameSet || string.IsNullOrEmpty(acc.Id) || string.IsNullOrEmpty(acc.Token)) return;
+        try
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "okhttp/3.12.1");
+            var ok = await TrySetDeviceNameAsync(client, acc.Id, acc.Token, MasqueApiVersion,
+                $"{Environment.MachineName} - MASQUE Beta (AOW Booster)");
+            if (ok)
+            {
+                acc.DeviceNameSet = true;
+                var json = JsonSerializer.Serialize(acc, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(MasqueAccountFilePath, json);
+            }
+        }
+        catch { }
     }
 
     private static bool IsZeroClientId(string clientId)
@@ -488,6 +615,276 @@ public class WarpAccountService
         catch (Exception ex)
         {
             return Task.FromResult((false, $"Không thể xóa file tài khoản: {ex.Message}"));
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Direct MASQUE (Beta) — đăng ký & tài khoản HOÀN TOÀN riêng
+    // ══════════════════════════════════════════════════════════
+    private static readonly string MasqueAccountFilePath =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                     "WarpGameAccelerator", "Data", "warp_masque_account.json");
+
+    // Endpoint/header đúng theo cách usque (nguồn mihomo fork MASQUE từ đây)
+    // đăng ký thiết bị + xin key MASQUE — KHÁC endpoint v0a1922 dùng cho
+    // WireGuard classic (wgcf) để tránh Cloudflare gộp chung chính sách.
+    private const string MasqueApiVersion       = "v0a4471";
+    private const string MasqueClientVersionHdr = "a-6.35-4471";
+
+    public static async Task<WarpMasqueAccountInfo> GetOrCreateMasqueAccountAsync()
+    {
+        if (File.Exists(MasqueAccountFilePath))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(MasqueAccountFilePath);
+                var acc = JsonSerializer.Deserialize<WarpMasqueAccountInfo>(json);
+                if (acc != null && !string.IsNullOrEmpty(acc.PrivateKey) &&
+                    !string.IsNullOrEmpty(acc.PeerPublicKey) && !string.IsNullOrEmpty(acc.IPv4))
+                {
+                    await EnsureMasqueDeviceNamedAsync(acc);
+                    return acc;
+                }
+            }
+            catch { }
+        }
+
+        var newAcc = await RegisterMasqueAccountAsync();
+
+        try
+        {
+            var dir = Path.GetDirectoryName(MasqueAccountFilePath)!;
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(newAcc, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(MasqueAccountFilePath, json);
+        }
+        catch { }
+
+        await EnsureMasqueDeviceNamedAsync(newAcc);
+        return newAcc;
+    }
+
+    private static async Task<WarpMasqueAccountInfo> RegisterMasqueAccountAsync()
+    {
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Add("User-Agent", "okhttp/3.12.1");
+
+        // 1. Đăng ký thiết bị mới (giống flow WireGuard raw API, nhưng đây là
+        //    thiết bị RIÊNG, key gửi lên ban đầu không dùng — sẽ ghi đè bằng
+        //    key ECDSA ở bước PATCH tiếp theo).
+        using var ecdsaTemp = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var tempPubKeyB64 = Convert.ToBase64String(ecdsaTemp.ExportSubjectPublicKeyInfo());
+
+        var regPayload = new
+        {
+            install_id = "",
+            fcm_token = "",
+            tos = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            key = tempPubKeyB64,
+            type = "Android",
+            locale = "en_US"
+        };
+        var regContent = new StringContent(JsonSerializer.Serialize(regPayload), Encoding.UTF8, "application/json");
+        var regResponse = await client.PostAsync($"https://api.cloudflareclient.com/{MasqueApiVersion}/reg", regContent);
+        regResponse.EnsureSuccessStatusCode();
+
+        var regJson = await regResponse.Content.ReadAsStringAsync();
+        using var regDoc = JsonDocument.Parse(regJson);
+        var regRoot = regDoc.RootElement.TryGetProperty("result", out var regResEl) ? regResEl : regDoc.RootElement;
+
+        var result = new WarpMasqueAccountInfo();
+        if (regRoot.TryGetProperty("id", out var idEl)) result.Id = idEl.GetString() ?? "";
+        if (regRoot.TryGetProperty("token", out var tokenEl)) result.Token = tokenEl.GetString() ?? "";
+
+        if (string.IsNullOrEmpty(result.Id) || string.IsNullOrEmpty(result.Token))
+            throw new Exception("Đăng ký thiết bị MASQUE thất bại — không nhận được id/token từ Cloudflare.");
+
+        // 2. Sinh key ECDSA P-256 thật, gửi PATCH xin chuyển thiết bị này sang
+        //    chính sách MASQUE (key_type: secp256r1, tunnel_type: masque).
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        // mihomo parse private-key bằng x509.ParseECPrivateKey (SEC1/RFC5915),
+        // KHÔNG phải PKCS8 — ExportPkcs8PrivateKey() sai định dạng, lỗi:
+        // "failed to parse private key (use ParsePKCS8PrivateKey instead)".
+        var privKeyDer = ecdsa.ExportECPrivateKey();
+        var pubKeyDer  = ecdsa.ExportSubjectPublicKeyInfo();
+        result.PrivateKey = Convert.ToBase64String(privKeyDer);
+
+        client.DefaultRequestHeaders.Remove("Authorization");
+        client.DefaultRequestHeaders.Add("Authorization", $"Bearer {result.Token}");
+        client.DefaultRequestHeaders.Remove("CF-Client-Version");
+        client.DefaultRequestHeaders.Add("CF-Client-Version", MasqueClientVersionHdr);
+
+        var keyPayload = new
+        {
+            key = Convert.ToBase64String(pubKeyDer),
+            key_type = "secp256r1",
+            tunnel_type = "masque"
+        };
+        var keyContent = new StringContent(JsonSerializer.Serialize(keyPayload), Encoding.UTF8, "application/json");
+        var keyResponse = await client.PatchAsync(
+            $"https://api.cloudflareclient.com/{MasqueApiVersion}/reg/{result.Id}", keyContent);
+        keyResponse.EnsureSuccessStatusCode();
+
+        // 3. Kích hoạt WARP cho thiết bị (giống bước bắt buộc ở flow WireGuard).
+        var enablePayload = new { warp_enabled = true };
+        var enableContent = new StringContent(JsonSerializer.Serialize(enablePayload), Encoding.UTF8, "application/json");
+        await client.PatchAsync($"https://api.cloudflareclient.com/{MasqueApiVersion}/reg/{result.Id}", enableContent);
+
+        // 4. Đọc lại config đầy đủ để lấy IP nội bộ + public key của relay
+        //    Cloudflare (peer) — KHÔNG phải hardcode, mỗi thiết bị/kết nối có
+        //    thể khác, phải lấy đúng từ response.
+        await RefreshMasqueConfigAsync(client, result);
+
+        return result;
+    }
+
+    /// <summary>
+    /// GET lại config đầy đủ của thiết bị MASQUE và ghi đè IPv4/IPv6/PeerPublicKey
+    /// vào <paramref name="acc"/>. Cloudflare có thể cấp lại peer/relay khác khi
+    /// đổi tier (áp WARP+) — bắt buộc gọi lại sau UpdateMasqueLicenseAsync, nếu
+    /// không cert-pinning (public-key) cũ sẽ lệch, mihomo báo "login failed...
+    /// tls key and cert is not enrolled".
+    /// </summary>
+    private static async Task RefreshMasqueConfigAsync(HttpClient client, WarpMasqueAccountInfo acc)
+    {
+        var fullResponse = await client.GetAsync($"https://api.cloudflareclient.com/{MasqueApiVersion}/reg/{acc.Id}");
+        fullResponse.EnsureSuccessStatusCode();
+        var fullJson = await fullResponse.Content.ReadAsStringAsync();
+        using var fullDoc = JsonDocument.Parse(fullJson);
+        var fullRoot = fullDoc.RootElement.TryGetProperty("result", out var fullResEl) ? fullResEl : fullDoc.RootElement;
+
+        if (fullRoot.TryGetProperty("config", out var configEl))
+        {
+            if (configEl.TryGetProperty("interface", out var ifaceEl) &&
+                ifaceEl.TryGetProperty("addresses", out var addrEl))
+            {
+                if (addrEl.TryGetProperty("v4", out var v4El)) acc.IPv4 = v4El.GetString() ?? acc.IPv4;
+                if (addrEl.TryGetProperty("v6", out var v6El)) acc.IPv6 = v6El.GetString() ?? acc.IPv6;
+            }
+
+            if (configEl.TryGetProperty("peers", out var peersEl) &&
+                peersEl.ValueKind == JsonValueKind.Array && peersEl.GetArrayLength() > 0)
+            {
+                var peer = peersEl[0];
+                if (peer.TryGetProperty("public_key", out var peerPkEl))
+                    acc.PeerPublicKey = NormalizePemToBase64(peerPkEl.GetString() ?? "");
+            }
+        }
+
+        if (string.IsNullOrEmpty(acc.PeerPublicKey))
+            throw new Exception("Không lấy được public key của Cloudflare relay cho MASQUE — có thể tài khoản chưa được cấp chính sách MASQUE.");
+        if (string.IsNullOrEmpty(acc.IPv4))
+            acc.IPv4 = "172.16.0.2";
+    }
+
+    /// <summary>
+    /// Cloudflare trả public_key ở dạng PEM nhiều dòng
+    /// ("-----BEGIN PUBLIC KEY-----\n...\n-----END..."), không phải base64
+    /// thuần 1 dòng — nếu ghi thẳng vào YAML sẽ vỡ parser (newline giữa
+    /// scalar không escape). Bóc header/footer + nối các dòng lại.
+    /// </summary>
+    private static string NormalizePemToBase64(string value)
+    {
+        if (!value.Contains("BEGIN")) return value.Trim();
+
+        var lines = value.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0 && !l.StartsWith("-----"));
+        return string.Concat(lines);
+    }
+
+    /// <summary>
+    /// Cập nhật WARP+ license cho tài khoản MASQUE — thiết bị đăng ký RIÊNG
+    /// (id/token khác WireGuard), nên áp license ở đây sẽ tốn thêm 1/5 slot
+    /// thiết bị WARP+ của bạn, độc lập với slot của Direct WireGuard.
+    /// </summary>
+    public static async Task<(bool Success, string Message)> UpdateMasqueLicenseAsync(string licenseKey)
+    {
+        try
+        {
+            var acc = await GetOrCreateMasqueAccountAsync();
+            if (string.IsNullOrEmpty(acc.Id) || string.IsNullOrEmpty(acc.Token))
+                return (false, "Không tìm thấy ID hoặc Token tài khoản MASQUE. Vui lòng xóa file warp_masque_account.json và khởi động lại app.");
+
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "okhttp/3.12.1");
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {acc.Token}");
+            client.DefaultRequestHeaders.Add("CF-Client-Version", MasqueClientVersionHdr);
+
+            var payload = new { license = licenseKey };
+            var content = new StringContent(
+                JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            var url = $"https://api.cloudflareclient.com/{MasqueApiVersion}/reg/{acc.Id}/account";
+            var response = await client.PutAsync(url, content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                acc.License = licenseKey;
+
+                // Cloudflare có thể cấp lại peer/relay khác khi đổi tier — refetch
+                // config, không thì cert-pinning cũ lệch, tunnel báo "login failed".
+                try { await RefreshMasqueConfigAsync(client, acc); } catch { }
+
+                var dir = Path.GetDirectoryName(MasqueAccountFilePath)!;
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var json = JsonSerializer.Serialize(acc, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(MasqueAccountFilePath, json);
+                return (true, "Kích hoạt WARP+ cho MASQUE thành công!");
+            }
+
+            if ((int)response.StatusCode == 429)
+                return (false, "Bạn đã thử quá nhiều lần. Vui lòng đợi vài phút rồi thử lại.");
+            if ((int)response.StatusCode == 403)
+                return (false, "License Key không hợp lệ hoặc đã hết hạn.");
+
+            return (false, $"Lỗi từ server ({(int)response.StatusCode}). Vui lòng kiểm tra lại key.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Lỗi kết nối: {ex.Message}");
+        }
+    }
+
+    /// <summary>Hỏi thẳng Cloudflare tài khoản MASQUE đã là WARP+ hay chưa.</summary>
+    public static async Task<(bool WarpPlus, string AccountType)?> GetMasqueAccountStatusAsync(WarpMasqueAccountInfo acc)
+    {
+        if (string.IsNullOrEmpty(acc.Id) || string.IsNullOrEmpty(acc.Token)) return null;
+        try
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {acc.Token}");
+            client.DefaultRequestHeaders.Add("CF-Client-Version", MasqueClientVersionHdr);
+
+            var response = await client.GetAsync($"https://api.cloudflareclient.com/{MasqueApiVersion}/reg/{acc.Id}/account");
+            if (!response.IsSuccessStatusCode) return null;
+
+            var jsonResp = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonResp);
+            var root = doc.RootElement.TryGetProperty("result", out var resEl) ? resEl : doc.RootElement;
+
+            bool warpPlus = root.TryGetProperty("warp_plus", out var wpEl) && wpEl.ValueKind == JsonValueKind.True;
+            string accountType = root.TryGetProperty("account_type", out var atEl) ? (atEl.GetString() ?? "") : "";
+            return (warpPlus, accountType);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Xoá tài khoản MASQUE riêng — không ảnh hưởng tài khoản WireGuard.</summary>
+    public static Task<(bool Success, string Message)> ResetMasqueAccountAsync()
+    {
+        try
+        {
+            if (File.Exists(MasqueAccountFilePath))
+                File.Delete(MasqueAccountFilePath);
+            return Task.FromResult((true, "Đã xóa tài khoản MASQUE. Sẽ tự đăng ký lại khi Boost lần sau."));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult((false, $"Không thể xóa file tài khoản MASQUE: {ex.Message}"));
         }
     }
 }

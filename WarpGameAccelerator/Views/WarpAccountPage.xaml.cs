@@ -31,8 +31,12 @@ public sealed partial class WarpAccountPage : Page
             AccountIdText.Text = $"ID: {info.Id[..Math.Min(16, info.Id.Length)]}...";
         }
 
-        // Hiển thị trạng thái tài khoản
-        bool isPlusTier = !string.IsNullOrEmpty(info.License);
+        // Hiển thị trạng thái tài khoản — KHÔNG dựa vào info.License có giá trị
+        // hay không, vì Cloudflare gán license_key cho mọi thiết bị đăng ký
+        // (cả tài khoản Free, dùng cho referral). Phải hỏi thẳng API để biết
+        // đúng trạng thái warp_plus thật.
+        var status = await WarpAccountService.GetAccountStatusAsync(info);
+        bool isPlusTier = status?.WarpPlus == true;
         UpdateTierDisplay(isPlusTier);
     }
 
@@ -93,6 +97,45 @@ public sealed partial class WarpAccountPage : Page
             ? new SolidColorBrush(ColorHelper.FromArgb(255, 255, 77, 77))
             : new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100));
         StatusMsg.Visibility = Visibility.Visible;
+    }
+
+    // ── License Key riêng cho MASQUE Beta (thiết bị đăng ký riêng — tốn thêm 1/5 slot) ──
+    private async void ApplyMasqueKeyBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var key = MasqueLicenseKeyBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            ShowMasqueStatus("⚠️  Vui lòng nhập License Key.", isError: true);
+            return;
+        }
+
+        ApplyMasqueKeyBtn.IsEnabled = false;
+        ApplyMasqueKeyBtn.Content   = "Đang kiểm tra...";
+        MasqueStatusMsg.Visibility  = Visibility.Collapsed;
+
+        var (success, message) = await WarpAccountService.UpdateMasqueLicenseAsync(key);
+
+        ApplyMasqueKeyBtn.IsEnabled = true;
+        ApplyMasqueKeyBtn.Content   = "Áp dụng Key cho MASQUE";
+
+        if (success)
+        {
+            ShowMasqueStatus($"✅  {message}", isError: false);
+            MasqueLicenseKeyBox.Text = string.Empty;
+        }
+        else
+        {
+            ShowMasqueStatus($"❌  {message}", isError: true);
+        }
+    }
+
+    private void ShowMasqueStatus(string msg, bool isError)
+    {
+        MasqueStatusMsg.Text       = msg;
+        MasqueStatusMsg.Foreground = isError
+            ? new SolidColorBrush(ColorHelper.FromArgb(255, 255, 77, 77))
+            : new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100));
+        MasqueStatusMsg.Visibility = Visibility.Visible;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
