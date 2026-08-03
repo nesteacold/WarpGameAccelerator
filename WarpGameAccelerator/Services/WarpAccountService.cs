@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -44,9 +45,31 @@ public class WarpAccountService
                 var acc = JsonSerializer.Deserialize<WarpAccountInfo>(json);
                 if (acc != null && !string.IsNullOrEmpty(acc.PrivateKey) && !string.IsNullOrEmpty(acc.IPv4))
                 {
-                    if (!string.IsNullOrEmpty(acc.ClientId))
+                    if (!string.IsNullOrEmpty(acc.ClientId) && !IsZeroClientId(acc.ClientId))
                     {
                         return acc;
+                    }
+
+                    // ClientId thiếu/toàn số 0 (bug cũ của luồng wgcf) — Cloudflare
+                    // dùng đúng 3 byte này ở tầng edge để gắn chính sách QoS/WARP+
+                    // cho từng session; để 0 khiến session bị coi như "không định
+                    // danh" và có thể bị áp QoS mặc định thấp hơn dù tài khoản là
+                    // WARP+ thật. Vá lại bằng cách hỏi thẳng Cloudflare, GIỮ
+                    // nguyên key/thiết bị đã đăng ký — không cần đăng ký lại.
+                    if (!string.IsNullOrEmpty(acc.Id) && !string.IsNullOrEmpty(acc.Token))
+                    {
+                        var realClientId = await FetchClientIdAsync(acc.Id, acc.Token);
+                        if (!string.IsNullOrEmpty(realClientId))
+                        {
+                            acc.ClientId = realClientId;
+                            try
+                            {
+                                var patchedJson = JsonSerializer.Serialize(acc, new JsonSerializerOptions { WriteIndented = true });
+                                await File.WriteAllTextAsync(AccountFilePath, patchedJson);
+                            }
+                            catch { }
+                            return acc;
+                        }
                     }
                 }
             }
@@ -89,6 +112,49 @@ public class WarpAccountService
         }
 
         return newAcc;
+    }
+
+    private static bool IsZeroClientId(string clientId)
+    {
+        try
+        {
+            var bytes = Convert.FromBase64String(clientId);
+            return bytes.Length == 0 || bytes.All(b => b == 0);
+        }
+        catch
+        {
+            return true; // Không decode được thì coi như không hợp lệ, cần vá lại.
+        }
+    }
+
+    /// <summary>
+    /// Hỏi thẳng Cloudflare client_id (3 byte "reserved" thật) đã cấp cho thiết
+    /// bị <paramref name="id"/> — dùng để vá lại các tài khoản cũ bị lưu sai
+    /// (mặc định zero) từ luồng đăng ký qua wgcf.
+    /// </summary>
+    private static async Task<string?> FetchClientIdAsync(string id, string token)
+    {
+        try
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+            client.DefaultRequestHeaders.Add("CF-Client-Version", "a-6.30");
+
+            var response = await client.GetAsync($"https://api.cloudflareclient.com/v0a1922/reg/{id}");
+            if (!response.IsSuccessStatusCode) return null;
+
+            var jsonResp = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonResp);
+            var root = doc.RootElement.TryGetProperty("result", out var resEl) ? resEl : doc.RootElement;
+
+            if (root.TryGetProperty("config", out var configEl) &&
+                configEl.TryGetProperty("client_id", out var clientIdEl))
+            {
+                return clientIdEl.GetString();
+            }
+        }
+        catch { }
+        return null;
     }
 
     private static async Task<WarpAccountInfo> RegisterNewWarpAccountAsync()
@@ -203,9 +269,21 @@ public class WarpAccountService
                 var profileConfPath = Path.Combine(workDir, "wgcf-profile.conf");
                 if (!File.Exists(accountTomlPath) || !File.Exists(profileConfPath)) return null;
 
-                return ParseWgcfFiles(
+                var result = ParseWgcfFiles(
                     await File.ReadAllTextAsync(accountTomlPath),
                     await File.ReadAllTextAsync(profileConfPath));
+
+                // wg-quick/wgcf không ghi client_id vào file — hỏi thẳng Cloudflare
+                // để lấy đúng 3 byte "reserved" thật của thiết bị vừa đăng ký, thay
+                // vì để zero (Cloudflare dùng byte này gắn chính sách QoS/WARP+ ở
+                // tầng edge cho từng session, độc lập với việc handshake thành công).
+                if (!string.IsNullOrEmpty(result.Id) && !string.IsNullOrEmpty(result.Token))
+                {
+                    var realClientId = await FetchClientIdAsync(result.Id, result.Token);
+                    if (!string.IsNullOrEmpty(realClientId)) result.ClientId = realClientId;
+                }
+
+                return result;
             }
             finally
             {
@@ -303,8 +381,8 @@ public class WarpAccountService
             Id         = toml.GetValueOrDefault("device_id", ""),
             Token      = toml.GetValueOrDefault("access_token", ""),
             License    = toml.GetValueOrDefault("license_key", ""),
-            // wg-quick/wgcf không gửi reserved bytes (mặc định zero) — đã kiểm
-            // chứng zero reserved vẫn handshake thành công với tài khoản wgcf.
+            // Placeholder — RegisterViaWgcfAsync sẽ gọi FetchClientIdAsync() ngay
+            // sau đây để lấy đúng client_id thật từ Cloudflare, ghi đè giá trị này.
             ClientId   = "AAAA"
         };
 
