@@ -269,10 +269,9 @@
                                CharacterSpacing="100"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                     <TextBlock FontSize="13" FontWeight="SemiBold"
-                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                               TextWrapping="Wrap">
-                        <Run Text="WARP+" Foreground="#F6961E"/>
-                    </TextBlock>
+                               Text="{x:Bind ViewModel.RouteTierText, Mode=OneWay}"
+                               Foreground="{x:Bind ViewModel.RouteTierBrush, Mode=OneWay}"
+                               TextWrapping="Wrap"/>
                     <TextBlock Text="Auto Region"
                                FontSize="10"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>

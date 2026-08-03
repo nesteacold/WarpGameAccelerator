@@ -45,6 +45,13 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _errorMessage = string.Empty;
     [ObservableProperty] private List<long> _pingHistory = new();
 
+    // Route/tier hiển thị ở Dashboard — trước đây bị hardcode text "WARP+" trong
+    // XAML, không phản ánh trạng thái tài khoản thật (khác biệt với WarpAccountPage
+    // đã bind đúng). Cập nhật thật sau mỗi lần Boost thành công.
+    [ObservableProperty] private string _routeTierText = "—";
+    [ObservableProperty] private Microsoft.UI.Xaml.Media.SolidColorBrush _routeTierBrush =
+        new(Microsoft.UI.ColorHelper.FromArgb(255, 200, 200, 200));
+
     /// <summary>Expose LocalizationService cho x:Bind trong XAML</summary>
     public LocalizationService Loc => _loc;
 
@@ -227,7 +234,43 @@ public partial class DashboardViewModel : ObservableObject
         CurrentState = AppState.Connected;
         await _networkOptimizer.OptimizeAsync();
         SaveBoostState();
+        _ = UpdateRouteTierAsync(engineMode);
         BoostStarted?.Invoke();
+    }
+
+    /// <summary>
+    /// Hỏi thẳng Cloudflare tài khoản đang dùng (đúng theo engine mode hiện tại)
+    /// đã là WARP+ hay chưa, cập nhật label "ROUTE" ở Dashboard — trước đây label
+    /// này bị hardcode text "WARP+" trong XAML, luôn hiện sai bất kể tài khoản thật.
+    /// </summary>
+    private async Task UpdateRouteTierAsync(EngineMode engineMode)
+    {
+        try
+        {
+            bool isPlus;
+            if (engineMode == EngineMode.DirectMasqueBeta)
+            {
+                var masqueAcc = await WarpAccountService.GetOrCreateMasqueAccountAsync();
+                var status = await WarpAccountService.GetMasqueAccountStatusAsync(masqueAcc);
+                isPlus = status?.WarpPlus == true;
+            }
+            else
+            {
+                var acc = await WarpAccountService.GetOrCreateAccountAsync();
+                var status = await WarpAccountService.GetAccountStatusAsync(acc);
+                isPlus = status?.WarpPlus == true;
+            }
+
+            RouteTierText = isPlus ? "WARP+" : "WARP Free";
+            RouteTierBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                isPlus
+                    ? Microsoft.UI.ColorHelper.FromArgb(255, 246, 150, 30)
+                    : Microsoft.UI.ColorHelper.FromArgb(255, 200, 200, 200));
+        }
+        catch
+        {
+            RouteTierText = "—";
+        }
     }
 
     private async Task StopBoostAsync()
