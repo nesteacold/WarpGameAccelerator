@@ -165,8 +165,12 @@ public class WarpAccountService
             using var doc = JsonDocument.Parse(jsonResp);
             var root = doc.RootElement.TryGetProperty("result", out var resEl) ? resEl : doc.RootElement;
 
-            bool warpPlus = root.TryGetProperty("warp_plus", out var wpEl) && wpEl.ValueKind == JsonValueKind.True;
+            // "warp_plus" LUÔN trả true bất kể tier thật (xác nhận qua test thực tế:
+            // account_type "free" nhưng warp_plus vẫn true) — field đáng tin để biết
+            // tier thật là "account_type" ("free" / "limited" / "unlimited", chỉ
+            // "unlimited" mới là WARP+ thật).
             string accountType = root.TryGetProperty("account_type", out var atEl) ? (atEl.GetString() ?? "") : "";
+            bool warpPlus = accountType.Equals("unlimited", StringComparison.OrdinalIgnoreCase);
             return (warpPlus, accountType);
         }
         catch
@@ -863,8 +867,12 @@ public class WarpAccountService
             using var doc = JsonDocument.Parse(jsonResp);
             var root = doc.RootElement.TryGetProperty("result", out var resEl) ? resEl : doc.RootElement;
 
-            bool warpPlus = root.TryGetProperty("warp_plus", out var wpEl) && wpEl.ValueKind == JsonValueKind.True;
+            // "warp_plus" LUÔN trả true bất kể tier thật (xác nhận qua test thực tế:
+            // account_type "free" nhưng warp_plus vẫn true) — field đáng tin để biết
+            // tier thật là "account_type" ("free" / "limited" / "unlimited", chỉ
+            // "unlimited" mới là WARP+ thật).
             string accountType = root.TryGetProperty("account_type", out var atEl) ? (atEl.GetString() ?? "") : "";
+            bool warpPlus = accountType.Equals("unlimited", StringComparison.OrdinalIgnoreCase);
             return (warpPlus, accountType);
         }
         catch
