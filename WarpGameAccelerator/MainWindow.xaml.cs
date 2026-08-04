@@ -11,8 +11,7 @@ using WarpGameAccelerator.Views;
 using WarpGameAccelerator.ViewModels;
 using Windows.Graphics;
 #if DEBUG
-using Windows.Storage.Pickers;
-using WinRT.Interop;
+using System.Runtime.InteropServices;
 #endif
 
 namespace WarpGameAccelerator;
@@ -541,23 +540,23 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            // FileOpenPicker (WinRT) thay vì P/Invoke GetOpenFileName cũ — MainWindow
-            // dùng custom titlebar (ExtendsContentIntoTitleBar), dialog Win32 cổ điển
-            // với hwndOwner là window custom-chrome loại này dễ gây crash native
-            // (khác DeveloperWindow ở Phase 1, chỉ là Window thường không custom titlebar).
-            var picker = new FileOpenPicker();
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-            picker.FileTypeFilter.Add(".conf");
-
-            var file = await picker.PickSingleFileAsync();
-            if (file == null) return;
+            // P/Invoke GetOpenFileName (comdlg32) — KHÔNG dùng Windows.Storage.Pickers.
+            // FileOpenPicker (WinRT): app này build unpackaged (WindowsPackageType=None,
+            // AppxPackage=false trong .csproj) — FileOpenPicker cần package identity,
+            // trên Win32 app unpackaged nó throw COMException 0x80004005 (E_FAIL) khi
+            // gọi PickSingleFileAsync() (đã xác nhận qua trace.log). Đây cũng là lý do
+            // WarpAccountPage.xaml.cs từ trước dùng đúng P/Invoke này, không dùng picker.
+            var confPath = BrowseForFile(
+                "Chọn file WireGuard .conf",
+                "WireGuard Config (*.conf)\0*.conf\0All Files (*.*)\0*.*\0");
+            if (string.IsNullOrEmpty(confPath)) return;
 
             ImportConfigBtn.IsEnabled = false;
 
-            var content = await File.ReadAllTextAsync(file.Path);
+            var content = await File.ReadAllTextAsync(confPath);
             // Tên profile tự lấy theo tên file .conf (giống WireGuard client chính
             // thức dùng tên tunnel = tên file) — không hỏi lại người dùng.
-            var displayName = Path.GetFileNameWithoutExtension(file.Name);
+            var displayName = Path.GetFileNameWithoutExtension(confPath);
             var (success, message) = PersonalVpnService.ImportConfig(content, displayName);
 
             ImportConfigBtn.IsEnabled = true;
@@ -573,8 +572,9 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            DiagnosticLogService.Trace($"[DevPanel] Import .conf lỗi: {ex}");
             ImportConfigBtn.IsEnabled = true;
-            ImportMsg.Text = $"❌  Lỗi: {ex.Message}";
+            ImportMsg.Text = $"❌  Lỗi ({ex.GetType().Name}): {ex.Message}";
             ImportMsg.Visibility = Visibility.Visible;
         }
     }
@@ -712,5 +712,54 @@ public sealed partial class MainWindow : Window
         MasqueStatusMsg.Visibility = Visibility.Visible;
     }
 
+    // ── File picker (P/Invoke comdlg32 — giống pattern WarpAccountPage.xaml.cs,
+    // bắt buộc vì app unpackaged, FileOpenPicker WinRT không dùng được) ──
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct OpenFileName
+    {
+        public int lStructSize;
+        public IntPtr hwndOwner;
+        public IntPtr hInstance;
+        public string lpstrFilter;
+        public string lpstrCustomFilter;
+        public int nMaxCustFilter;
+        public int nFilterIndex;
+        public string lpstrFile;
+        public int nMaxFile;
+        public string lpstrFileTitle;
+        public int nMaxFileTitle;
+        public string lpstrInitialDir;
+        public string lpstrTitle;
+        public int Flags;
+        public short nFileOffset;
+        public short nFileExtension;
+        public string lpstrDefExt;
+        public IntPtr lCustData;
+        public IntPtr lpfnHook;
+        public string lpTemplateName;
+        public IntPtr pvReserved;
+        public int dwReserved;
+        public int flagsEx;
+    }
+
+    [DllImport("comdlg32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool GetOpenFileName(ref OpenFileName ofn);
+
+    private string? BrowseForFile(string title, string filter)
+    {
+        var ofn = new OpenFileName();
+        ofn.lStructSize = Marshal.SizeOf(ofn);
+        ofn.hwndOwner = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        ofn.lpstrFilter = filter;
+        ofn.lpstrFile = new string(new char[256]);
+        ofn.nMaxFile = ofn.lpstrFile.Length;
+        ofn.lpstrFileTitle = new string(new char[64]);
+        ofn.nMaxFileTitle = ofn.lpstrFileTitle.Length;
+        ofn.lpstrTitle = title;
+        ofn.Flags = 0x00080000 | 0x00001000 | 0x00000008; // OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR
+
+        return GetOpenFileName(ref ofn) ? ofn.lpstrFile : null;
+    }
 #endif
 }
