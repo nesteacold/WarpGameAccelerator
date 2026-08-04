@@ -143,29 +143,61 @@
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1,0,0,0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="16,12,16,20" Spacing="14">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-                        <TextBlock Text="DEVELOPER PANEL"
-                                   FontSize="12" FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   CharacterSpacing="60"/>
+                    <!-- Header cố định (không cuộn mất) — nút đóng panel luôn thấy được -->
+                    <Grid Grid.Row="0" Padding="16,14,12,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="DEVELOPER PANEL"
+                                       FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       CharacterSpacing="60"/>
+                            <TextBlock Text="Ẩn — không public. Đang test, chưa ổn định."
+                                       FontSize="10" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                        </StackPanel>
+                        <Button x:Name="CloseDevPanelBtn"
+                                Grid.Column="1"
+                                Width="30" Height="30" Padding="0"
+                                CornerRadius="15"
+                                VerticalAlignment="Top"
+                                Background="{ThemeResource AccentFillColorDefaultBrush}">
+                            <FontIcon Glyph="&#xE711;" FontSize="13" Foreground="White"/>
+                        </Button>
+                    </Grid>
 
-                        <TextBlock Text="Ẩn — không public. Các tính năng đang test, chưa ổn định."
-                                   FontSize="11" TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Padding="16,0,16,20" Spacing="14">
 
                         <!-- ══ Kênh VPN cá nhân (multi-profile) ═══════════════ -->
                         <Border Style="{StaticResource GlassCard}">
                             <StackPanel Spacing="10">
 
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="Kênh VPN cá nhân" FontSize="13" FontWeight="SemiBold"/>
-                                    <Border x:Name="PersonalVpnStatusBadge"
-                                            Background="#1A888888" CornerRadius="4" Padding="6,1">
-                                        <TextBlock x:Name="PersonalVpnStatusText" Text="Inactive" FontSize="11" Foreground="#AAAAAA"/>
-                                    </Border>
-                                </StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="VPN cá nhân" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <Border x:Name="PersonalVpnStatusBadge"
+                                                Background="#1A888888" CornerRadius="4" Padding="6,1">
+                                            <TextBlock x:Name="PersonalVpnStatusText" Text="Inactive" FontSize="11" Foreground="#AAAAAA"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="PersonalBoostToggle"
+                                                  Grid.Column="1"
+                                                  OnContent="Đang chạy"
+                                                  OffContent="Đã tắt"/>
+                                </Grid>
 
                                 <TextBlock x:Name="PersonalVpnHintText"
                                            Text=""
@@ -247,11 +279,6 @@
                                            FontFamily="Consolas"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            Visibility="Collapsed"/>
-
-                                <ToggleSwitch x:Name="PersonalBoostToggle"
-                                              Header="Boost kênh cá nhân"
-                                              OnContent="Đang chạy"
-                                              OffContent="Đã tắt"/>
                             </StackPanel>
                         </Border>
 
@@ -298,13 +325,9 @@
                             </StackPanel>
                         </Border>
 
-                        <Button x:Name="CloseDevPanelBtn"
-                                Content="Đóng panel developer"
-                                HorizontalAlignment="Stretch"
-                                CornerRadius="6"/>
-
-                    </StackPanel>
-                </ScrollViewer>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Border>
         </Grid>
     </Grid>
