@@ -1,0 +1,62 @@
+<!-- ============================================================
+     Views/MultiProcessPickerDialog.xaml — Chọn nhiều process (checkbox)
+     Dùng cho kênh VPN cá nhân ở Developer Panel — KHÁC ProcessPickerPage
+     (single-select, ghi thẳng vào DashboardViewModel). Đây chỉ trả về
+     List<string> tên process, không đụng Dashboard.
+     ============================================================ -->
+<ContentDialog
+    x:Class="WarpGameAccelerator.Views.MultiProcessPickerDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Chọn process"
+    PrimaryButtonText="Xác nhận"
+    CloseButtonText="Hủy"
+    DefaultButton="Primary">
+
+    <StackPanel Spacing="10" MinWidth="300">
+        <TextBox x:Name="SearchBox"
+                 PlaceholderText="Tìm process..."
+                 TextChanged="SearchBox_TextChanged"/>
+
+        <Button x:Name="RefreshBtn"
+                Content="🔄 Làm mới"
+                HorizontalAlignment="Right"
+                Click="RefreshBtn_Click"
+                FontSize="12"/>
+
+        <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="ProcessListView">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <CheckBox Content="{Binding ProcessName}"
+                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                  Margin="0,2"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Thêm tay tên process KHÔNG cần đang chạy — vd ping.exe chỉ tồn tại
+             trong khoảnh khắc chạy lệnh, không hiện trong list ở trên. -->
+        <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBox x:Name="ManualProcessBox"
+                     PlaceholderText="Thêm tay (vd: ping.exe)"
+                     Width="220"
+                     KeyDown="ManualProcessBox_KeyDown"/>
+            <Button x:Name="AddManualBtn"
+                    Content="+ Thêm"
+                    Click="AddManualBtn_Click"/>
+        </StackPanel>
+
+        <ItemsControl x:Name="ManualProcessListView">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2">
+                        <CheckBox Content="{Binding ProcessName}"
+                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </StackPanel>
+</ContentDialog>

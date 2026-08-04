@@ -43,6 +43,20 @@ public static class WireGuardConflictGuard
             var names = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Select(n => n.Trim()).Where(n => n.Length > 0).ToList();
 
+            // Loại trừ tunnel người dùng tự khai là WireGuard SERVER cho kênh cá
+            // nhân (Dev Panel) đang chạy CHUNG máy với Boost — xem comment ở
+            // PersonalVpnConfig.ExcludedTunnelServiceName. Người dùng thật có
+            // server ở máy khác thì field này rỗng, không ảnh hưởng gì.
+            var excluded = PersonalVpnService.GetActiveProfile()?.ExcludedTunnelServiceName;
+            if (!string.IsNullOrWhiteSpace(excluded))
+            {
+                var before = names.Count;
+                names = names.Where(n => !n.Equals(excluded, StringComparison.OrdinalIgnoreCase)
+                    && !n.Equals($"WireGuardTunnel${excluded}", StringComparison.OrdinalIgnoreCase)).ToList();
+                if (names.Count < before)
+                    DiagnosticLogService.Trace($"[WireGuardConflictGuard] Loại trừ '{excluded}' theo cấu hình Dev Panel — không tạm dừng.");
+            }
+
             if (names.Count == 0) return;
 
             foreach (var name in names)

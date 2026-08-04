@@ -85,8 +85,65 @@ public class MihomoService
     public Task StartProxyAsync(string processName, bool isDirectWireGuard) =>
         StartProxyAsync(processName, isDirectWireGuard ? EngineMode.DirectWireGuard : EngineMode.WarpClientProxy);
 
+    /// <summary>Kênh game (WARP/MASQUE) đang được yêu cầu chạy — độc lập với kênh cá nhân.</summary>
+    public bool IsGameChannelActive { get; private set; }
+
+    private string _gameProcessName = "";
+    private EngineMode _gameEngineMode = EngineMode.DirectWireGuard;
+
     public async Task StartProxyAsync(string processName, EngineMode mode = EngineMode.DirectWireGuard)
     {
+        _gameProcessName = processName;
+        _gameEngineMode = mode;
+        IsGameChannelActive = true;
+        await ApplyChannelsAsync();
+    }
+
+    /// <summary>
+    /// Kênh cá nhân (Dev Panel) bật/tắt độc lập với kênh game — có thể bật
+    /// mà không cần Boost game trước. Vì mihomo không hỗ trợ hot-reload
+    /// (Phase 2 đã khảo sát: mọi thay đổi config đều cần kill+restart toàn bộ
+    /// process), bật/tắt kênh này khi kênh game đang chạy sẽ gây restart
+    /// mihomo — kênh game gián đoạn ngắn (~1-3s) rồi tự phục hồi, không bị
+    /// tắt hẳn. Đây là trade-off cố ý để giữ đúng 1 TUN adapter duy nhất.
+    /// </summary>
+    public async Task SetPersonalChannelActiveAsync(bool active)
+    {
+        PersonalVpnService.SetActive(active);
+        await ApplyChannelsAsync();
+    }
+
+    /// <summary>
+    /// Gọi khi người dùng đổi profile Active hoặc xoá profile đang dùng
+    /// trong lúc kênh cá nhân đang chạy — bắt buộc rebuild+restart để mihomo
+    /// không tiếp tục route theo config cũ đã nằm trong bộ nhớ tiến trình.
+    /// </summary>
+    public async Task ApplyPersonalProfileChangeAsync()
+    {
+        if (PersonalVpnService.IsChannelActive())
+            await ApplyChannelsAsync();
+    }
+
+    /// <summary>
+    /// Rebuild config.yaml theo trạng thái hiện tại của CẢ 2 kênh
+    /// (<see cref="IsGameChannelActive"/> + <see cref="PersonalVpnService.IsChannelActive"/>)
+    /// rồi kill + restart mihomo. Nếu cả 2 đều tắt, dừng hẳn mihomo (không
+    /// restart lại rỗng). Đây là điểm duy nhất thực sự start/stop process —
+    /// StartProxyAsync/StopProxy/SetPersonalChannelActiveAsync chỉ cập nhật
+    /// state rồi gọi vào đây.
+    /// </summary>
+    private async Task ApplyChannelsAsync()
+    {
+        bool personalActive = PersonalVpnService.IsChannelActive();
+
+        if (!IsGameChannelActive && !personalActive)
+        {
+            _activeStartCts?.Cancel();
+            TryGracefulStop();
+            KillMihomoProcess();
+            return;
+        }
+
         // Hủy mọi lệnh Start đang dở trước khi bắt đầu lệnh mới — tránh 2 lệnh
         // Start chồng chéo ghi đè config lẫn nhau, hoặc lệnh cũ "hồi sinh" tunnel
         // sau khi StopProxy() đã được gọi (disconnect) trong lúc nó đang chờ.
@@ -102,6 +159,9 @@ public class MihomoService
         // khi nhả chậm → instance mới bind cổng thất bại.
         if (!await WaitForPortsReleasedAsync(token)) return;
 
+        string processName = _gameProcessName;
+        EngineMode mode = _gameEngineMode;
+
         string proxyName = mode switch
         {
             EngineMode.DirectWireGuard   => "WARP-Direct",
@@ -109,20 +169,34 @@ public class MihomoService
             _                            => "WARP_OUT"
         };
 
+        string proxyConfig = "";
+        string excludeRoute = "";
+        var rulesBuilder = new StringBuilder();
+        // Rule ưu tiên tới các endpoint đăng ký/handshake Cloudflare — chỉ cần
+        // khi kênh game đang chạy, không liên quan gì tới kênh cá nhân.
+        string cloudflareApiRules = "";
+
+        if (!IsGameChannelActive)
+        {
+            // Chỉ kênh cá nhân đang chạy — bỏ hẳn section proxy/rule game,
+            // mihomo chỉ phục vụ Personal-WG (+ MATCH,DIRECT cho traffic còn lại).
+        }
+        else
+        {
+        cloudflareApiRules = $@"  - IP-CIDR,1.1.1.1/32,{proxyName}
+  - IP-CIDR,1.0.0.1/32,{proxyName}
+";
+
         // Tách chuỗi processName thành mảng các tên tiến trình
         var processes = processName.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
-        var rulesBuilder = new StringBuilder();
         foreach (var p in processes)
         {
             var cleanP = p.Trim();
             if (cleanP.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 cleanP = cleanP.Substring(0, cleanP.Length - 4);
-            
+
             rulesBuilder.AppendLine($"  - PROCESS-NAME,{cleanP}.exe,{proxyName}");
         }
-
-        string proxyConfig;
-        string excludeRoute = "";
 
         if (mode == EngineMode.DirectWireGuard)
         {
@@ -240,6 +314,66 @@ public class MihomoService
     udp: true
     skip-cert-verify: true";
         }
+        } // end if (IsGameChannelActive)
+
+        // Kênh VPN cá nhân (Dev Panel) — outbound RIÊNG, additive, hoàn toàn
+        // độc lập với mode/proxyName ở trên. Chạy song song bất kể game đang
+        // dùng WireGuard hay MASQUE, không đụng cấu trúc proxy chính.
+        string personalProxyConfig = "";
+        string personalRules = "";
+        if (PersonalVpnService.TryGetActiveValidConfig(out var personalCfg) && personalCfg != null)
+        {
+            var lastColon = personalCfg.Endpoint.LastIndexOf(':');
+            string pHost = lastColon > 0 ? personalCfg.Endpoint[..lastColon] : personalCfg.Endpoint;
+            string pPort = lastColon > 0 ? personalCfg.Endpoint[(lastColon + 1)..] : "51820";
+
+            // mihomo tự resolve DNS cho field "server" bằng resolver riêng của nó
+            // (không qua DNS hệ thống) — hostname bị fail âm thầm, dial luôn
+            // "context deadline exceeded" dù server thật hoạt động tốt (đúng bug
+            // đã gặp với MASQUE — xem comment resolve masqueServerIp ở trên).
+            // WireGuard không có TLS/SNI nên không cần giữ lại hostname gốc.
+            if (!System.Net.IPAddress.TryParse(pHost, out _))
+            {
+                try
+                {
+                    var addrs = await System.Net.Dns.GetHostAddressesAsync(pHost);
+                    var v4 = addrs.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                    if (v4 != null) pHost = v4.ToString();
+                }
+                catch
+                {
+                    // Resolve lỗi thì giữ nguyên hostname — vẫn có khả năng mihomo
+                    // tự resolve được tuỳ trường hợp, hơn là chặn hẳn không chạy.
+                }
+            }
+
+            personalProxyConfig = $@"
+  - name: Personal-WG
+    type: wireguard
+    server: {pHost}
+    port: {pPort}
+    ip: {personalCfg.AddressV4}
+    private-key: {personalCfg.PrivateKey}
+    public-key: {personalCfg.PeerPublicKey}
+    udp: true";
+
+            if (!string.IsNullOrEmpty(personalCfg.PresharedKey))
+                // Field ĐÚNG trong mihomo là "pre-shared-key" (có gạch nối) — viết sai
+                // thành "preshared-key" bị mihomo lặng lẽ bỏ qua (không lỗi parse),
+                // nhưng server có áp PSK cho peer này thì handshake luôn fail (crypto
+                // không khớp) — đúng triệu chứng "context deadline exceeded" 100% mọi đích.
+                personalProxyConfig += $"\n    pre-shared-key: {personalCfg.PresharedKey}";
+
+            var personalRulesBuilder = new StringBuilder();
+            foreach (var p in personalCfg.ProcessNames)
+            {
+                var cleanP = p.Trim();
+                if (cleanP.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    cleanP = cleanP[..^4];
+                personalRulesBuilder.AppendLine($"  - PROCESS-NAME,{cleanP}.exe,Personal-WG");
+            }
+            personalRules = "  # Kênh VPN cá nhân (Dev Panel) — độc lập engine game\n" + personalRulesBuilder.ToString();
+        }
 
         string dnsAndTunConfig = $@"
 dns:
@@ -283,17 +417,22 @@ find-process-mode: always
 {dnsAndTunConfig}
 
 proxies:
-{proxyConfig}
+{proxyConfig}{personalProxyConfig}
 
 rules:
+{cloudflareApiRules}  # PROCESS-NAME phải đứng TRƯỚC các rule DIRECT theo dải IP riêng bên dưới —
+  # mihomo match rule theo thứ tự, dòng nào khớp trước thắng. Kênh VPN cá
+  # nhân cố ý route tới LAN riêng (192.168.x.x...) của server đích XUYÊN
+  # QUA tunnel — nếu để rule DIRECT theo dải IP riêng lên trước, mọi traffic
+  # tới đích dạng 192.168.x.x/10.x.x.x bị chặn về DIRECT ngay, không bao giờ
+  # tới được rule Personal-WG/WARP dù đúng process đã chọn.
+  # Ép toàn bộ traffic của (các) process này qua WARP
+{rulesBuilder.ToString()}
+{personalRules}  # Chỉ áp DIRECT cho dải IP riêng với traffic KHÔNG thuộc 2 nhóm process trên
   - IP-CIDR,127.0.0.0/8,DIRECT
   - IP-CIDR,192.168.0.0/16,DIRECT
   - IP-CIDR,10.0.0.0/8,DIRECT
   - IP-CIDR,172.16.0.0/12,DIRECT
-  - IP-CIDR,1.1.1.1/32,{proxyName}
-  - IP-CIDR,1.0.0.1/32,{proxyName}
-  # Ép toàn bộ traffic của (các) process này qua WARP
-{rulesBuilder.ToString()}
   # Giữ nguyên toàn bộ ứng dụng khác chạy trên mạng nhà (Split Tunneling chuẩn)
   - MATCH,DIRECT
 ";
@@ -351,6 +490,18 @@ rules:
 
     public void StopProxy()
     {
+        IsGameChannelActive = false;
+
+        if (PersonalVpnService.IsChannelActive())
+        {
+            // Kênh cá nhân vẫn cần chạy — rebuild+restart chỉ với section cá
+            // nhân thay vì kill hẳn. Fire-and-forget: StopProxy() vẫn giữ chữ
+            // ký void/sync như code gọi hiện có (DashboardViewModel), việc
+            // restart async chạy ngầm không chặn UI.
+            _ = ApplyChannelsAsync();
+            return;
+        }
+
         _activeStartCts?.Cancel();
         TryGracefulStop();
         KillMihomoProcess();

@@ -10,6 +10,10 @@ using WarpGameAccelerator.Services;
 using WarpGameAccelerator.Views;
 using WarpGameAccelerator.ViewModels;
 using Windows.Graphics;
+#if DEBUG
+using Windows.Storage.Pickers;
+using WinRT.Interop;
+#endif
 
 namespace WarpGameAccelerator;
 
@@ -18,6 +22,14 @@ public sealed partial class MainWindow : Window
     private readonly DashboardViewModel _dashboardVm;
     private readonly LocalizationService _loc;
     private TrayIconHelper? _trayIcon;
+#if DEBUG
+    // Developer Panel CHỈ tồn tại trong build Debug — release.yml build bằng
+    // `-c Release`, nên toàn bộ code này (hotkey, password gate, Window) hoàn
+    // toàn không có trong file .exe public tải từ GitHub Releases. Không chỉ
+    // "ẩn" bằng UI — decompile bản Release cũng sẽ không thấy gì, vì IL không
+    // được sinh ra khi biên dịch Release.
+    private GlobalHotkeyHelper? _devPanelHotkey;
+#endif
 
     public MainWindow(DashboardViewModel dashboardVm)
     {
@@ -35,6 +47,10 @@ public sealed partial class MainWindow : Window
         ConfigureWindow();
         ConfigureSystemBackdrop();
         ConfigureTrayIcon();
+#if DEBUG
+        ConfigureDevPanelHotkey();
+        WireDevPanelEvents();
+#endif
         SubscribeDashboardEvents();
 
         // Subscribe language change để update nav items
@@ -119,6 +135,7 @@ public sealed partial class MainWindow : Window
                 _ = PromptExitAsync();
             }
         };
+
     }
 
     private void UpdateNavItemLabels()
@@ -186,6 +203,62 @@ public sealed partial class MainWindow : Window
         );
     }
 
+#if DEBUG
+    // ── Developer Panel hotkey (ẩn — Ctrl+Shift+Alt+D, CHỈ build Debug) ──
+    // Dùng GlobalHotkeyHelper (hidden message-only window, không subclass
+    // WndProc của MainWindow — đã spike xác nhận hoạt động ổn định). Callback
+    // chạy trên thread message-pump riêng — phải nhảy về UI thread qua
+    // DispatcherQueue trước khi làm gì với XAML/dialog.
+    //
+    // Không còn yêu cầu mật khẩu — hotkey chỉ dành cho chính mình, và bản
+    // Release (#if DEBUG loại bỏ toàn bộ code này) đã đảm bảo người dùng
+    // public không bao giờ chạm được tính năng này, nên gate mật khẩu thêm ở
+    // đây không còn cần thiết. Bấm hotkey = toggle mở/đóng panel.
+    private bool _devPanelToggling = false;
+
+    private void ConfigureDevPanelHotkey()
+    {
+        const uint VK_D = 0x44;
+        _devPanelHotkey = new GlobalHotkeyHelper(
+            GlobalHotkeyHelper.MOD_CONTROL | GlobalHotkeyHelper.MOD_SHIFT | GlobalHotkeyHelper.MOD_ALT,
+            VK_D,
+            onHotkeyPressed: () => DispatcherQueue.TryEnqueue(ToggleDeveloperPanel));
+
+        if (!_devPanelHotkey.IsRegistered)
+        {
+            DiagnosticLogService.Trace("[DevPanel] Không đăng ký được hotkey — có thể bị app khác chiếm tổ hợp phím.");
+        }
+    }
+
+    /// <summary>
+    /// Bọc try/catch quanh TOÀN BỘ luồng mở/đóng panel — đây là callback chạy
+    /// trực tiếp từ DispatcherQueue.TryEnqueue (không có async Task nào bên
+    /// ngoài bắt exception hộ), một exception thoát ra khỏi đây sẽ crash cả
+    /// process (đúng loại lỗi đã ghi ở CLAUDE.md mục Process lifecycle).
+    /// </summary>
+    private void ToggleDeveloperPanel()
+    {
+        if (_devPanelToggling) return;
+        _devPanelToggling = true;
+
+        try
+        {
+            if (DevPanelRoot.Visibility == Visibility.Visible)
+                CloseDeveloperPanel();
+            else
+                ShowDeveloperPanel();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"[DevPanel] Lỗi khi mở/đóng panel: {ex}");
+        }
+        finally
+        {
+            _devPanelToggling = false;
+        }
+    }
+#endif
+
     private void ShowMainWindow()
     {
         DispatcherQueue.TryEnqueue(() =>
@@ -198,6 +271,9 @@ public sealed partial class MainWindow : Window
     private async void ExitApp()
     {
         _trayIcon?.Dispose();
+#if DEBUG
+        _devPanelHotkey?.Dispose();
+#endif
 
         try
         {
@@ -301,4 +377,340 @@ public sealed partial class MainWindow : Window
         if (ContentFrame.CurrentSourcePageType != typeof(DashboardPage))
             ContentFrame.Navigate(typeof(DashboardPage));
     }
+
+#if DEBUG
+    // ══════════════════════════════════════════════════════════
+    // Developer Panel — GỘP vào chính MainWindow (Phase 2), không còn là
+    // Window riêng. Mở/đóng bằng cách resize AppWindow rộng thêm để lộ cột
+    // DevPanelColumn (xem MainWindow.xaml) — toàn bộ nằm trong #if DEBUG.
+    // ══════════════════════════════════════════════════════════
+    private const int MainWindowWidth = 520;
+    private const int MainWindowHeight = 680;
+    private const int DevPanelWidth = 380;
+
+    /// <summary>
+    /// Wire toàn bộ event handler của Dev Panel bằng code (KHÔNG dùng
+    /// Click="..."/Toggled="..." trong XAML) — XAML không hỗ trợ #if DEBUG,
+    /// nên nếu khai báo handler trong markup, XamlCompiler sẽ luôn generate
+    /// code gọi method đó, kể cả ở build Release nơi các method này (và toàn
+    /// bộ IL của chúng) không hề tồn tại. Wiring ở đây giữ đúng yêu cầu "zero
+    /// reachable code trong Release" — method + subscription chỉ tồn tại
+    /// trong #if DEBUG.
+    /// </summary>
+    private void WireDevPanelEvents()
+    {
+        CloseDevPanelBtn.Click          += CloseDevPanelBtn_Click;
+        ImportConfigBtn.Click           += ImportConfigBtn_Click;
+        PickProcessBtn.Click            += PickProcessBtn_Click;
+        PersonalBoostToggle.Toggled     += PersonalBoostToggle_Toggled;
+        ExcludedTunnelBox.LostFocus     += ExcludedTunnelBox_LostFocus;
+        ProfileListView.SelectionChanged += ProfileListView_SelectionChanged;
+        ProfileListView.ContainerContentChanging += ProfileListView_ContainerContentChanging;
+        MasqueEngineToggle.Toggled      += MasqueEngineToggle_Toggled;
+        ApplyMasqueKeyBtn.Click         += ApplyMasqueKeyBtn_Click;
+    }
+
+    private void ProfileListView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer?.ContentTemplateRoot is not Grid grid) return;
+        if (grid.FindName("ProfileDeleteBtn") is not Button deleteBtn) return;
+
+        deleteBtn.Click -= DeleteProfileBtn_Click;
+        deleteBtn.Click += DeleteProfileBtn_Click;
+    }
+
+    public void ShowDeveloperPanel()
+    {
+        DevPanelColumn.Width = new GridLength(DevPanelWidth);
+        DevPanelRoot.Visibility = Visibility.Visible;
+        ResizeAndRecenter(MainWindowWidth + DevPanelWidth, MainWindowHeight);
+        LoadPersonalVpnState();
+
+        // Đặt IsOn KHÔNG qua event Toggled (đang subscribe) để tránh set lại
+        // EngineMode/ghi file ngay khi chỉ đang mở panel để xem trạng thái.
+        MasqueEngineToggle.Toggled -= MasqueEngineToggle_Toggled;
+        MasqueEngineToggle.IsOn = App.Services.GetRequiredService<SettingsViewModel>().IsDirectMasqueBeta;
+        MasqueEngineToggle.Toggled += MasqueEngineToggle_Toggled;
+    }
+
+    private void CloseDeveloperPanel()
+    {
+        DevPanelRoot.Visibility = Visibility.Collapsed;
+        DevPanelColumn.Width = new GridLength(0);
+        ResizeAndRecenter(MainWindowWidth, MainWindowHeight);
+    }
+
+    private void CloseDevPanelBtn_Click(object sender, RoutedEventArgs e) => CloseDeveloperPanel();
+
+    private void ResizeAndRecenter(int width, int height)
+    {
+        var appWindow = AppWindow;
+        appWindow.Resize(new SizeInt32(width, height));
+
+        var displayArea = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Nearest);
+        if (displayArea != null)
+        {
+            var centeredX = displayArea.WorkArea.X + (displayArea.WorkArea.Width - width) / 2;
+            var centeredY = displayArea.WorkArea.Y + (displayArea.WorkArea.Height - height) / 2;
+            appWindow.Move(new PointInt32(centeredX, centeredY));
+        }
+    }
+
+    // ── Kênh VPN cá nhân (multi-profile) ─────────────────────
+
+    private void LoadPersonalVpnState()
+    {
+        var store = PersonalVpnService.GetStore();
+        var active = store.Profiles.FirstOrDefault(p => p.Id == store.ActiveProfileId);
+
+        ProfileListView.ItemsSource = store.Profiles
+            .Select(p => new PersonalVpnProfileItem { Id = p.Id, Name = p.Name, Endpoint = p.Endpoint })
+            .ToList();
+        if (active != null)
+            ProfileListView.SelectedItem = (ProfileListView.ItemsSource as List<PersonalVpnProfileItem>)
+                ?.FirstOrDefault(i => i.Id == active.Id);
+
+        UpdatePersonalVpnStatusBadge(store.IsActive);
+        PersonalBoostToggle.IsOn = store.IsActive;
+        ExcludedTunnelBox.Text = active?.ExcludedTunnelServiceName ?? string.Empty;
+        PickProcessBtn.Content = $"Chọn process ({active?.ProcessNames.Count ?? 0})";
+
+        if (active != null && active.ProcessNames.Count > 0)
+        {
+            SelectedProcessesText.Text = string.Join(", ", active.ProcessNames);
+            SelectedProcessesText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            SelectedProcessesText.Visibility = Visibility.Collapsed;
+        }
+
+        if (active != null && !string.IsNullOrEmpty(active.PeerPublicKey))
+        {
+            TunnelInfoPanel.Visibility = Visibility.Visible;
+            InfoAddressText.Text     = string.IsNullOrEmpty(active.AddressV6)
+                ? active.AddressV4
+                : $"{active.AddressV4}, {active.AddressV6}";
+            InfoDnsText.Text         = string.IsNullOrEmpty(active.Dns) ? "—" : active.Dns;
+            InfoPeerKeyText.Text     = Truncate(active.PeerPublicKey, 24);
+            InfoEndpointText.Text    = active.Endpoint;
+            InfoAllowedIpsText.Text  = active.AllowedIPs;
+        }
+        else
+        {
+            TunnelInfoPanel.Visibility = Visibility.Collapsed;
+        }
+
+        // Ghi chú nhỏ thay cho popup — không làm gián đoạn người dùng.
+        if (store.Profiles.Count == 0)
+        {
+            PersonalVpnHintText.Text = "Chưa có profile — bấm \"Import file wg-quick .conf\" để bắt đầu.";
+            PersonalVpnHintText.Visibility = Visibility.Visible;
+        }
+        else if (active != null && active.ProcessNames.Count == 0)
+        {
+            PersonalVpnHintText.Text = "Chưa chọn process — bấm \"Chọn process\" trước khi Boost kênh này.";
+            PersonalVpnHintText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            PersonalVpnHintText.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static string Truncate(string value, int max) =>
+        value.Length <= max ? value : value[..max] + "...";
+
+    private void UpdatePersonalVpnStatusBadge(bool active)
+    {
+        if (active)
+        {
+            PersonalVpnStatusText.Text = "Active";
+            PersonalVpnStatusText.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 0, 212, 255));
+            PersonalVpnStatusBadge.Background = new SolidColorBrush(ColorHelper.FromArgb(26, 0, 212, 255));
+        }
+        else
+        {
+            PersonalVpnStatusText.Text = "Inactive";
+            PersonalVpnStatusText.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 170, 170, 170));
+            PersonalVpnStatusBadge.Background = new SolidColorBrush(ColorHelper.FromArgb(26, 136, 136, 136));
+        }
+    }
+
+    private async void ImportConfigBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // FileOpenPicker (WinRT) thay vì P/Invoke GetOpenFileName cũ — MainWindow
+            // dùng custom titlebar (ExtendsContentIntoTitleBar), dialog Win32 cổ điển
+            // với hwndOwner là window custom-chrome loại này dễ gây crash native
+            // (khác DeveloperWindow ở Phase 1, chỉ là Window thường không custom titlebar).
+            var picker = new FileOpenPicker();
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            picker.FileTypeFilter.Add(".conf");
+
+            var file = await picker.PickSingleFileAsync();
+            if (file == null) return;
+
+            ImportConfigBtn.IsEnabled = false;
+
+            var content = await File.ReadAllTextAsync(file.Path);
+            // Tên profile tự lấy theo tên file .conf (giống WireGuard client chính
+            // thức dùng tên tunnel = tên file) — không hỏi lại người dùng.
+            var displayName = Path.GetFileNameWithoutExtension(file.Name);
+            var (success, message) = PersonalVpnService.ImportConfig(content, displayName);
+
+            ImportConfigBtn.IsEnabled = true;
+            ImportMsg.Text = success ? $"✅  {message}" : $"❌  {message}";
+            ImportMsg.Visibility = Visibility.Visible;
+
+            if (success)
+            {
+                LoadPersonalVpnState();
+                if (PersonalVpnService.IsChannelActive())
+                    await App.Services.GetRequiredService<MihomoService>().ApplyPersonalProfileChangeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            ImportConfigBtn.IsEnabled = true;
+            ImportMsg.Text = $"❌  Lỗi: {ex.Message}";
+            ImportMsg.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void ProfileListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ProfileListView.SelectedItem is not PersonalVpnProfileItem item) return;
+
+        PersonalVpnService.SetActiveProfile(item.Id);
+        LoadPersonalVpnState();
+
+        if (PersonalVpnService.IsChannelActive())
+            await App.Services.GetRequiredService<MihomoService>().ApplyPersonalProfileChangeAsync();
+    }
+
+    private async void DeleteProfileBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string profileId) return;
+
+        PersonalVpnService.DeleteProfile(profileId);
+        LoadPersonalVpnState();
+
+        if (PersonalVpnService.IsChannelActive())
+            await App.Services.GetRequiredService<MihomoService>().ApplyPersonalProfileChangeAsync();
+    }
+
+    private async void PickProcessBtn_Click(object sender, RoutedEventArgs e)
+    {
+        // Chưa có profile — ghi chú nhỏ (PersonalVpnHintText, set ở LoadPersonalVpnState)
+        // đã nói rõ điều này, không cần popup chặn luồng.
+        var active = PersonalVpnService.GetActiveProfile();
+        if (active == null) return;
+
+        var processService = App.Services.GetRequiredService<ProcessService>();
+        var dialog = new MultiProcessPickerDialog(processService, active.ProcessNames)
+        {
+            XamlRoot = Content.XamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        var selected = dialog.GetSelectedProcessNames();
+        PersonalVpnService.SaveSelectedProcesses(active.Id, selected);
+        PickProcessBtn.Content = $"Chọn process ({selected.Count})";
+        SelectedProcessesText.Text = string.Join(", ", selected);
+        SelectedProcessesText.Visibility = selected.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        if (PersonalVpnService.IsChannelActive())
+            await App.Services.GetRequiredService<MihomoService>().ApplyPersonalProfileChangeAsync();
+    }
+
+    private async void PersonalBoostToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (PersonalBoostToggle.IsOn)
+        {
+            var active = PersonalVpnService.GetActiveProfile();
+            bool valid = active != null
+                && !string.IsNullOrWhiteSpace(active.PrivateKey)
+                && !string.IsNullOrWhiteSpace(active.PeerPublicKey)
+                && !string.IsNullOrWhiteSpace(active.Endpoint)
+                && active.ProcessNames.Count > 0;
+
+            if (!valid)
+            {
+                // Chưa sẵn sàng (thiếu profile/process) — revert toggle âm thầm,
+                // PersonalVpnHintText đã giải thích lý do, không cần popup.
+                PersonalBoostToggle.Toggled -= PersonalBoostToggle_Toggled;
+                PersonalBoostToggle.IsOn = false;
+                PersonalBoostToggle.Toggled += PersonalBoostToggle_Toggled;
+                return;
+            }
+        }
+
+        await App.Services.GetRequiredService<MihomoService>().SetPersonalChannelActiveAsync(PersonalBoostToggle.IsOn);
+        UpdatePersonalVpnStatusBadge(PersonalBoostToggle.IsOn);
+    }
+
+    private void ExcludedTunnelBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        var active = PersonalVpnService.GetActiveProfile();
+        if (active == null) return;
+
+        PersonalVpnService.SetExcludedTunnelServiceName(active.Id, ExcludedTunnelBox.Text);
+    }
+
+    // ── Direct Mode MASQUE (Beta) — dời từ SettingsPage/WarpAccountPage ──
+
+    private void MasqueEngineToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        var settingsVm = App.Services.GetRequiredService<SettingsViewModel>();
+        // Toggle nhị phân (khác RadioButton) — tắt phải trả về mặc định
+        // DirectWireGuard tường minh, vì setter IsDirectMasqueBeta chỉ phản
+        // ứng với value=true (giống hành vi radio, không tự "bỏ chọn").
+        settingsVm.EngineMode = MasqueEngineToggle.IsOn
+            ? Models.EngineMode.DirectMasqueBeta
+            : Models.EngineMode.DirectWireGuard;
+    }
+
+    private async void ApplyMasqueKeyBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var key = MasqueLicenseKeyBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            ShowMasqueStatus("⚠️  Vui lòng nhập License Key.", isError: true);
+            return;
+        }
+
+        ApplyMasqueKeyBtn.IsEnabled = false;
+        ApplyMasqueKeyBtn.Content   = "Đang kiểm tra...";
+        MasqueStatusMsg.Visibility  = Visibility.Collapsed;
+
+        var (success, message) = await WarpAccountService.UpdateMasqueLicenseAsync(key);
+
+        ApplyMasqueKeyBtn.IsEnabled = true;
+        ApplyMasqueKeyBtn.Content   = "Áp dụng Key cho MASQUE";
+
+        if (success)
+        {
+            ShowMasqueStatus($"✅  {message}", isError: false);
+            MasqueLicenseKeyBox.Text = string.Empty;
+        }
+        else
+        {
+            ShowMasqueStatus($"❌  {message}", isError: true);
+        }
+    }
+
+    private void ShowMasqueStatus(string msg, bool isError)
+    {
+        MasqueStatusMsg.Text       = msg;
+        MasqueStatusMsg.Foreground = isError
+            ? new SolidColorBrush(ColorHelper.FromArgb(255, 255, 77, 77))
+            : new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100));
+        MasqueStatusMsg.Visibility = Visibility.Visible;
+    }
+
+#endif
 }

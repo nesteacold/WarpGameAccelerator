@@ -86,42 +86,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- License Key Section — MASQUE Beta (thiết bị RIÊNG, tốn thêm 1/5 slot) -->
-            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="12">
-
-                    <TextBlock Text="🧪  License Key cho Direct Mode (MASQUE) Beta"
-                               FontSize="13" FontWeight="SemiBold"
-                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-
-                    <TextBlock Text="MASQUE dùng thiết bị đăng ký RIÊNG với Direct WireGuard — áp key ở đây sẽ tốn THÊM 1/5 slot thiết bị WARP+ của bạn, độc lập với slot của WireGuard."
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="#F6961E"/>
-
-                    <TextBox x:Name="MasqueLicenseKeyBox"
-                             PlaceholderText="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                             FontFamily="Consolas"
-                             FontSize="13"
-                             MaxLength="48"
-                             CornerRadius="6"/>
-
-                    <Button x:Name="ApplyMasqueKeyBtn"
-                            Content="Áp dụng Key cho MASQUE"
-                            HorizontalAlignment="Stretch"
-                            Click="ApplyMasqueKeyBtn_Click"
-                            CornerRadius="6"/>
-
-                    <TextBlock x:Name="MasqueStatusMsg"
-                               Text=""
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="#0078D4"
-                               Visibility="Collapsed"/>
-
-                </StackPanel>
-            </Border>
-
             <!-- Import Account Section -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"

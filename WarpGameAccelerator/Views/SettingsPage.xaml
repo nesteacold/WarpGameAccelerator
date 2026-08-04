@@ -98,23 +98,6 @@
                                        Margin="0,3,0,0"/>
                         </StackPanel>
                     </RadioButton>
-
-                    <MenuFlyoutSeparator Margin="-12,0,-12,0"/>
-
-                    <!-- Direct MASQUE (Beta) — độc lập hoàn toàn với Direct WireGuard -->
-                    <RadioButton IsChecked="{x:Bind ViewModel.IsDirectMasqueBeta, Mode=TwoWay}"
-                                 GroupName="ConnectionEngineGroup"
-                                 ToolTipService.ToolTip="{x:Bind Loc.SettEngineMasqueDesc, Mode=OneWay}"
-                                 HorizontalAlignment="Stretch">
-                        <StackPanel Margin="6,0,0,0">
-                            <TextBlock Text="{x:Bind Loc.SettEngineMasqueTitle, Mode=OneWay}"
-                                       FontWeight="SemiBold" FontSize="13"/>
-                            <TextBlock Text="{x:Bind Loc.SettEngineMasqueDesc, Mode=OneWay}"
-                                       FontSize="11" TextWrapping="Wrap"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       Margin="0,3,0,0"/>
-                        </StackPanel>
-                    </RadioButton>
                 </StackPanel>
             </Border>
 
