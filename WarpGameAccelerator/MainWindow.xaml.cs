@@ -10,9 +10,7 @@ using WarpGameAccelerator.Services;
 using WarpGameAccelerator.Views;
 using WarpGameAccelerator.ViewModels;
 using Windows.Graphics;
-#if DEBUG
 using System.Runtime.InteropServices;
-#endif
 
 namespace WarpGameAccelerator;
 
@@ -21,14 +19,10 @@ public sealed partial class MainWindow : Window
     private readonly DashboardViewModel _dashboardVm;
     private readonly LocalizationService _loc;
     private TrayIconHelper? _trayIcon;
-#if DEBUG
-    // Developer Panel CHỈ tồn tại trong build Debug — release.yml build bằng
-    // `-c Release`, nên toàn bộ code này (hotkey, password gate, Window) hoàn
-    // toàn không có trong file .exe public tải từ GitHub Releases. Không chỉ
-    // "ẩn" bằng UI — decompile bản Release cũng sẽ không thấy gì, vì IL không
-    // được sinh ra khi biên dịch Release.
+    // Developer Panel — có trong MỌI build kể cả Release public (theo yêu
+    // cầu người dùng). Không mật khẩu, chỉ ẩn qua hotkey — ai biết tổ hợp
+    // phím Ctrl+Shift+Alt+D đều mở được, không giới hạn máy nào.
     private GlobalHotkeyHelper? _devPanelHotkey;
-#endif
 
     public MainWindow(DashboardViewModel dashboardVm)
     {
@@ -46,10 +40,8 @@ public sealed partial class MainWindow : Window
         ConfigureWindow();
         ConfigureSystemBackdrop();
         ConfigureTrayIcon();
-#if DEBUG
         ConfigureDevPanelHotkey();
         WireDevPanelEvents();
-#endif
         SubscribeDashboardEvents();
 
         // Subscribe language change để update nav items
@@ -202,17 +194,16 @@ public sealed partial class MainWindow : Window
         );
     }
 
-#if DEBUG
-    // ── Developer Panel hotkey (ẩn — Ctrl+Shift+Alt+D, CHỈ build Debug) ──
+    // ── Developer Panel hotkey (ẩn — Ctrl+Shift+Alt+D, có trong MỌI build
+    // kể cả Release public) ──
     // Dùng GlobalHotkeyHelper (hidden message-only window, không subclass
     // WndProc của MainWindow — đã spike xác nhận hoạt động ổn định). Callback
     // chạy trên thread message-pump riêng — phải nhảy về UI thread qua
     // DispatcherQueue trước khi làm gì với XAML/dialog.
     //
-    // Không còn yêu cầu mật khẩu — hotkey chỉ dành cho chính mình, và bản
-    // Release (#if DEBUG loại bỏ toàn bộ code này) đã đảm bảo người dùng
-    // public không bao giờ chạm được tính năng này, nên gate mật khẩu thêm ở
-    // đây không còn cần thiết. Bấm hotkey = toggle mở/đóng panel.
+    // Không có mật khẩu — chỉ ẩn qua hotkey, ai biết tổ hợp phím đều mở được
+    // (kể cả người dùng bản public tải từ GitHub Releases). Bấm hotkey =
+    // toggle mở/đóng panel.
     private bool _devPanelToggling = false;
 
     private void ConfigureDevPanelHotkey()
@@ -256,7 +247,6 @@ public sealed partial class MainWindow : Window
             _devPanelToggling = false;
         }
     }
-#endif
 
     private void ShowMainWindow()
     {
@@ -270,9 +260,7 @@ public sealed partial class MainWindow : Window
     private async void ExitApp()
     {
         _trayIcon?.Dispose();
-#if DEBUG
         _devPanelHotkey?.Dispose();
-#endif
 
         try
         {
@@ -377,11 +365,10 @@ public sealed partial class MainWindow : Window
             ContentFrame.Navigate(typeof(DashboardPage));
     }
 
-#if DEBUG
     // ══════════════════════════════════════════════════════════
-    // Developer Panel — GỘP vào chính MainWindow (Phase 2), không còn là
-    // Window riêng. Mở/đóng bằng cách resize AppWindow rộng thêm để lộ cột
-    // DevPanelColumn (xem MainWindow.xaml) — toàn bộ nằm trong #if DEBUG.
+    // Developer Panel — gộp vào chính MainWindow, có trong MỌI build kể cả
+    // Release public. Mở/đóng bằng cách resize AppWindow rộng thêm để lộ cột
+    // DevPanelColumn (xem MainWindow.xaml).
     // ══════════════════════════════════════════════════════════
     private const int MainWindowWidth = 520;
     private const int MainWindowHeight = 680;
@@ -389,12 +376,9 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Wire toàn bộ event handler của Dev Panel bằng code (KHÔNG dùng
-    /// Click="..."/Toggled="..." trong XAML) — XAML không hỗ trợ #if DEBUG,
-    /// nên nếu khai báo handler trong markup, XamlCompiler sẽ luôn generate
-    /// code gọi method đó, kể cả ở build Release nơi các method này (và toàn
-    /// bộ IL của chúng) không hề tồn tại. Wiring ở đây giữ đúng yêu cầu "zero
-    /// reachable code trong Release" — method + subscription chỉ tồn tại
-    /// trong #if DEBUG.
+    /// Click="..."/Toggled="..." trong XAML) — không liên quan gì tới build
+    /// config nữa (Dev Panel giờ có ở mọi build), chỉ đơn giản là cách wiring
+    /// nhất quán, tránh phải sửa lại XAML nếu sau này cần điều kiện hoá gì.
     /// </summary>
     private void WireDevPanelEvents()
     {
@@ -767,5 +751,4 @@ public sealed partial class MainWindow : Window
 
         return GetOpenFileName(ref ofn) ? ofn.lpstrFile : null;
     }
-#endif
 }
