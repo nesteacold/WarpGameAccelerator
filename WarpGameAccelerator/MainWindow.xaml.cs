@@ -465,9 +465,15 @@ public sealed partial class MainWindow : Window
         ProfileListView.ItemsSource = store.Profiles
             .Select(p => new PersonalVpnProfileItem { Id = p.Id, Name = p.Name, Endpoint = p.Endpoint })
             .ToList();
+        // Set SelectedItem KHÔNG qua event SelectionChanged (đang subscribe) —
+        // nếu không, handler gọi lại LoadPersonalVpnState() → set SelectedItem
+        // lại → bắn SelectionChanged lại → đệ quy vô hạn → StackOverflowException
+        // (loại duy nhất .NET không cho catch, crash im lặng không kịp ghi log).
+        ProfileListView.SelectionChanged -= ProfileListView_SelectionChanged;
         if (active != null)
             ProfileListView.SelectedItem = (ProfileListView.ItemsSource as List<PersonalVpnProfileItem>)
                 ?.FirstOrDefault(i => i.Id == active.Id);
+        ProfileListView.SelectionChanged += ProfileListView_SelectionChanged;
 
         UpdatePersonalVpnStatusBadge(store.IsActive);
         PersonalBoostToggle.IsOn = store.IsActive;
