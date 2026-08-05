@@ -26,15 +26,6 @@ public class PersonalVpnProfile
     public string Endpoint      { get; set; } = string.Empty;
     public string AllowedIPs    { get; set; } = "0.0.0.0/0";
     public List<string> ProcessNames { get; set; } = new();
-
-    /// <summary>
-    /// Tên service "WireGuardTunnel$*" trên MÁY NÀY tuyệt đối KHÔNG bị
-    /// WireGuardConflictGuard tạm dừng khi Boost — dùng khi chính máy này
-    /// vừa Boost game vừa đóng vai WireGuard server cho kênh cá nhân (2 vai
-    /// trò trùng 1 máy). Người dùng thật thường có server ở máy khác, không
-    /// cần field này. Tự chịu rủi ro xung đột WFP đã ghi ở CLAUDE.md nếu bật.
-    /// </summary>
-    public string ExcludedTunnelServiceName { get; set; } = string.Empty;
 }
 
 public class PersonalVpnStore
@@ -44,6 +35,20 @@ public class PersonalVpnStore
 
     /// <summary>Trạng thái Boost của kênh cá nhân — độc lập với kênh game.</summary>
     public bool IsActive { get; set; } = false;
+
+    /// <summary>
+    /// Tên service "WireGuardTunnel$*" trên MÁY NÀY tuyệt đối KHÔNG bị
+    /// WireGuardConflictGuard tạm dừng khi Boost — dùng khi chính máy này
+    /// vừa Boost game vừa đóng vai WireGuard server cho kênh cá nhân (2 vai
+    /// trò trùng 1 máy). Người dùng thật thường có server ở máy khác, không
+    /// cần field này. Tự chịu rủi ro xung đột WFP đã ghi ở CLAUDE.md nếu bật.
+    ///
+    /// Cấp TOÀN MÁY (không gắn theo profile nào) — máy đóng vai WireGuard
+    /// server có thể không cần import bất kỳ client profile nào cả, nên field
+    /// này không được phép phụ thuộc vào việc có profile Active hay không
+    /// (bug đã gặp: gõ vào ô nhưng không có profile → không lưu được gì).
+    /// </summary>
+    public string ExcludedTunnelServiceName { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -223,15 +228,14 @@ public static class PersonalVpnService
         SaveStore(store);
     }
 
-    public static void SetExcludedTunnelServiceName(string profileId, string serviceName)
+    public static void SetExcludedTunnelServiceName(string serviceName)
     {
         var store = GetStore();
-        var profile = store.Profiles.FirstOrDefault(p => p.Id == profileId);
-        if (profile == null) return;
-
-        profile.ExcludedTunnelServiceName = serviceName.Trim();
+        store.ExcludedTunnelServiceName = serviceName.Trim();
         SaveStore(store);
     }
+
+    public static string GetExcludedTunnelServiceName() => GetStore().ExcludedTunnelServiceName;
 
     private static void SaveStore(PersonalVpnStore store)
     {

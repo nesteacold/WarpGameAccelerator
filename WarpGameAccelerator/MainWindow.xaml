@@ -252,13 +252,14 @@
 
                                 <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
                                     <StackPanel Spacing="6">
-                                        <TextBlock Text="⚠️  Chỉ dùng khi máy này VỪA Boost VỪA là WireGuard server (setup test) — tên service KHÔNG bị WireGuardConflictGuard tạm dừng khi Boost:"
+                                        <TextBlock Text="⚠️  Chỉ dùng khi máy này VỪA Boost VỪA là WireGuard server (setup test) — tunnel chọn ở đây KHÔNG bị WireGuardConflictGuard tạm dừng khi Boost:"
                                                    FontSize="10" TextWrapping="Wrap"
                                                    Foreground="#F6961E"/>
-                                        <TextBox x:Name="ExcludedTunnelBox"
-                                                 PlaceholderText="Tên tunnel (vd: wg_server)"
-                                                 FontFamily="Consolas"
-                                                 FontSize="12"/>
+                                        <ComboBox x:Name="ExcludedTunnelCombo"
+                                                  PlaceholderText="Chọn tunnel loại trừ"
+                                                  HorizontalAlignment="Stretch"
+                                                  FontFamily="Consolas"
+                                                  FontSize="12"/>
                                     </StackPanel>
                                 </Border>
 

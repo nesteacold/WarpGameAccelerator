@@ -386,7 +386,7 @@ public sealed partial class MainWindow : Window
         ImportConfigBtn.Click           += ImportConfigBtn_Click;
         PickProcessBtn.Click            += PickProcessBtn_Click;
         PersonalBoostToggle.Toggled     += PersonalBoostToggle_Toggled;
-        ExcludedTunnelBox.LostFocus     += ExcludedTunnelBox_LostFocus;
+        ExcludedTunnelCombo.SelectionChanged += ExcludedTunnelCombo_SelectionChanged;
         ProfileListView.SelectionChanged += ProfileListView_SelectionChanged;
         ProfileListView.ContainerContentChanging += ProfileListView_ContainerContentChanging;
         MasqueEngineToggle.Toggled      += MasqueEngineToggle_Toggled;
@@ -408,6 +408,7 @@ public sealed partial class MainWindow : Window
         DevPanelRoot.Visibility = Visibility.Visible;
         ResizeAndRecenter(MainWindowWidth + DevPanelWidth, MainWindowHeight);
         LoadPersonalVpnState();
+        _ = LoadExcludedTunnelOptionsAsync();
 
         // Đặt IsOn KHÔNG qua event Toggled (đang subscribe) để tránh set lại
         // EngineMode/ghi file ngay khi chỉ đang mở panel để xem trạng thái.
@@ -461,7 +462,6 @@ public sealed partial class MainWindow : Window
 
         UpdatePersonalVpnStatusBadge(store.IsActive);
         PersonalBoostToggle.IsOn = store.IsActive;
-        ExcludedTunnelBox.Text = active?.ExcludedTunnelServiceName ?? string.Empty;
         PickProcessBtn.Content = $"Chọn process ({active?.ProcessNames.Count ?? 0})";
 
         if (active != null && active.ProcessNames.Count > 0)
@@ -643,12 +643,47 @@ public sealed partial class MainWindow : Window
         UpdatePersonalVpnStatusBadge(PersonalBoostToggle.IsOn);
     }
 
-    private void ExcludedTunnelBox_LostFocus(object sender, RoutedEventArgs e)
-    {
-        var active = PersonalVpnService.GetActiveProfile();
-        if (active == null) return;
+    private const string NoExclusionOption = "(Không loại trừ)";
 
-        PersonalVpnService.SetExcludedTunnelServiceName(active.Id, ExcludedTunnelBox.Text);
+    /// <summary>
+    /// Tự phát hiện danh sách tunnel "WireGuardTunnel$*" đã cài trên máy thay
+    /// vì bắt gõ tay (dễ sai tên, gây bug im lặng như đã gặp). Giữ lại giá trị
+    /// cũ trong list dù tunnel đó hiện không phát hiện được (máy khác/gỡ rồi),
+    /// để không tự xoá mất lựa chọn người dùng đã lưu.
+    /// </summary>
+    private async Task LoadExcludedTunnelOptionsAsync()
+    {
+        try
+        {
+            var names = await WireGuardConflictGuard.GetAvailableTunnelNamesAsync();
+            var current = PersonalVpnService.GetExcludedTunnelServiceName();
+
+            var options = new List<string> { NoExclusionOption };
+            options.AddRange(names);
+            if (!string.IsNullOrEmpty(current) && !names.Contains(current, StringComparer.OrdinalIgnoreCase))
+                options.Add(current);
+
+            ExcludedTunnelCombo.SelectionChanged -= ExcludedTunnelCombo_SelectionChanged;
+            ExcludedTunnelCombo.ItemsSource = options;
+            ExcludedTunnelCombo.SelectedItem = string.IsNullOrEmpty(current)
+                ? NoExclusionOption
+                : options.FirstOrDefault(o => o.Equals(current, StringComparison.OrdinalIgnoreCase)) ?? NoExclusionOption;
+            ExcludedTunnelCombo.SelectionChanged += ExcludedTunnelCombo_SelectionChanged;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"[DevPanel] Lỗi load danh sách tunnel: {ex.Message}");
+        }
+    }
+
+    private void ExcludedTunnelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var selected = ExcludedTunnelCombo.SelectedItem as string;
+        var value = string.IsNullOrEmpty(selected) || selected == NoExclusionOption ? string.Empty : selected;
+
+        // Cấp toàn máy, KHÔNG phụ thuộc có profile Active hay không — máy đóng
+        // vai WireGuard server không cần import client profile nào cả.
+        PersonalVpnService.SetExcludedTunnelServiceName(value);
     }
 
     // ── Direct Mode MASQUE (Beta) — dời từ SettingsPage/WarpAccountPage ──

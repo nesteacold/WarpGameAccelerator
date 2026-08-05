@@ -11,6 +11,7 @@
 // ============================================================
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace WarpGameAccelerator.Services;
@@ -40,7 +41,7 @@ public static class WireGuardConflictGuard
             // nhân (Dev Panel) đang chạy CHUNG máy với Boost — xem comment ở
             // PersonalVpnConfig.ExcludedTunnelServiceName. Người dùng thật có
             // server ở máy khác thì field này rỗng, không ảnh hưởng gì.
-            var excluded = PersonalVpnService.GetActiveProfile()?.ExcludedTunnelServiceName;
+            var excluded = PersonalVpnService.GetExcludedTunnelServiceName();
             excluded = string.IsNullOrWhiteSpace(excluded) ? null : excluded.Trim();
 
             // Đảm bảo tunnel loại trừ ĐÃ chạy TRƯỚC khi mihomo khởi động — xác
@@ -107,7 +108,11 @@ public static class WireGuardConflictGuard
             return;
         }
 
-        if (status.Equals("Running", StringComparison.OrdinalIgnoreCase)) return;
+        if (status.Equals("Running", StringComparison.OrdinalIgnoreCase))
+        {
+            await EnsureNatForInterfaceAsync(excluded);
+            return;
+        }
 
         DiagnosticLogService.Trace($"[WireGuardConflictGuard] Tunnel loại trừ '{excluded}' đang {status} — tự khởi động trước khi mihomo chạy.");
         await RunPowerShellAsync($"Start-Service -Name '{serviceName}' -ErrorAction SilentlyContinue");
@@ -119,12 +124,91 @@ public static class WireGuardConflictGuard
             if (current.Equals("Running", StringComparison.OrdinalIgnoreCase))
             {
                 DiagnosticLogService.Trace($"[WireGuardConflictGuard] Đã tự khởi động '{excluded}' thành công.");
+                // Khi interface bị destroy lúc tunnel Stopped, Windows tự huỷ
+                // theo binding NetNat gắn với nó (đã xác nhận thực nghiệm: WS4W
+                // báo "NAT is not enabled" ngay sau khi tunnel bị dừng) — tạo
+                // lại nếu thiếu, không cần bấm tay "Enable NAT" mỗi lần nữa.
+                await EnsureNatForInterfaceAsync(excluded);
                 return;
             }
             await Task.Delay(250);
         }
 
         DiagnosticLogService.Trace($"[WireGuardConflictGuard] Không thể tự khởi động '{excluded}' — mihomo vẫn sẽ tiếp tục chạy, có thể xung đột.");
+    }
+
+    /// <summary>
+    /// Đảm bảo IP forwarding bật + tồn tại 1 NetNat object đúng subnet của
+    /// interface WireGuard — subnet tự tính từ IP/PrefixLength thật của
+    /// chính interface (KHÔNG hardcode dải mạng), không tạo trùng nếu đã có.
+    /// </summary>
+    private static async Task EnsureNatForInterfaceAsync(string interfaceAlias)
+    {
+        try
+        {
+            await RunPowerShellAsync(
+                $"Set-NetIPInterface -InterfaceAlias '{interfaceAlias}' -Forwarding Enabled -ErrorAction SilentlyContinue");
+
+            var ipOutput = (await RunPowerShellAsync(
+                $"Get-NetIPAddress -InterfaceAlias '{interfaceAlias}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | " +
+                "Select-Object -First 1 | ForEach-Object { \"$($_.IPAddress)|$($_.PrefixLength)\" }")).Trim();
+
+            if (string.IsNullOrEmpty(ipOutput) || !ipOutput.Contains('|')) return;
+
+            var parts = ipOutput.Split('|');
+            if (!System.Net.IPAddress.TryParse(parts[0], out var ip) || !int.TryParse(parts[1], out var prefixLen))
+                return;
+
+            var networkPrefix = $"{ComputeNetworkAddress(ip, prefixLen)}/{prefixLen}";
+
+            var existing = (await RunPowerShellAsync(
+                $"Get-NetNat -ErrorAction SilentlyContinue | Where-Object {{ $_.InternalIPInterfaceAddressPrefix -eq '{networkPrefix}' }} | " +
+                "Select-Object -ExpandProperty Name")).Trim();
+
+            if (!string.IsNullOrEmpty(existing)) return; // Đã có NAT đúng subnet, không tạo trùng
+
+            await RunPowerShellAsync(
+                $"New-NetNat -Name '{interfaceAlias}-NAT' -InternalIPInterfaceAddressPrefix '{networkPrefix}' -ErrorAction SilentlyContinue");
+            DiagnosticLogService.Trace($"[WireGuardConflictGuard] Đã tự tạo lại NAT cho '{interfaceAlias}' ({networkPrefix}).");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"[WireGuardConflictGuard] Ensure NAT lỗi: {ex.Message}");
+        }
+    }
+
+    private static string ComputeNetworkAddress(System.Net.IPAddress ip, int prefixLength)
+    {
+        var b = ip.GetAddressBytes();
+        uint ipUint = (uint)(b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]);
+        uint mask = prefixLength == 0 ? 0 : 0xFFFFFFFFu << (32 - prefixLength);
+        uint network = ipUint & mask;
+        return new System.Net.IPAddress(new byte[]
+        {
+            (byte)(network >> 24), (byte)(network >> 16), (byte)(network >> 8), (byte)network
+        }).ToString();
+    }
+
+    /// <summary>Danh sách tên tunnel "WireGuardTunnel$*" đã cài trên máy (đã bỏ prefix) — dùng cho dropdown chọn ở Dev Panel.</summary>
+    public static async Task<List<string>> GetAvailableTunnelNamesAsync()
+    {
+        try
+        {
+            var output = await RunPowerShellAsync(
+                "Get-Service -Name 'WireGuardTunnel$*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name");
+
+            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(n => n.Trim())
+                .Where(n => n.Length > 0)
+                .Select(n => n.StartsWith("WireGuardTunnel$", StringComparison.OrdinalIgnoreCase)
+                    ? n["WireGuardTunnel$".Length..]
+                    : n)
+                .ToList();
+        }
+        catch
+        {
+            return new List<string>();
+        }
     }
 
     /// <summary>Khởi động lại đúng những service đã tạm dừng ở <see cref="PauseAsync"/>.</summary>
