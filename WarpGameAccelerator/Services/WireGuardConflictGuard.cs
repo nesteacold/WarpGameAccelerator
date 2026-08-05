@@ -149,8 +149,13 @@ public static class WireGuardConflictGuard
             await RunPowerShellAsync(
                 $"Set-NetIPInterface -InterfaceAlias '{interfaceAlias}' -Forwarding Enabled -ErrorAction SilentlyContinue");
 
+            // PrefixOrigin=Manual lọc đúng IP tĩnh thật của tunnel (vd 10.253.0.x) —
+            // KHÔNG lọc theo "First" đơn thuần, vì interface có thể có thêm 1 địa
+            // chỉ APIPA tự động (169.254.0.0/16) nếu bị enumerate trước IP tĩnh,
+            // dẫn tới tính sai subnet và tạo nhầm NetNat vô dụng (đã xảy ra thực tế).
             var ipOutput = (await RunPowerShellAsync(
                 $"Get-NetIPAddress -InterfaceAlias '{interfaceAlias}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | " +
+                "Where-Object { $_.PrefixOrigin -eq 'Manual' } | " +
                 "Select-Object -First 1 | ForEach-Object { \"$($_.IPAddress)|$($_.PrefixLength)\" }")).Trim();
 
             if (string.IsNullOrEmpty(ipOutput) || !ipOutput.Contains('|')) return;
