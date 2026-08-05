@@ -81,6 +81,15 @@ public class NetworkOptimizerService
                     $"NetworkOptimizer: phát hiện {state.Interfaces.Count} interface chưa khôi phục từ phiên trước");
                 await Task.Run(RestoreRegistryFromBackup);
             }
+            else
+            {
+                // Backup rỗng (mất/ghi lỗi do crash giữa chừng ở phiên trước) nhưng
+                // registry vẫn có thể đang bị kẹt ở TcpAckFrequency=1/TCPNoDelay=1
+                // do BackupAndOptimizeRegistry() đã set trước khi backup bị mất —
+                // không còn giá trị gốc để khôi phục, nên xoá hẳn 2 key này (giống
+                // mặc định của Windows khi chưa từng bị app này đụng vào).
+                await Task.Run(CleanupOrphanedTcpTweaks);
+            }
 
             if (!state.LegacyMtuCleaned)
             {
@@ -132,6 +141,34 @@ public class NetworkOptimizerService
         catch (Exception ex)
         {
             DiagnosticLogService.Trace($"NetworkOptimizer.Optimize lỗi: {ex.Message}");
+        }
+    }
+
+    private void CleanupOrphanedTcpTweaks()
+    {
+        try
+        {
+            using var baseKey = Registry.LocalMachine.OpenSubKey(TcpipInterfacesKey, writable: true);
+            if (baseKey == null) return;
+
+            foreach (var interfaceName in baseKey.GetSubKeyNames())
+            {
+                using var interfaceKey = baseKey.OpenSubKey(interfaceName, writable: true);
+                if (interfaceKey == null) continue;
+
+                var ack = interfaceKey.GetValue("TcpAckFrequency") as int?;
+                var noDelay = interfaceKey.GetValue("TCPNoDelay") as int?;
+                if (ack != 1 && noDelay != 1) continue;
+
+                DiagnosticLogService.Trace(
+                    $"NetworkOptimizer: xoá TcpAckFrequency/TCPNoDelay kẹt lại (không còn backup gốc) trên interface {interfaceName}");
+                interfaceKey.DeleteValue("TcpAckFrequency", throwOnMissingValue: false);
+                interfaceKey.DeleteValue("TCPNoDelay", throwOnMissingValue: false);
+            }
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"NetworkOptimizer.CleanupOrphanedTcpTweaks lỗi: {ex.Message}");
         }
     }
 
