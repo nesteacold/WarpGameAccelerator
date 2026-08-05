@@ -138,9 +138,23 @@ public static class WireGuardConflictGuard
     }
 
     /// <summary>
-    /// Đảm bảo IP forwarding bật + tồn tại 1 NetNat object đúng subnet của
-    /// interface WireGuard — subnet tự tính từ IP/PrefixLength thật của
-    /// chính interface (KHÔNG hardcode dải mạng), không tạo trùng nếu đã có.
+    /// Đảm bảo IP forwarding bật + NetNat object đúng subnet của interface
+    /// WireGuard tồn tại VÀ hoạt động thật — subnet tự tính từ IP/PrefixLength
+    /// thật của chính interface (KHÔNG hardcode dải mạng).
+    ///
+    /// LUÔN xoá rồi tạo lại NAT (không chỉ kiểm tra "đã tồn tại thì bỏ qua") —
+    /// xác nhận qua source code WgServerForWindows (WS4W, tool quản lý server
+    /// WireGuard, github.com/micahmo/WgServerForWindows,
+    /// Models/NewNetNatPrerequisite.cs): nút "Enable NAT" của WS4W cũng luôn
+    /// Remove-NetNat rồi New-NetNat lại từ đầu mỗi lần, không bao giờ chỉ kiểm
+    /// tra rồi bỏ qua. Xác nhận thực nghiệm trên máy dev: `Get-NetNat` báo
+    /// Active:True và `Restart-Service WinNat` KHÔNG đủ để NAT hoạt động lại
+    /// sau khi tunnel bị start/stop nhiều lần — driver WinNat có thể giữ binding
+    /// cũ dù object cấu hình vẫn còn, chỉ xoá hẳn rồi tạo mới mới chắc chắn.
+    ///
+    /// Tên NAT dùng đúng convention "{tunnel}_nat" (gạch dưới) của WS4W — nếu
+    /// tên tunnel trùng (vd "wg_server"), code này thao tác lại ĐÚNG object
+    /// WS4W quản lý thay vì tạo thêm 1 object khác tên chồng lên (bug đã gặp).
     /// </summary>
     private static async Task EnsureNatForInterfaceAsync(string interfaceAlias)
     {
@@ -165,16 +179,12 @@ public static class WireGuardConflictGuard
                 return;
 
             var networkPrefix = $"{ComputeNetworkAddress(ip, prefixLen)}/{prefixLen}";
+            var natName = $"{interfaceAlias}_nat";
 
-            var existing = (await RunPowerShellAsync(
-                $"Get-NetNat -ErrorAction SilentlyContinue | Where-Object {{ $_.InternalIPInterfaceAddressPrefix -eq '{networkPrefix}' }} | " +
-                "Select-Object -ExpandProperty Name")).Trim();
-
-            if (!string.IsNullOrEmpty(existing)) return; // Đã có NAT đúng subnet, không tạo trùng
-
+            await RunPowerShellAsync($"Remove-NetNat -Name '{natName}' -Confirm:$false -ErrorAction SilentlyContinue");
             await RunPowerShellAsync(
-                $"New-NetNat -Name '{interfaceAlias}-NAT' -InternalIPInterfaceAddressPrefix '{networkPrefix}' -ErrorAction SilentlyContinue");
-            DiagnosticLogService.Trace($"[WireGuardConflictGuard] Đã tự tạo lại NAT cho '{interfaceAlias}' ({networkPrefix}).");
+                $"New-NetNat -Name '{natName}' -InternalIPInterfaceAddressPrefix '{networkPrefix}' -ErrorAction SilentlyContinue");
+            DiagnosticLogService.Trace($"[WireGuardConflictGuard] Đã xoá+tạo lại NAT cho '{interfaceAlias}' ({networkPrefix}).");
         }
         catch (Exception ex)
         {
