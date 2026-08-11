@@ -29,17 +29,59 @@ Hai chế độ, chọn ở Settings:
 **Bắt buộc trong `config.yaml` sinh bởi `MihomoService.cs`** (đã verify thực nghiệm, KHÔNG đổi lại nếu không có bằng chứng mới):
 - `tun.stack: mixed` — **KHÔNG dùng `gvisor`** (lỗi tương thích TLS/cURL trong addon game).
 - `tun.find-process-mode: always` — **KHÔNG dùng `strict`** (mặc định), vì một số kết nối TUN không attribute được process, fallback `MATCH,DIRECT` rồi timeout ~20s → traffic "rò" ra ngoài tunnel. Log nhận diện lỗi này: `dial DIRECT (match Match/) ... i/o timeout` không có tên process trong ngoặc.
-- **KHÔNG dùng `DOMAIN-SUFFIX` để vá lỗi process-detection** — phá vỡ Split Tunneling, có thể đẩy traffic duyệt web (không phải game) vào tunnel WARP+ giới hạn băng thông. Nếu traffic rò ra ngoài tunnel, sửa `find-process-mode`, không thêm domain rule.
+- **KHÔNG dùng `DOMAIN-SUFFIX` để vá lỗi process-detection** — phá vỡ Split Tunneling, có thể đẩy traffic duyệt web (không phải game) vào tunnel WARP+ giới hạn băng thông. Nếu traffic rò ra ngoài tunnel, sửa `find-process-mode` hoặc bổ sung tiến trình còn thiếu; chỉ khi mihomo **không attribute được tiến trình nào** mới dùng `IP-CIDR` theo IP server game — xem mục "Rò rỉ traffic game" bên dưới.
 - WireGuard block cần `keepalive: 25` (chống rớt UDP khi NAT timeout) và `udp: true`.
 - `inet4-route-exclude-address` phải là **raw IP**, không phải hostname — mihomo crash fatal khi parse hostname. Chỉ set field này `if (IPAddress.TryParse(host, out _))`.
+- `tun.inet6-address: []` (**danh sách rỗng, bắt buộc giữ**) — mặc định mihomo gán `fdfe:dcba:9876::1/126` cho TUN, `auto-route` kéo theo route `::/0` metric 0, thắng route IPv6 của NIC vật lý (metric 256) và hút toàn bộ IPv6 của cả máy vào tunnel. Nhưng outbound WARP/WireGuard chỉ có địa chỉ IPv4 → IPv6 rơi vào hố đen, app phải chờ timeout rồi mới fallback IPv4 (Happy Eyeballs) → "khựng nhẹ" khi duyệt web / Chrome Remote Desktop, dù game (server IPv4-only) vẫn chạy. Log nhận diện: nhiều dòng `dial DIRECT (match Match/) ... --> [xxxx:...]:443 error: i/o timeout` với đích là IPv6 literal, kèm `remotedesktop-pa`/`instantmessaging-pa.googleapis.com` (signaling của CRD). Sau khi để rỗng: 0 lỗi dial IPv6, IPv4 TCP retransmit 12.81% → 0%, IPv6 native đo được 39ms/0% loss.
+- **KHÔNG set cứng `tun.interface-name` thay cho `auto-detect-interface: true`** — đã thử để sửa warning `[TUN] Auto detect interface ... get same name with tun`, kết quả **WireGuard handshake fail 100% mọi traffic** (`context deadline exceeded`, xác nhận bằng traffic test độc lập, không phải do game). Nguyên nhân: bind-socket-to-interface lỗi trên Windows ở tầng core Go — xem [mihomo#1728](https://github.com/MetaCubeX/mihomo/issues/1728). Bản thân warning đó gần như vô hại (chỉ 17/795 dòng log, routing table IPv4 không hề thay đổi khi đo thực nghiệm).
 - DNS: `enhanced-mode: fake-ip`, range `198.18.0.1/16`, `dns-hijack: any:53` — bắt buộc để game resolve domain trước khi kết nối.
+
+**Cách chẩn đoán "mạng giật/mất kết nối" cho đúng** (đã trả giá vì làm sai):
+- Ping/ICMP qua TUN do mihomo **giả lập** — dùng nó để đo loss sẽ ra số sai. Log `receive ICMP echo reply ... i/o timeout` phần lớn là ICMP emulation, không phải mất gói thật; server game (`103.197.172.23`) còn rate-limit ICMP nên ping/loss app hiển thị không phản ánh chất lượng kết nối thật.
+- Dùng bằng chứng từ bộ đếm OS: `netstat -s` (Segments Retransmitted theo IPv4/IPv6 riêng), `Get-NetAdapterStatistics` (discard/error theo adapter), và log của chính mihomo (phân loại lỗi theo outbound: `DIRECT` vs `WARP-Direct` — biết ngay lỗi ở tunnel hay ở đường thường).
+- Cẩn thận harness đo: PowerShell 5.1 `New-Object Net.Sockets.TcpClient` không tham số tạo socket **chỉ IPv4** → mọi test tới địa chỉ IPv6 fail giả. Phải truyền `[Net.Sockets.AddressFamily]::InterNetworkV6`.
+- **Đo UDP phải dùng socket BỀN VỮNG** (mở 1 lần, gửi nhiều lần). Tạo socket mới mỗi mẫu là đo **chi phí dựng session của mihomo** (NAT entry + tra tiến trình) chứ không phải chất lượng đường truyền — và luồng realtime thật (media CRD/WebRTC) dùng session sống lâu nên không trả chi phí đó. Đo thực nghiệm cùng đích, cùng thời điểm: socket-mới-mỗi-mẫu p95 72ms/max 610ms, socket-bền-vững p95 56ms/**max 65ms, 0 lần vượt 200ms**. Một probe 60 phút từng báo "60 spike" hoàn toàn vì lỗi này.
+- **TCP connect time KHÔNG phải RTT mạng** khi TUN bật: mihomo hoàn tất handshake ở stack userspace rồi mới dial ra, nên connect tới đích qua tunnel lẫn đích DIRECT đều ra ~1-3ms dù RTT thật 37-50ms. Dùng ICMP/UDP để đo RTT.
+- **KHÔNG xoá `Data\warp_account.json` để "làm mới" tài khoản** — `GetOrCreateAccountAsync()` chỉ re-apply WARP+ license nếu đọc được file cũ, xoá file là **mất luôn license key**, tài khoản mới tụt về Free. License thật còn bản sao trong `Data\warp_masque_account.json` (kiểm tra tier thật bằng `account_type` == `unlimited`, **không** dựa vào field `License` hay `warp_plus`).
+- **Luôn đo bằng A/B có biến kiểm soát, đừng suy luận từ log rồi kết luận.** Trong một phiên điều tra đã có **4 giả thuyết nghe rất hợp lý nhưng đều sai** khi đem đo: (1) `interface-name` sửa được warning auto-detect → làm gãy handshake; (2) `auto-detect-interface` làm xáo trộn routing table → routing table IPv4 bất biến qua mọi mẫu đo; (3) DNS đi qua tunnel gây treo → DNS p50 chỉ 54.6ms, và spike xảy ra cả trên đường DIRECT; (4) mihomo TUN datapath gây treo → bật TUN mà không có tải game thì sạch hoàn toàn. Biến kiểm soát rẻ nhất và hiệu quả nhất: **ping `127.0.0.1` trong cùng vòng lặp đo** — nếu nó cũng chậm thì là process/OS bị bỏ đói CPU chứ không phải mạng (đo được: 0ms trên toàn bộ ~2500 mẫu, loại bỏ dứt điểm giả thuyết CPU).
+
+## Rò rỉ traffic game ra ngoài tunnel (`dd.woniu.com`)
+
+Triệu chứng: log mihomo có `dial DIRECT (match Match/) 198.18.0.1:6500 --> dd.woniu.com:80 error: ... i/o timeout` → traffic game đi ra ISP thay vì qua tunnel rồi timeout ~20s (server game chỉ vào được qua tunnel).
+
+**Phân biệt 2 dạng bằng dấu ngoặc trong log** — quyết định cách vá:
+- `198.18.0.1:6302(nvcontainer.exe) --> ...` — **có** tên tiến trình ⇒ mihomo nhận diện được, chỉ thiếu rule ⇒ vá bằng cách thêm tiến trình vào `GameProfileService`.
+- `198.18.0.1:6500 --> ...` — **không có gì trong ngoặc** ⇒ mihomo không attribute được tiến trình nào ⇒ thêm `PROCESS-NAME` bao nhiêu cũng vô ích. Nguyên nhân: tiến trình sống rất ngắn (bật lên, mở kết nối, thoát ngay) nên khi mihomo tra bảng thì nó đã chết.
+
+**Vá 2 lớp** (đang áp dụng):
+1. `GameProfileService.cs` — profile Age of Wushu liệt kê **8** exe, không phải 3: ngoài `fxlaunch/fxupdate/fxgame` còn `gamefetchex.exe` (tải data, đích `dd.woniu.com`), `fxres.exe`, `bugreport.exe` (đích `crashlogs.mobilegame.woniu.com`), `iepop.exe` (browser nhúng), `SnailRes.exe`. **CỐ Ý KHÔNG thêm `ping.exe`** dù game có `bin\ping.exe`: `PROCESS-NAME` khớp theo TÊN nên sẽ bắt luôn `ping.exe` của Windows; muốn thêm phải dùng `PROCESS-PATH`.
+2. `MihomoService.BuildGameServerIpRulesAsync()` — resolve `GameServerHosts` lúc sinh config rồi emit `IP-CIDR,<ip>/32,<proxy>`. Đây là lưới an toàn cho nhóm không attribute được. Dùng IP-CIDR **chứ không** DOMAIN-SUFFIX: IP của riêng server data thì trình duyệt không chạm tới, nên không phá Split Tunneling. Resolve lại mỗi lần Boost nên IP đổi vẫn tự cập nhật; host nào resolve lỗi thì bỏ qua, không chặn Boost.
+
+## Kết quả điều tra "khựng nhẹ CRD + internet" (đã khắc phục)
+
+Triệu chứng gốc: baseline mạng rất tốt nhưng có những cú treo **1-3.6 giây, ~1.7 lần/phút**, làm CRD và duyệt web khựng; game vẫn chạy.
+
+Đã đo bằng 4 điều kiện để cô lập biến (mỗi dòng là một lần chạy probe riêng, ~9-15 phút):
+
+| ĐK | TUN | game | CRD | spike |
+|----|-----|------|-----|-------|
+| A | ON | 5 client | có | **26 (1.7/phút)** |
+| B | OFF | không | — | 0 |
+| C | ON | không | — | 1 nhẹ |
+| D | ON | không | **có** | **0** |
+
+Loại trừ được: ISP/đường truyền (B sạch), mihomo–TUN tự nó (C+D có TUN 12.8 phút vẫn sạch), CRD (D sạch, upload chỉ 0.55 Mbps nên **không phải bufferbloat**), CPU starvation (`local_ctrl` 0ms), và tier WARP+ vs Free (treo xảy ra ở cả hai). Còn lại: **tải game qua mihomo**.
+
+Sau khi áp `inet6-address: []` + vá rò rỉ woniu 2 lớp, chạy lại đúng điều kiện A: **0 spike / 1000 mẫu / 8.7 phút**, icmp p50 49ms (max 62ms), stun p50 36.9ms (max 129.6ms) — người dùng xác nhận CRD mượt. Tương quan đáng chú ý: số kết nối TCP giảm từ 193-378 xuống 68-168, khớp giả thuyết "rò rỉ → timeout 20s → retry dồn kết nối → mihomo tra bảng tiến trình trên bảng lớn → stall". **Chưa chứng minh được nhân quả** (hai lần đo khác nhau nhiều biến, và số kết nối được đếm bằng 2 phương pháp khác nhau) — nếu triệu chứng tái diễn, 2 đòn bẩy đã khoanh vùng nhưng **chưa** thử là `find-process-mode: always → strict` và `tun.stack: mixed → system`, thử từng cái một.
+
+**Chưa sạch 100%.** Ping dài `1.1.1.1` qua 3 mốc: trước fix 284 gói/**12% loss**/avg 248ms → sau fix IPv6 2867 gói/0.87%/avg 83ms → sau fix woniu 4181 gói/**0.12%**/avg 56ms (min 48ms, tức đuôi spike gần phẳng). Nhưng `max` vẫn 3325ms ⇒ **vẫn còn cú treo nhiều giây, tần suất cỡ 1 lần/giờ** — thưa đến mức probe 9 phút không bắt được. Muốn điều tra tiếp thì phải đo liên tục hàng giờ rồi mới đối chiếu, đừng kết luận từ cửa sổ ngắn.
 
 ## WARP Account (`WarpAccountService.cs`)
 
 - **Tài khoản WARP tự đăng ký qua HTTP API thường bị Cloudflare gán chính sách MASQUE-only** — mihomo không hỗ trợ MASQUE → Direct Mode không bao giờ handshake được dù config đúng.
 - **Fix**: đăng ký qua `wgcf.exe` (embedded resource, extract ra `Core\wgcf.exe`) — tài khoản wgcf giữ chính sách WireGuard cổ điển. `GetOrCreateAccountAsync()` ưu tiên `RegisterViaWgcfAsync()`, fallback `RegisterNewWarpAccountAsync()` (raw API) nếu wgcf lỗi.
 - Raw API fallback: version string đúng là `v0a1922` (không phải version cũ `v0i...`), User-Agent `okhttp/3.12.1`, `type: Android`. Sau khi register phải PATCH `warp_enabled: true`, nếu không handshake sẽ im lặng thất bại.
-- WARP+ license: `PUT /v0a.../reg/{id}/account` với Bearer token; re-register vẫn tự re-apply license cũ.
+- WARP+ license: `PUT /v0a.../reg/{id}/account` với Bearer token; re-register vẫn tự re-apply license cũ — **nhưng chỉ khi `warp_account.json` còn đọc được** (code lưu `oldLicense` từ file cũ trước khi tạo mới). Xoá file = mất license, tài khoản mới về Free.
 
 ## Multi-Client Launcher (`MultiClientService.cs`, `Views/MultiClientPage.xaml`)
 

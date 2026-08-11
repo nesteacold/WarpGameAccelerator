@@ -25,7 +25,18 @@ public class GameProfileService
             [
                 "fxlaunch.exe",
                 "fxupdate.exe",
-                "fxgame.exe"
+                "fxgame.exe",
+                // Các tiến trình phụ của game cũng gọi ra server Woniu — nếu không
+                // liệt kê ở đây, traffic của chúng khớp MATCH,DIRECT rồi timeout
+                // ~20s vì server game chỉ vào được qua tunnel:
+                "gamefetchex.exe",  // tải data/patch — đích dd.woniu.com
+                "fxres.exe",        // tải resource
+                "bugreport.exe",    // đích crashlogs.mobilegame.woniu.com
+                "iepop.exe",        // browser nhúng trong game (web shop/thông báo)
+                "SnailRes.exe"
+                // CỐ Ý KHÔNG thêm "ping.exe" (game có bin\ping.exe riêng): rule
+                // PROCESS-NAME khớp theo TÊN nên sẽ bắt luôn ping.exe của Windows,
+                // kéo ping hệ thống vào tunnel. Muốn thêm phải dùng PROCESS-PATH.
             ]
         },
         new GameProfile

@@ -13,6 +13,17 @@ public class MihomoService
     // hệ thống không trả bản ghi A (fallback, không phải giá trị chính).
     private const string MasqueFallbackIp = "162.159.198.2";
 
+    /// <summary>
+    /// Host server của game dùng để sinh lưới an toàn IP-CIDR (xem
+    /// <see cref="BuildGameServerIpRulesAsync"/>).
+    /// </summary>
+    private static readonly string[] GameServerHosts =
+    [
+        "dd.woniu.com",                     // tải data/patch (gamefetchex.exe)
+        "sqm.woniu.com",                    // telemetry
+        "crashlogs.mobilegame.woniu.com"    // bugreport.exe
+    ];
+
     private GracefulProcessLauncher.LaunchedProcess? _launched;
     private CancellationTokenSource? _activeStartCts;
     private readonly string _coreDir;
@@ -172,9 +183,18 @@ public class MihomoService
         string proxyConfig = "";
         string excludeRoute = "";
         var rulesBuilder = new StringBuilder();
-        // Rule ưu tiên tới các endpoint đăng ký/handshake Cloudflare — chỉ cần
-        // khi kênh game đang chạy, không liên quan gì tới kênh cá nhân.
+        // Ép traffic tới 2 resolver DNS của Cloudflare (1.1.1.1 / 1.0.0.1) đi qua
+        // tunnel — mục đích chống DNS-leak, vì dns.nameserver bên trên cũng trỏ
+        // đúng 2 IP này. KHÔNG liên quan tới endpoint đăng ký (api.cloudflareclient.com)
+        // hay endpoint handshake WireGuard (162.159.x.x/UDP) như tên biến
+        // "cloudflareApiRules" và comment cũ từng ghi sai — đã kiểm chứng lại.
+        // Chỉ cần khi kênh game đang chạy, không liên quan gì tới kênh cá nhân.
+        // Lưu ý khi debug hiệu năng: TCP connect tới 1.1.1.1 đo từ app KHÔNG phản
+        // ánh RTT thật của tunnel (mihomo hoàn tất handshake tại stack userspace
+        // của nó rồi mới dial ra) — dùng ICMP/UDP để đo RTT thật.
         string cloudflareApiRules = "";
+        // Lưới an toàn tầng 2 theo IP đích — chỉ dựng khi kênh game đang chạy.
+        string gameServerIpRules = "";
 
         if (!IsGameChannelActive)
         {
@@ -186,6 +206,8 @@ public class MihomoService
         cloudflareApiRules = $@"  - IP-CIDR,1.1.1.1/32,{proxyName}
   - IP-CIDR,1.0.0.1/32,{proxyName}
 ";
+
+        gameServerIpRules = await BuildGameServerIpRulesAsync(proxyName);
 
         // Tách chuỗi processName thành mảng các tên tiến trình
         var processes = processName.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
@@ -392,6 +414,28 @@ tun:
   stack: mixed
   auto-route: true
   auto-detect-interface: true{excludeRoute}
+  # BẮT BUỘC danh sách RỖNG — không cấp địa chỉ IPv6 cho TUN.
+  # Mặc định mihomo gán fdfe:dcba:9876::1/126 cho TUN, kéo theo auto-route cài
+  # route ::/0 với metric 0 → THẮNG route IPv6 gốc của NIC vật lý (metric 256),
+  # hút toàn bộ traffic IPv6 của cả máy vào tunnel. Nhưng outbound WARP/WireGuard
+  # chỉ có địa chỉ IPv4 (acc.IPv4) nên không phục vụ được IPv6 → mọi kết nối IPv6
+  # rơi vào hố đen, app phải chờ timeout rồi mới fallback sang IPv4 (Happy
+  # Eyeballs) — biểu hiện là 'khựng nhẹ' khi duyệt web / Chrome Remote Desktop,
+  # dù game (server IPv4-only) vẫn chạy bình thường.
+  # Bằng chứng đo được trên máy thật trước khi sửa:
+  #   - TCP tới 2001:4860:4860::8888:443 → 20/20 FAIL, trong khi 8.8.8.8:443 →
+  #     0/20 fail (avg 4ms).
+  #   - netstat -s: IPv6 Failed Connection Attempts 3413/4478 active opens (76%),
+  #     retransmit 6.36% (IPv4 chỉ 2.13%).
+  #   - 484/485 lỗi dial trong mihomo_runtime.log thuộc outbound DIRECT (không
+  #     phải tunnel), đích nhiều nhất là IPv6 literal + remotedesktop-pa /
+  #     instantmessaging-pa.googleapis.com (signaling của Chrome Remote Desktop).
+  # Để rỗng thì mihomo không cài route IPv6, IPv6 đi native qua NIC vật lý —
+  # đúng tinh thần Split Tunneling (chỉ traffic game vào tunnel).
+  # KHÔNG sửa bằng cách set cứng 'interface-name' thay cho auto-detect-interface:
+  # đã thử và làm WireGuard handshake fail 100% mọi traffic (bind-to-interface
+  # lỗi trên Windows, xem MetaCubeX/mihomo#1728) — đã revert.
+  inet6-address: []
   mtu: 1280
   tcp-concurrent: true
   dns-hijack:
@@ -420,7 +464,7 @@ proxies:
 {proxyConfig}{personalProxyConfig}
 
 rules:
-{cloudflareApiRules}  # PROCESS-NAME phải đứng TRƯỚC các rule DIRECT theo dải IP riêng bên dưới —
+{cloudflareApiRules}{gameServerIpRules}  # PROCESS-NAME phải đứng TRƯỚC các rule DIRECT theo dải IP riêng bên dưới —
   # mihomo match rule theo thứ tự, dòng nào khớp trước thắng. Kênh VPN cá
   # nhân cố ý route tới LAN riêng (192.168.x.x...) của server đích XUYÊN
   # QUA tunnel — nếu để rule DIRECT theo dải IP riêng lên trước, mọi traffic
@@ -466,6 +510,59 @@ rules:
             // dừng lại ngay, không để tunnel treo lại sau khi đã bị yêu cầu ngắt.
             KillMihomoProcess();
         }
+    }
+
+    /// <summary>
+    /// Lưới an toàn tầng 2 cho lỗi rò rỉ traffic game ra ngoài tunnel.
+    ///
+    /// Rule PROCESS-NAME chỉ khớp khi mihomo nhận diện được tiến trình chủ của kết
+    /// nối. Một số tiến trình phụ của game (điển hình <c>gamefetchex.exe</c>) sống
+    /// rất ngắn — bật lên, mở kết nối, thoát ngay — nên khi mihomo tra bảng tiến
+    /// trình thì nó đã chết, không attribute được. Log lúc đó ghi
+    /// <c>dial DIRECT (match Match/) 198.18.0.1:6500 --&gt; dd.woniu.com:80</c>
+    /// KHÔNG có tên tiến trình trong ngoặc (khác với dòng có attribution dạng
+    /// <c>198.18.0.1:6302(nvcontainer.exe)</c>), rồi timeout ~20s vì server game
+    /// chỉ vào được qua tunnel. Thêm bao nhiêu PROCESS-NAME cũng không cứu được
+    /// nhóm này — phải khớp theo ĐÍCH.
+    ///
+    /// Dùng IP-CIDR (không dùng DOMAIN-SUFFIX): <c>DOMAIN-SUFFIX,woniu.com</c> sẽ
+    /// hút cả trình duyệt vào tunnel khi người dùng mở web của hãng game — đúng
+    /// điều CLAUDE.md cấm. IP của riêng server data thì trình duyệt không chạm tới.
+    ///
+    /// Resolve lại mỗi lần Boost nên IP đổi vẫn tự cập nhật; resolve lỗi thì bỏ
+    /// qua host đó (trả về rule rỗng), không chặn Boost.
+    /// </summary>
+    private static async Task<string> BuildGameServerIpRulesAsync(string proxyName)
+    {
+        var ips = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var host in GameServerHosts)
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                var addrs = await System.Net.Dns.GetHostAddressesAsync(host, cts.Token);
+                foreach (var a in addrs)
+                {
+                    if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        ips.Add(a.ToString());
+                }
+            }
+            catch
+            {
+                // Resolver lỗi/timeout cho host này — bỏ qua, tầng PROCESS-NAME vẫn
+                // còn đó. Không để việc dựng lưới an toàn làm Boost thất bại.
+            }
+        }
+
+        if (ips.Count == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("  # Lưới an toàn: IP server game — cứu các kết nối mihomo không");
+        sb.AppendLine("  # attribute được tiến trình (xem BuildGameServerIpRulesAsync).");
+        foreach (var ip in ips)
+            sb.AppendLine($"  - IP-CIDR,{ip}/32,{proxyName}");
+        return sb.ToString();
     }
 
     private static byte[] ExtractClientBytes(string clientId)
