@@ -24,6 +24,22 @@ public class MihomoService
         "crashlogs.mobilegame.woniu.com"    // bugreport.exe
     ];
 
+    /// <summary>
+    /// IP được cố ý loại khỏi route TUN để làm **đường đối chứng** khi chẩn đoán
+    /// mất kết nối: traffic tới IP này đi thẳng ra NIC vật lý, KHÔNG qua mihomo.
+    ///
+    /// Lý do cần: mọi đường đo được từ máy đều transit qua mihomo (kể cả ICMP, vì
+    /// mihomo giả lập), nên khi xảy ra sự cố mất kết nối vài phút thì KHÔNG thể
+    /// phân biệt "ISP/uplink lỗi" với "mihomo TUN datapath treo". Có đường bypass
+    /// này thì phân biệt được ngay: bypass cũng chết ⇒ ISP; bypass sống mà đường
+    /// qua mihomo chết ⇒ mihomo.
+    ///
+    /// Chọn 8.8.8.8 vì app không dùng nó cho việc gì (DNS dùng 1.1.1.1), nên loại
+    /// nó khỏi tunnel không ảnh hưởng game hay Split Tunneling.
+    /// Đây là công cụ chẩn đoán — xoá được sau khi điều tra xong.
+    /// </summary>
+    private static readonly string[] DiagnosticBypassIps = ["8.8.8.8/32"];
+
     private GracefulProcessLauncher.LaunchedProcess? _launched;
     private CancellationTokenSource? _activeStartCts;
     private readonly string _coreDir;
@@ -181,7 +197,9 @@ public class MihomoService
         };
 
         string proxyConfig = "";
-        string excludeRoute = "";
+        // Các IP được loại khỏi route của TUN (đi thẳng ra NIC vật lý). Gồm endpoint
+        // WARP/MASQUE (bắt buộc, tránh loop) + IP chẩn đoán (xem DiagnosticBypassIps).
+        var excludeIps = new List<string>();
         var rulesBuilder = new StringBuilder();
         // Ép traffic tới 2 resolver DNS của Cloudflare (1.1.1.1 / 1.0.0.1) đi qua
         // tunnel — mục đích chống DNS-leak, vì dns.nameserver bên trên cũng trỏ
@@ -273,7 +291,7 @@ public class MihomoService
             // (server có thể là "engage.cloudflareclient.com" khi lấy từ acc.Endpoint)
             if (System.Net.IPAddress.TryParse(host, out _))
             {
-                excludeRoute = $"\n  inet4-route-exclude-address:\n    - {host}/32";
+                excludeIps.Add($"{host}/32");
             }
         }
         else if (mode == EngineMode.DirectMasqueBeta)
@@ -322,7 +340,7 @@ public class MihomoService
 
             if (System.Net.IPAddress.TryParse(masqueServerIp, out _))
             {
-                excludeRoute = $"\n  inet4-route-exclude-address:\n    - {masqueServerIp}/32";
+                excludeIps.Add($"{masqueServerIp}/32");
             }
         }
         else
@@ -397,6 +415,13 @@ public class MihomoService
             personalRules = "  # Kênh VPN cá nhân (Dev Panel) — độc lập engine game\n" + personalRulesBuilder.ToString();
         }
 
+        // Dựng khối inet4-route-exclude-address từ danh sách đã thu (endpoint
+        // WARP/MASQUE + IP đối chứng chẩn đoán). Phải là raw IP, không hostname.
+        excludeIps.AddRange(DiagnosticBypassIps);
+        string excludeRoute = excludeIps.Count > 0
+            ? "\n  inet4-route-exclude-address:" + string.Concat(excludeIps.Select(ip => $"\n    - {ip}"))
+            : "";
+
         string dnsAndTunConfig = $@"
 dns:
   enable: true
@@ -457,6 +482,12 @@ log-level: warning
 # Đây là cách sửa đúng gốc, giữ nguyên Split Tunneling theo tiến trình —
 # KHÔNG dùng luật DOMAIN-SUFFIX để vá, vì như vậy mọi ứng dụng (kể cả trình
 # duyệt) truy cập domain đó đều bị kéo qua tunnel, ăn vào băng thông WARP+.
+#
+# ĐÃ THỬ 'strict' (điều tra treo datapath) và ĐÃ REVERT: nó KHÔNG giảm treo
+# (tunnel vẫn 'context deadline exceeded'), nên không có lý do gì để đánh đổi
+# rủi ro rò rỉ ở trên. Nguyên nhân treo thật là Hyper-V — đừng thử lại 'strict'
+# trừ khi có triệu chứng MỚI chỉ đúng vào process-detection.
+# (xem mục 'Hyper-V xung đột với TUN' trong CLAUDE.md)
 find-process-mode: always
 {dnsAndTunConfig}
 

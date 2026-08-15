@@ -103,6 +103,33 @@ Sau khi áp `inet6-address: []` + vá rò rỉ woniu 2 lớp, chạy lại đún
 - Fix: `PauseAsync()` (gọi lúc Start Boost) tự phát hiện mọi service `WireGuardTunnel$*` đang Running và dừng tạm; `ResumeAsync()` (gọi lúc Stop Boost) bật lại đúng service đã dừng. Không hardcode tên tunnel cụ thể.
 - **KHÔNG thêm cơ chế tự resume ở lần khởi động app kế tiếp** nếu bị bỏ dở do app crash lúc đang Boost — Mihomo cố ý sống sót sau crash để không ngắt game (xem mục Process lifecycle bên dưới); tự resume ngay lúc mở lại app trong khi Mihomo vẫn đang chạy ngầm phục vụ game sẽ tái tạo đúng xung đột ban đầu NGAY LÚC đang chơi. Đã thử và bị yêu cầu bỏ.
 
+## Hyper-V xung đột với TUN (nguyên nhân gốc của "ping timeout + rớt client + giật CRD")
+
+**Triệu chứng**: khi Boost bật, ping tới đích đi qua tunnel timeout liên tục (đo được **12.1%** — 290/2400 mẫu, spike tới **3.5 giây**), client game rớt lẻ tẻ, Chrome Remote Desktop giật/đứt. Tắt Boost thì **hết sạch ngay**. mihomo **không** tốn CPU lúc treo (0-109ms), log không có lỗi nào ngoài `context deadline exceeded` — tức nó đang *chờ*, không phải quá tải.
+
+**Nguyên nhân — chính xác là NDIS filter của virtual switch, KHÔNG phải hypervisor**: sau khi khắc phục, đo lại thấy `HypervisorPresent: True` và `VirtualizationBasedSecurityStatus: 2` (**hypervisor vẫn đang chạy**) mà mạng đã hết lỗi hoàn toàn. Thứ đổi trạng thái là binding **`vms_pp` (Hyper-V Extensible Virtual Switch)** trên card vật lý → `Enabled: False`. Vậy đừng đi tắt hypervisor; hãy nhắm vào binding này. Cùng họ vấn đề với `WireGuardTunnel$*` ở mục trên: hai driver ảo chồng lên nhau trong datapath.
+
+**Cách xử lý** (không sửa được từ code app — là môi trường máy). Kiểm tra binding trước:
+```
+Get-NetAdapterBinding -Name "<NIC>" | Where-Object ComponentID -match 'vms|hyper'
+```
+Nếu `vms_pp` đang `Enabled: True` → bỏ binding đó khỏi **card vật lý** (giữ được VM Hyper-V, miễn VM không cần nối mạng ngoài qua đúng card đó). Cách mạnh tay hơn (đã dùng lần này): gỡ tính năng Hyper-V. Trước khi gỡ, kiểm tra không phá thứ khác: `Get-VM`, `wsl -l -v`, Docker, và **Memory Integrity/HVCI** (`Get-CimInstance Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard` → `SecurityServicesRunning` phải là 0 mới an toàn).
+
+**Cơ chế chỉ ở mức giả thuyết** — traffic qua mihomo đi đường dài hơn (`app → wintun → mihomo userspace → socket mới → stack → NDIS filter → NIC`), tức bị **tái tiêm** vào stack nên qua tầng WFP/NDIS hai lần, và đó là nơi gặp filter Hyper-V. **Nghịch lý chưa giải thích được**: traffic bypass (`8.8.8.8`) cũng qua đúng card và đúng filter đó nhưng 0 lỗi trên 2400 mẫu ⇒ không phải "filter làm chậm card". Muốn biết chính xác (nghẽn hàng đợi? tranh chấp lock? DPC trễ?) phải truy vết kernel bằng ETW/NDIS trace — chưa làm.
+
+**Cách đo đã phá được ca này** (quan trọng hơn kết luận): thêm **một IP public vào `inet4-route-exclude-address`** (đang dùng `8.8.8.8/32`, xem `DiagnosticBypassIps` trong `MihomoService.cs`) để có **đường đối chứng thật không đi qua mihomo**. Rồi ping song song 2 đích:
+- `8.8.8.8` (bypass) — suốt 2400 mẫu: **0 lỗi**, 30-31ms, jitter 0.4ms
+- `1.1.1.1` (qua TUN) — **290 lỗi**
+
+100% sự kiện đều là "chỉ đường qua mihomo lỗi", 0 lần cả hai cùng lỗi ⇒ loại dứt điểm ISP/uplink/CPU chỉ bằng một phép đo. Thêm `ping 127.0.0.1` cùng vòng lặp để loại CPU starvation (đo được 0ms trên mọi mẫu).
+
+**Những thứ KHÔNG phải nguyên nhân** (đã đo, đừng thử lại):
+- Dải port bị `winnat` đặt trước (~800-1700 port UDP): sau reboot chúng **quay lại** mà mạng vẫn bình thường ⇒ không phải nguyên nhân. Nhưng chúng **có** gây lỗi thật: `Start DNS server(TCP) error: listen tcp 0.0.0.0:1053: bind: ... forbidden by its access permissions` vì port 1053 nằm trong dải TCP `1024-1123` Hyper-V chiếm. Tắt Hyper-V thì lỗi này tự khỏi — **không cần đổi port DNS**.
+- `find-process-mode: strict`: đã thử để giảm treo, **không có tác dụng** (tunnel vẫn `context deadline exceeded`), đã revert về `always`.
+- WARP+ vs Free, anycast đổi edge (egress IP bất biến 1h40), CRD, bufferbloat (upload chỉ 0.55 Mbps), IPv6, tập ICE candidate — tất cả đã loại bằng đo.
+
+**Bẫy phụ phát hiện cùng lúc**: app **không có cơ chế chặn đa instance**. Mở 2 cửa sổ app → mỗi instance khi khởi động đều gọi `StopProxy()` (trong `ExtractCoreResources()`) nên **kill mihomo của instance kia**, làm rớt toàn bộ client. Dấu hiệu nhận biết trong `trace.log`: `RegisterHotKey thất bại — tổ hợp phím có thể đã bị chiếm`. Nếu điều tra "tự nhiên rớt client", **đếm số tiến trình `WarpGameAccelerator` trước tiên**.
+
 ## Network Optimizer (`NetworkOptimizerService.cs`)
 
 - **Không đổi MTU qua `netsh`** — từng gây mất mạng tạm thời mỗi lần bật/tắt Boost và MTU bị kẹt vĩnh viễn ở 1420 nếu app bị kill giữa chừng (backup từng chỉ lưu RAM). Chỉ chỉnh `TcpAckFrequency`/`TcpNoDelay` qua registry, backup ra `network_backup.json` (persist thật, không phải RAM).

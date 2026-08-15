@@ -29,6 +29,17 @@ public static class Program
             return;
         }
 
+        // ── Chặn đa instance ──────────────────────────────────
+        // Phải chặn TRƯỚC Application.Start — nếu để App khởi tạo thì
+        // ExtractCoreResources()/StopProxy() sẽ kill mihomo.exe của
+        // instance đang chạy trước đó. Giữ mutex sống suốt vòng đời app
+        // bằng cách không Dispose cho tới sau khi Application.Start trả về.
+        if (!SingleInstanceGuard.TryAcquire(out var singleInstanceMutex))
+        {
+            SingleInstanceGuard.ShowAlreadyRunningMessage();
+            return;
+        }
+
         // ── Chế độ bình thường: khởi động WinUI ──────────────
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Application.Start(p =>
@@ -38,5 +49,8 @@ public static class Program
             SynchronizationContext.SetSynchronizationContext(context);
             new App();
         });
+
+        singleInstanceMutex?.ReleaseMutex();
+        singleInstanceMutex?.Dispose();
     }
 }

@@ -168,10 +168,10 @@ public partial class DashboardViewModel : ObservableObject
     {
         CurrentState = AppState.Connecting;
 
-        // Tạm dừng WireGuard for Windows (VPN remote-access cá nhân, nếu có)
-        // trước khi khởi động Mihomo TUN — 2 driver TUN/WFP cùng chạy có thể
-        // xung đột tầng thấp gây mất kết nối chập chờn khó lường.
-        await WireGuardConflictGuard.PauseAsync();
+        // Tạm dừng các conflict đã biết (WireGuard for Windows, Hyper-V vms_pp
+        // binding...) trước khi khởi động Mihomo TUN — mỗi conflict có toggle
+        // riêng ở Settings, mặc định BẬT. Xem ConflictDetectionService.
+        await ConflictDetectionService.MitigateEnabledAsync();
 
         EngineMode engineMode = SettingsViewModel.LoadEngineMode();
 
@@ -283,8 +283,8 @@ public partial class DashboardViewModel : ObservableObject
         await _warpService.ClearSplitTunnelAsync();
         await _warpService.DisconnectAsync();
 
-        // Trả lại WireGuard for Windows đã tạm dừng lúc Boost (nếu có).
-        await WireGuardConflictGuard.ResumeAsync();
+        // Trả lại mọi conflict đã tạm dừng lúc Boost (nếu có).
+        await ConflictDetectionService.RestoreAllAsync();
 
         CurrentState = AppState.Idle;
         CurrentPingMs = 0;

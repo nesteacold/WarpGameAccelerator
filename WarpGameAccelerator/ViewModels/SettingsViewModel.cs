@@ -65,6 +65,9 @@ public partial class SettingsViewModel : ObservableObject
     private string _latestDownloadUrl = string.Empty;
     [ObservableProperty] private bool   _isTestingPing = false;
 
+    // Conflict Detection (WireGuard for Windows / Hyper-V vms_pp binding...)
+    public ObservableCollection<ConflictItemViewModel> ConflictItems { get; } = new();
+
     public string AutoStartToggleLabel =>
         AutoStartEnabled ? "Tự khởi động cùng Windows (BẬT)" : "Tự khởi động cùng Windows (TẮT)";
 
@@ -82,6 +85,26 @@ public partial class SettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(IsVietnamese));
             OnPropertyChanged(nameof(Loc));
         };
+
+        LoadConflictItems();
+    }
+
+    private void LoadConflictItems()
+    {
+        ConflictItems.Clear();
+        foreach (var info in ConflictDetectionService.Items)
+            ConflictItems.Add(new ConflictItemViewModel(info));
+
+        _ = RefreshConflictDetectionAsync();
+    }
+
+    private async Task RefreshConflictDetectionAsync()
+    {
+        foreach (var item in ConflictItems)
+        {
+            try { item.IsDetected = await ConflictDetectionService.IsDetectedAsync(item.Id); }
+            catch { item.IsDetected = false; }
+        }
     }
 
     [RelayCommand]
@@ -278,4 +301,29 @@ public partial class SettingsViewModel : ObservableObject
         var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         return ver is not null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.0.0";
     }
+}
+
+/// <summary>
+/// 1 dòng conflict trong Settings — toggle ghi thẳng xuống
+/// ConflictDetectionService (ON = tự tắt conflict lúc Boost, OFF = giữ
+/// nguyên/khôi phục). IsDetected chỉ để hiển thị, không tự sửa gì.
+/// </summary>
+public partial class ConflictItemViewModel : ObservableObject
+{
+    public string Id { get; }
+    public string DisplayName { get; }
+    public string Description { get; }
+
+    [ObservableProperty] private bool _isEnabled;
+    [ObservableProperty] private bool _isDetected;
+
+    public ConflictItemViewModel(ConflictItemInfo info)
+    {
+        Id          = info.Id;
+        DisplayName = info.DisplayName;
+        Description = info.Description;
+        _isEnabled  = ConflictDetectionService.IsEnabled(info.Id);
+    }
+
+    partial void OnIsEnabledChanged(bool value) => ConflictDetectionService.SetEnabled(Id, value);
 }

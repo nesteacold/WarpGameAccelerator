@@ -7,11 +7,14 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:WarpGameAccelerator.Models"
+    xmlns:vm="using:WarpGameAccelerator.ViewModels"
     xmlns:conv="using:WarpGameAccelerator.Converters"
     Background="Transparent">
 
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:DetectedToBrushConverter x:Key="DetectedToBrush"/>
+        <conv:DetectedToTextConverter x:Key="DetectedToText"/>
     </Page.Resources>
 
     <ScrollViewer Padding="16,12,16,16">
@@ -167,6 +170,47 @@
                                 Padding="14,6"/>
                     </Grid>
                 </StackPanel>
+            </Border>
+
+            <!-- ══ Section: Conflict Detection ═══════════════════ -->
+            <TextBlock Text="Phát hiện xung đột"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <ItemsControl ItemsSource="{x:Bind ViewModel.ConflictItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ConflictItemViewModel">
+                            <StackPanel Spacing="8" Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Text="{x:Bind DisplayName}"
+                                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                                        <Border Background="{x:Bind IsDetected, Mode=OneWay, Converter={StaticResource DetectedToBrush}}"
+                                                CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
+                                            <TextBlock Text="{x:Bind IsDetected, Mode=OneWay, Converter={StaticResource DetectedToText}}"
+                                                       FontSize="10" FontWeight="SemiBold" Foreground="White"
+                                                       TextWrapping="NoWrap"/>
+                                        </Border>
+                                        <TextBlock Text="{x:Bind Description}"
+                                                   FontSize="11" TextWrapping="Wrap"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                                  IsOn="{x:Bind IsEnabled, Mode=TwoWay}"
+                                                  OnContent="" OffContent="" Margin="0"/>
+                                </Grid>
+                                <MenuFlyoutSeparator Margin="-12,0,-12,0"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </Border>
 
             <!-- ══ Section: About ════════════════════════════════ -->

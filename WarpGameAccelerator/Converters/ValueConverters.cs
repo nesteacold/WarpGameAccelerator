@@ -63,3 +63,25 @@ public class PingColorConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, string language) =>
         throw new NotImplementedException();
 }
+
+/// <summary>Conflict detected (bool) → badge màu: đỏ/cam = đã phát hiện, xám = không.</summary>
+public class DetectedToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68))
+            : new SolidColorBrush(ColorHelper.FromArgb(255, 100, 100, 100));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>Conflict detected (bool) → nhãn badge.</summary>
+public class DetectedToTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true ? "ĐÃ PHÁT HIỆN" : "KHÔNG THẤY";
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}

@@ -25,7 +25,7 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <AssemblyVersion>1.13.7.0</AssemblyVersion>
     <FileVersion>1.13.7.0</FileVersion>
-    <Version>1.13.7</Version>
+    <Version>1.14.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
