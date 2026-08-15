@@ -46,6 +46,28 @@ public class MihomoService
     private readonly string _exePath;
     private readonly string _configPath;
 
+    // ── Tự phục hồi khi mihomo đổi interface giữa phiên ─────────────────
+    // mihomo tự dò default interface bằng auto-detect-interface: true (BẮT
+    // BUỘC giữ, KHÔNG set cứng interface-name — xem comment ở BuildConfigYaml,
+    // đã verify set cứng làm handshake fail 100%). Nhưng nếu Windows đổi danh
+    // tính NIC NGAY TRONG LÚC mihomo đang chạy (vd cài lại driver tạo instance
+    // mới, NIC bị enumerate lại), log ghi "[TUN] default interface changed by
+    // monitor" và ngay sau đó 100% traffic WireGuard fail "context deadline
+    // exceeded" — cùng họ bug bind-socket-to-interface trên Windows
+    // (MetaCubeX/mihomo#1728), chỉ khác kích hoạt bởi đổi interface GIỮA
+    // CHỪNG thay vì set cứng lúc khởi động.
+    //
+    // Không hardcode tên interface nào (mỗi máy khác nhau) — chỉ dựa vào
+    // chính dòng log mihomo tự phát ra. Dòng NÀY xuất hiện 1 LẦN vô hại ngay
+    // lúc khởi động (lần dò ban đầu) nên bỏ qua lần đầu tiên mỗi phiên mihomo;
+    // từ lần thứ 2 trở đi mới là đổi giữa chừng thật sự → tự kill+respawn
+    // (bind lại từ đầu vào interface hiện tại luôn thành công, đã verify thực
+    // nghiệm). Debounce 15s để tránh vòng lặp restart nếu NIC chập chờn liên tục.
+    private const string InterfaceChangedLogMarker = "[TUN] default interface changed by monitor";
+    private int _interfaceChangeCount;
+    private DateTime _lastInterfaceAutoRestartUtc = DateTime.MinValue;
+    private readonly object _interfaceChangeLock = new();
+
     public MihomoService()
     {
         // Khi bundle chung 1 file, không được lưu Core vào AppContext vì quyền/read-only
@@ -523,12 +545,16 @@ rules:
         var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
         try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
 
+        // Phiên mihomo mới — reset bộ đếm, dòng "default interface changed by
+        // monitor" đầu tiên của phiên này là lần dò ban đầu vô hại.
+        lock (_interfaceChangeLock) { _interfaceChangeCount = 0; }
+
         try
         {
             _launched = GracefulProcessLauncher.Start(
                 _exePath, $"-d \"{_coreDir}\" -f \"{_configPath}\"", _coreDir);
-            PumpLogAsync(_launched.StdOutRead, runtimeLogPath);
-            PumpLogAsync(_launched.StdErrRead, runtimeLogPath);
+            PumpLogAsync(_launched.StdOutRead, runtimeLogPath, OnMihomoLogLine);
+            PumpLogAsync(_launched.StdErrRead, runtimeLogPath, OnMihomoLogLine);
         }
         catch (Exception ex)
         {
@@ -666,7 +692,7 @@ rules:
         }
     }
 
-    private static async void PumpLogAsync(SafeFileHandle readHandle, string logPath)
+    private static async void PumpLogAsync(SafeFileHandle readHandle, string logPath, Action<string>? onLine = null)
     {
         try
         {
@@ -676,9 +702,37 @@ rules:
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 try { File.AppendAllText(logPath, line + Environment.NewLine); } catch { }
+                try { onLine?.Invoke(line); } catch { }
             }
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Dò dòng log mihomo tự phát ra để phát hiện đổi interface giữa phiên —
+    /// xem giải thích ở khai báo <see cref="InterfaceChangedLogMarker"/>.
+    /// </summary>
+    private void OnMihomoLogLine(string line)
+    {
+        if (!line.Contains(InterfaceChangedLogMarker, StringComparison.Ordinal)) return;
+
+        bool shouldRestart = false;
+        lock (_interfaceChangeLock)
+        {
+            _interfaceChangeCount++;
+            if (_interfaceChangeCount <= 1) return; // lần đầu = dò ban đầu, vô hại
+
+            var now = DateTime.UtcNow;
+            if (now - _lastInterfaceAutoRestartUtc < TimeSpan.FromSeconds(15)) return; // debounce
+            _lastInterfaceAutoRestartUtc = now;
+            shouldRestart = true;
+        }
+
+        if (!shouldRestart) return;
+
+        DiagnosticLogService.Trace(
+            "[MihomoService] Phát hiện đổi interface giữa phiên (đã verify: gây WireGuard handshake fail 100%) — tự restart mihomo để bind lại.");
+        _ = ApplyChannelsAsync();
     }
 
     /// <summary>
