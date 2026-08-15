@@ -79,6 +79,10 @@ public partial class App : Application
         // Khôi phục tinh chỉnh mạng còn sót từ phiên trước bị kill giữa chừng,
         // và dọn MTU 1420 do các bản cũ để lại (chỉ chạy một lần).
         _ = Services.GetRequiredService<NetworkOptimizerService>().RecoverPendingChangesAsync();
+
+        // Tương tự, nếu phiên trước bị kill giữa chừng lúc NvContainerLocalSystem/
+        // Game DVR đang tắt (Optimize AoW Booster), tự khôi phục ngay.
+        _ = NvOverlayOptimizerService.RecoverPendingChangesAsync();
     }
 
     private static IServiceProvider ConfigureServices()

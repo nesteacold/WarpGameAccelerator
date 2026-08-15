@@ -35,10 +35,27 @@ public sealed partial class AowBoosterPage : Page
                 FolderPathBox.Text = folder;
                 ValidateFolder(folder);
             }
+
+            NvOverlayToggle.IsOn = NvOverlayOptimizerService.IsApplied();
         }
         catch (Exception ex)
         {
             CrashReportService.RecordCrash(ex, "AowBoosterPage.LoadSavedStateAsync");
+        }
+    }
+
+    private async void NvOverlayToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (NvOverlayToggle.IsOn)
+                await NvOverlayOptimizerService.ApplyAsync();
+            else
+                await NvOverlayOptimizerService.RestoreAsync();
+        }
+        catch (Exception ex)
+        {
+            CrashReportService.RecordCrash(ex, "AowBoosterPage.NvOverlayToggle_Toggled");
         }
     }
 

@@ -128,6 +128,25 @@
                 </StackPanel>
             </Border>
 
+            <!-- Card: Tối ưu tài nguyên (tắt overlay NVIDIA) -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="14,12">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="🖥️  Tắt overlay NVIDIA khi chơi AOW"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock FontSize="11" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Giảm ~32% GPU, ~19.5% RAM, ~11% CPU mỗi client. Ảnh hưởng TOÀN MÁY — tắt GeForce Experience overlay/ShadowPlay của mọi app cho tới khi bạn tắt lại, không riêng AOW."/>
+                    <ToggleSwitch x:Name="NvOverlayToggle"
+                                  OnContent="Đang tắt overlay NVIDIA"
+                                  OffContent="Overlay NVIDIA bình thường"
+                                  Toggled="NvOverlayToggle_Toggled"
+                                  Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
             <!-- Tiến trình / log ngắn -->
             <TextBlock x:Name="ProgressText"
                        FontSize="11" TextWrapping="Wrap"
