@@ -83,6 +83,22 @@ public partial class App : Application
         // Tương tự, nếu phiên trước bị kill giữa chừng lúc NvContainerLocalSystem/
         // Game DVR đang tắt (Optimize AoW Booster), tự khôi phục ngay.
         _ = NvOverlayOptimizerService.RecoverPendingChangesAsync();
+
+        // Conflict mitigation (WireGuard for Windows, Hyper-V vms_pp binding...)
+        // giờ gắn theo VÒNG ĐỜI APP thay vì Start/Stop Boost — trước đây tắt/bật
+        // lại mỗi lần Boost khiến NIC bị đụng vào nhiều lần trong 1 phiên sử
+        // dụng, nghi ngờ là 1 yếu tố góp phần gây NIC chập chờn (đổi interface
+        // giữa chừng, xem MihomoService "Tự phục hồi khi WireGuard bind lỗi").
+        // An toàn hơn: tắt 1 LẦN lúc mở app, trả lại 1 LẦN lúc thoát app (xem
+        // MainWindow.ExitApp) — không đụng NIC lặp lại theo từng lần Boost/Stop
+        // Boost nữa. RestoreAllAsync() trước để tự dọn nếu phiên trước bị crash
+        // giữa chừng (mỗi guard tự no-op nếu không có gì để khôi phục), rồi mới
+        // Mitigate cho phiên mới.
+        _ = Task.Run(async () =>
+        {
+            await ConflictDetectionService.RestoreAllAsync();
+            await ConflictDetectionService.MitigateEnabledAsync();
+        });
     }
 
     private static IServiceProvider ConfigureServices()

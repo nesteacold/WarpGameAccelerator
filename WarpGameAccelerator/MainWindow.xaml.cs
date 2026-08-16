@@ -280,6 +280,12 @@ public sealed partial class MainWindow : Window
 
                 // Ngắt Cloudflare WARP (có thể chậm nếu warp-cli phản hồi trễ)
                 await warpSvc.DisconnectAsync();
+
+                // Trả lại mọi conflict đã tạm tắt lúc mở app (Hyper-V vms_pp
+                // binding, WireGuard for Windows...) — gắn theo vòng đời app,
+                // không còn theo Start/Stop Boost, nên PHẢI chạy ở đây bất kể
+                // có đang Boost hay không (xem ConflictDetectionService).
+                await ConflictDetectionService.RestoreAllAsync();
             });
 
             await Task.WhenAny(cleanupTask, Task.Delay(3000));

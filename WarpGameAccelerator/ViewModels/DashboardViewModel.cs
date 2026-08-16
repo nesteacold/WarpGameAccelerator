@@ -168,10 +168,9 @@ public partial class DashboardViewModel : ObservableObject
     {
         CurrentState = AppState.Connecting;
 
-        // Tạm dừng các conflict đã biết (WireGuard for Windows, Hyper-V vms_pp
-        // binding...) trước khi khởi động Mihomo TUN — mỗi conflict có toggle
-        // riêng ở Settings, mặc định BẬT. Xem ConflictDetectionService.
-        await ConflictDetectionService.MitigateEnabledAsync();
+        // Conflict mitigation (WireGuard for Windows, Hyper-V vms_pp binding...)
+        // giờ áp dụng theo vòng đời APP (App.xaml.cs OnLaunched/MainWindow.ExitApp),
+        // không còn gắn theo từng lần Start/Stop Boost — xem ConflictDetectionService.
 
         EngineMode engineMode = SettingsViewModel.LoadEngineMode();
 
@@ -282,9 +281,6 @@ public partial class DashboardViewModel : ObservableObject
         await _networkOptimizer.RestoreAsync();
         await _warpService.ClearSplitTunnelAsync();
         await _warpService.DisconnectAsync();
-
-        // Trả lại mọi conflict đã tạm dừng lúc Boost (nếu có).
-        await ConflictDetectionService.RestoreAllAsync();
 
         CurrentState = AppState.Idle;
         CurrentPingMs = 0;
