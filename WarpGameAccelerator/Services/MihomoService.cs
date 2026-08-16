@@ -46,25 +46,35 @@ public class MihomoService
     private readonly string _exePath;
     private readonly string _configPath;
 
-    // ── Tự phục hồi khi mihomo đổi interface giữa phiên ─────────────────
+    // ── Tự phục hồi khi WireGuard bind sai interface (mihomo#1728) ──────
     // mihomo tự dò default interface bằng auto-detect-interface: true (BẮT
     // BUỘC giữ, KHÔNG set cứng interface-name — xem comment ở BuildConfigYaml,
-    // đã verify set cứng làm handshake fail 100%). Nhưng nếu Windows đổi danh
-    // tính NIC NGAY TRONG LÚC mihomo đang chạy (vd cài lại driver tạo instance
-    // mới, NIC bị enumerate lại), log ghi "[TUN] default interface changed by
-    // monitor" và ngay sau đó 100% traffic WireGuard fail "context deadline
-    // exceeded" — cùng họ bug bind-socket-to-interface trên Windows
-    // (MetaCubeX/mihomo#1728), chỉ khác kích hoạt bởi đổi interface GIỮA
-    // CHỪNG thay vì set cứng lúc khởi động.
+    // đã verify set cứng làm handshake fail 100%). Windows đổi danh tính NIC
+    // (vd cài lại driver tạo instance mới, NIC bị enumerate lại) đôi khi khiến
+    // bind-socket-to-interface lỗi ở tầng Go (MetaCubeX/mihomo#1728), toàn bộ
+    // traffic WireGuard rơi vào "dial WARP-Direct ... context deadline
+    // exceeded" liên tục.
     //
-    // Không hardcode tên interface nào (mỗi máy khác nhau) — chỉ dựa vào
-    // chính dòng log mihomo tự phát ra. Dòng NÀY xuất hiện 1 LẦN vô hại ngay
-    // lúc khởi động (lần dò ban đầu) nên bỏ qua lần đầu tiên mỗi phiên mihomo;
-    // từ lần thứ 2 trở đi mới là đổi giữa chừng thật sự → tự kill+respawn
-    // (bind lại từ đầu vào interface hiện tại luôn thành công, đã verify thực
-    // nghiệm). Debounce 15s để tránh vòng lặp restart nếu NIC chập chờn liên tục.
-    private const string InterfaceChangedLogMarker = "[TUN] default interface changed by monitor";
-    private int _interfaceChangeCount;
+    // ĐÃ THỬ và BỎ: dựa vào log "[TUN] default interface changed by monitor"
+    // làm tín hiệu — dòng này xuất hiện ở MỌI phiên mihomo (kể cả phiên chạy
+    // hoàn toàn bình thường, chỉ là lần dò interface ban đầu), không tương
+    // quan với việc bind có thành công hay không. Quan sát thực tế: 1 phiên có
+    // đúng 1 dòng này vẫn chạy tốt, phiên khác cũng đúng 1 dòng này lại chết
+    // hoàn toàn — không phân biệt được bằng log này.
+    //
+    // Thay vào đó theo dõi TRỰC TIẾP triệu chứng thật: dial WireGuard
+    // ("WARP-Direct") thất bại dồn dập. Không hardcode tên interface/IP nào
+    // (mỗi máy khác nhau) — chỉ đếm số lần "dial WARP-Direct ... context
+    // deadline exceeded" trong 1 cửa sổ thời gian ngắn. mihomo chỉ log ở mức
+    // warning (dial thành công không log) nên không đếm được tỉ lệ thành
+    // công/thất bại, nhưng khi bind lỗi thật thì 100% dial đều fail liên tục
+    // — ngưỡng 5 lần thất bại trong 20 giây gần như không thể xảy ra do mất
+    // gói ngẫu nhiên thông thường, chỉ xảy ra khi tunnel chết hẳn.
+    private const string WarpDialFailureMarker = "dial WARP-Direct";
+    private const int DialFailureThreshold = 5;
+    private static readonly TimeSpan DialFailureWindow = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan AutoRestartDebounce = TimeSpan.FromSeconds(30);
+    private readonly Queue<DateTime> _recentDialFailures = new();
     private DateTime _lastInterfaceAutoRestartUtc = DateTime.MinValue;
     private readonly object _interfaceChangeLock = new();
 
@@ -545,9 +555,8 @@ rules:
         var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
         try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
 
-        // Phiên mihomo mới — reset bộ đếm, dòng "default interface changed by
-        // monitor" đầu tiên của phiên này là lần dò ban đầu vô hại.
-        lock (_interfaceChangeLock) { _interfaceChangeCount = 0; }
+        // Phiên mihomo mới — xoá sạch lịch sử dial-failure của phiên cũ.
+        lock (_interfaceChangeLock) { _recentDialFailures.Clear(); }
 
         try
         {
@@ -709,29 +718,33 @@ rules:
     }
 
     /// <summary>
-    /// Dò dòng log mihomo tự phát ra để phát hiện đổi interface giữa phiên —
-    /// xem giải thích ở khai báo <see cref="InterfaceChangedLogMarker"/>.
+    /// Dò dòng log mihomo tự phát ra để phát hiện WireGuard bind lỗi (dial dồn
+    /// dập fail) — xem giải thích ở khai báo <see cref="WarpDialFailureMarker"/>.
     /// </summary>
     private void OnMihomoLogLine(string line)
     {
-        if (!line.Contains(InterfaceChangedLogMarker, StringComparison.Ordinal)) return;
+        if (!line.Contains(WarpDialFailureMarker, StringComparison.Ordinal)) return;
 
         bool shouldRestart = false;
         lock (_interfaceChangeLock)
         {
-            _interfaceChangeCount++;
-            if (_interfaceChangeCount <= 1) return; // lần đầu = dò ban đầu, vô hại
-
             var now = DateTime.UtcNow;
-            if (now - _lastInterfaceAutoRestartUtc < TimeSpan.FromSeconds(15)) return; // debounce
+            _recentDialFailures.Enqueue(now);
+            while (_recentDialFailures.Count > 0 && now - _recentDialFailures.Peek() > DialFailureWindow)
+                _recentDialFailures.Dequeue();
+
+            if (_recentDialFailures.Count < DialFailureThreshold) return;
+            if (now - _lastInterfaceAutoRestartUtc < AutoRestartDebounce) return; // debounce
+
             _lastInterfaceAutoRestartUtc = now;
+            _recentDialFailures.Clear();
             shouldRestart = true;
         }
 
         if (!shouldRestart) return;
 
         DiagnosticLogService.Trace(
-            "[MihomoService] Phát hiện đổi interface giữa phiên (đã verify: gây WireGuard handshake fail 100%) — tự restart mihomo để bind lại.");
+            $"[MihomoService] {DialFailureThreshold} dial WireGuard thất bại liên tục trong {DialFailureWindow.TotalSeconds}s (bind interface lỗi, mihomo#1728) — tự restart mihomo để bind lại.");
         _ = ApplyChannelsAsync();
     }
 
