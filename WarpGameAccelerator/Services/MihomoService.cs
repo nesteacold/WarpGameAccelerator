@@ -95,8 +95,38 @@ public class MihomoService
     private DateTime _mihomoStartedAtUtc = DateTime.MinValue;
     private readonly object _interfaceChangeLock = new();
 
+    // Dù bind lỗi thật hay chỉ là quá tải tạm thời lúc nhiều client mở cùng
+    // lúc (chưa phân biệt được rạch ròi bằng log), tự kill+respawn mihomo
+    // GIỮA LÚC Multi-Client đang launch luôn là hành động phá hoại — cắt
+    // ngang đúng lúc hệ thống bận nhất, đã quan sát thực tế gây "TIMEOUT 60s
+    // — không lấy được token" (launch thất bại hoàn toàn) thay vì chỉ đơn
+    // thuần mất 1 client. Thay vì tiếp tục đoán ngưỡng đếm, chặn hẳn hành
+    // động restart trong lúc MultiClientPage đang launch — hoãn lại, chỉ
+    // restart SAU khi launch đã kết thúc (nếu vẫn còn cần).
+    private static MihomoService? _singletonInstance;
+    private static int _multiClientLaunchDepth;
+    private volatile bool _restartPendingAfterLaunch;
+
+    /// <summary>Gọi lúc MultiClientPage bắt đầu 1 lượt launch (StartBtn_Click).</summary>
+    public static void BeginMultiClientLaunch() => Interlocked.Increment(ref _multiClientLaunchDepth);
+
+    /// <summary>Gọi lúc MultiClientPage kết thúc lượt launch (dù thành công hay lỗi) — thực hiện restart đã hoãn nếu có.</summary>
+    public static void EndMultiClientLaunch()
+    {
+        if (Interlocked.Decrement(ref _multiClientLaunchDepth) > 0) return;
+
+        var instance = _singletonInstance;
+        if (instance == null || !instance._restartPendingAfterLaunch) return;
+
+        instance._restartPendingAfterLaunch = false;
+        DiagnosticLogService.Trace(
+            "[MihomoService] Launch Multi-Client đã kết thúc — thực hiện restart mihomo đã hoãn lại lúc launch.");
+        _ = instance.ApplyChannelsAsync();
+    }
+
     public MihomoService()
     {
+        _singletonInstance = this;
         // Khi bundle chung 1 file, không được lưu Core vào AppContext vì quyền/read-only
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         _coreDir = Path.Combine(appData, "WarpGameAccelerator", "Core");
@@ -769,6 +799,14 @@ rules:
         }
 
         if (!shouldRestart) return;
+
+        if (Volatile.Read(ref _multiClientLaunchDepth) > 0)
+        {
+            _restartPendingAfterLaunch = true;
+            DiagnosticLogService.Trace(
+                $"[MihomoService] {DialFailureThreshold} dial WireGuard thất bại trong {DialFailureWindow.TotalSeconds}s, nhưng Multi-Client đang launch — HOÃN restart tới khi launch xong.");
+            return;
+        }
 
         DiagnosticLogService.Trace(
             $"[MihomoService] {DialFailureThreshold} dial WireGuard thất bại liên tục trong {DialFailureWindow.TotalSeconds}s (bind interface lỗi, mihomo#1728) — tự restart mihomo để bind lại.");
