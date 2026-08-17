@@ -46,87 +46,48 @@ public class MihomoService
     private readonly string _exePath;
     private readonly string _configPath;
 
-    // ── Tự phục hồi khi WireGuard bind sai interface (mihomo#1728) ──────
-    // mihomo tự dò default interface bằng auto-detect-interface: true (BẮT
-    // BUỘC giữ, KHÔNG set cứng interface-name — xem comment ở BuildConfigYaml,
-    // đã verify set cứng làm handshake fail 100%). Windows đổi danh tính NIC
-    // (vd cài lại driver tạo instance mới, NIC bị enumerate lại) đôi khi khiến
-    // bind-socket-to-interface lỗi ở tầng Go (MetaCubeX/mihomo#1728), toàn bộ
-    // traffic WireGuard rơi vào "dial WARP-Direct ... context deadline
-    // exceeded" liên tục.
+    // ── Theo dõi dial WireGuard thất bại (CHỈ GHI LOG, KHÔNG tự xử lý) ──
     //
-    // ĐÃ THỬ và BỎ: dựa vào log "[TUN] default interface changed by monitor"
-    // làm tín hiệu — dòng này xuất hiện ở MỌI phiên mihomo (kể cả phiên chạy
-    // hoàn toàn bình thường, chỉ là lần dò interface ban đầu), không tương
-    // quan với việc bind có thành công hay không. Quan sát thực tế: 1 phiên có
-    // đúng 1 dòng này vẫn chạy tốt, phiên khác cũng đúng 1 dòng này lại chết
-    // hoàn toàn — không phân biệt được bằng log này.
+    // ĐÃ THỬ VÀ GỠ BỎ (v1.14.3 → v1.14.6): cơ chế tự kill+respawn mihomo khi
+    // đếm đủ N lần "dial WARP-Direct ... context deadline exceeded" trong 1
+    // cửa sổ thời gian. Ý định ban đầu: tự phục hồi bug bind-socket-to-
+    // interface trên Windows (MetaCubeX/mihomo#1728) khi Windows đổi danh
+    // tính NIC giữa chừng, làm 100% traffic WireGuard chết.
     //
-    // Thay vào đó theo dõi TRỰC TIẾP triệu chứng thật: dial WireGuard
-    // ("WARP-Direct") thất bại dồn dập. Không hardcode tên interface/IP nào
-    // (mỗi máy khác nhau) — chỉ đếm số lần "dial WARP-Direct ... context
-    // deadline exceeded" trong 1 cửa sổ thời gian ngắn. mihomo chỉ log ở mức
-    // warning (dial thành công không log) nên không đếm được tỉ lệ thành
-    // công/thất bại, nhưng khi bind lỗi thật thì 100% dial đều fail liên tục
-    // trong NHIỀU PHÚT (đã quan sát thực tế) — ngưỡng đủ cao/đủ dài để phân
-    // biệt với burst ngắn tự nhiên vẫn bắt được sự cố thật rất nhanh.
+    // LÝ DO GỠ — sai lầm ở tầng logic, không phải ở việc chọn ngưỡng:
+    // mihomo KHÔNG log kết nối thành công (chỉ log warning), nên đếm số lần
+    // fail không bao giờ suy ra được tỉ lệ fail/tổng. Hệ quả: "1 client đang
+    // retry dồn dập" và "tunnel chết toàn cục" cho ra CÙNG một tín hiệu.
+    // Lỗi dial của MỘT tiến trình không thể dùng để kết luận tunnel chết.
     //
-    // 2 nguồn false-positive đã gặp (v1.14.3), cả 2 đều KHÔNG phải bind lỗi
-    // thật mà là burst dial-fail tự nhiên, ngắn hạn, tự hết:
-    // 1) mihomo vừa mới start luôn có vài giây "khởi động nguội" (TUN/route
-    //    chưa ổn định hẳn) → StartupGracePeriod bỏ qua dial-failure trong
-    //    khoảng ngắn ngay sau khi mihomo start.
-    // 2) Relaunch 1 client game (vd kill task rồi mở lại) khiến process mới
-    //    mở hàng loạt kết nối cùng lúc (login/resource/telemetry server) —
-    //    dồn dập tại đúng thời điểm đó có thể khiến vài dial timeout dù tunnel
-    //    hoàn toàn khoẻ, KHÔNG liên quan gì tới việc mihomo mới start. Nâng
-    //    ngưỡng đủ cao (8 lần / 30s) để burst từ 1 client không tự kích hoạt,
-    //    trong khi bind lỗi thật (kéo dài liên tục nhiều phút) vẫn bắt được
-    //    chỉ chậm hơn vài giây so với ngưỡng cũ.
-    // vẫn bình thường. Thêm StartupGracePeriod: bỏ qua dial-failure trong
-    // khoảng thời gian ngắn ngay sau khi mihomo vừa start, chỉ tính từ sau đó.
+    // Tệ hơn, nó tạo VÒNG LẶP TỰ NUÔI phá hoại: 1 client mất kết nối (vì bất
+    // kỳ lý do gì — server kick, session hỏng, người dùng kill task rồi mở
+    // lại) → client đó retry liên tục → đủ ngưỡng → app kill mihomo → TẤT CẢ
+    // client còn lại mất kết nối theo → 4-5 client cùng retry → lỗi dồn dập
+    // hơn nữa → restart tiếp. Quan sát thực tế: 2 lần restart cách nhau 97
+    // giây, và "TIMEOUT 60s — không lấy được token" (Multi-Client launch thất
+    // bại hoàn toàn). Xảy ra trên NHIỀU MÁY khác nhau, không riêng máy dev.
+    //
+    // Đã thử 3 lần vá mà không chạm tới lỗi logic gốc, đều thất bại: nâng
+    // ngưỡng 5/20s → 8/30s, thêm StartupGracePeriod, chặn restart trong lúc
+    // Multi-Client launch. Mỗi lần chỉ làm restart trễ đi vài giây rồi vẫn nổ.
+    //
+    // Nay chỉ GHI LOG để chẩn đoán, KHÔNG tự hành động. Bug mihomo#1728 hiếm
+    // (cần Windows đổi danh tính NIC giữa phiên) và người dùng tự khắc phục
+    // được trong 2 giây bằng Stop Boost → Start Boost — rẻ hơn nhiều so với
+    // rủi ro tự kill tunnel của tất cả client. KHÔNG thêm lại cơ chế tự
+    // restart nếu không có cách phân biệt chắc chắn "tunnel chết toàn cục" vs
+    // "một tiến trình đang retry" (mihomo hiện không cung cấp tín hiệu đó).
     private const string WarpDialFailureMarker = "dial WARP-Direct";
-    private const int DialFailureThreshold = 8;
-    private static readonly TimeSpan DialFailureWindow = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan AutoRestartDebounce = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan StartupGracePeriod = TimeSpan.FromSeconds(25);
+    private const int DialFailureLogThreshold = 20;
+    private static readonly TimeSpan DialFailureWindow = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan DialFailureLogCooldown = TimeSpan.FromMinutes(5);
     private readonly Queue<DateTime> _recentDialFailures = new();
-    private DateTime _lastInterfaceAutoRestartUtc = DateTime.MinValue;
-    private DateTime _mihomoStartedAtUtc = DateTime.MinValue;
+    private DateTime _lastDialFailureLogUtc = DateTime.MinValue;
     private readonly object _interfaceChangeLock = new();
-
-    // Dù bind lỗi thật hay chỉ là quá tải tạm thời lúc nhiều client mở cùng
-    // lúc (chưa phân biệt được rạch ròi bằng log), tự kill+respawn mihomo
-    // GIỮA LÚC Multi-Client đang launch luôn là hành động phá hoại — cắt
-    // ngang đúng lúc hệ thống bận nhất, đã quan sát thực tế gây "TIMEOUT 60s
-    // — không lấy được token" (launch thất bại hoàn toàn) thay vì chỉ đơn
-    // thuần mất 1 client. Thay vì tiếp tục đoán ngưỡng đếm, chặn hẳn hành
-    // động restart trong lúc MultiClientPage đang launch — hoãn lại, chỉ
-    // restart SAU khi launch đã kết thúc (nếu vẫn còn cần).
-    private static MihomoService? _singletonInstance;
-    private static int _multiClientLaunchDepth;
-    private volatile bool _restartPendingAfterLaunch;
-
-    /// <summary>Gọi lúc MultiClientPage bắt đầu 1 lượt launch (StartBtn_Click).</summary>
-    public static void BeginMultiClientLaunch() => Interlocked.Increment(ref _multiClientLaunchDepth);
-
-    /// <summary>Gọi lúc MultiClientPage kết thúc lượt launch (dù thành công hay lỗi) — thực hiện restart đã hoãn nếu có.</summary>
-    public static void EndMultiClientLaunch()
-    {
-        if (Interlocked.Decrement(ref _multiClientLaunchDepth) > 0) return;
-
-        var instance = _singletonInstance;
-        if (instance == null || !instance._restartPendingAfterLaunch) return;
-
-        instance._restartPendingAfterLaunch = false;
-        DiagnosticLogService.Trace(
-            "[MihomoService] Launch Multi-Client đã kết thúc — thực hiện restart mihomo đã hoãn lại lúc launch.");
-        _ = instance.ApplyChannelsAsync();
-    }
 
     public MihomoService()
     {
-        _singletonInstance = this;
         // Khi bundle chung 1 file, không được lưu Core vào AppContext vì quyền/read-only
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         _coreDir = Path.Combine(appData, "WarpGameAccelerator", "Core");
@@ -602,13 +563,8 @@ rules:
         var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
         try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
 
-        // Phiên mihomo mới — xoá sạch lịch sử dial-failure của phiên cũ, đánh
-        // dấu thời điểm start để áp dụng StartupGracePeriod.
-        lock (_interfaceChangeLock)
-        {
-            _recentDialFailures.Clear();
-            _mihomoStartedAtUtc = DateTime.UtcNow;
-        }
+        // Phiên mihomo mới — xoá sạch lịch sử dial-failure của phiên cũ.
+        lock (_interfaceChangeLock) { _recentDialFailures.Clear(); }
 
         try
         {
@@ -770,47 +726,30 @@ rules:
     }
 
     /// <summary>
-    /// Dò dòng log mihomo tự phát ra để phát hiện WireGuard bind lỗi (dial dồn
-    /// dập fail) — xem giải thích ở khai báo <see cref="WarpDialFailureMarker"/>.
+    /// Ghi nhận dial WireGuard thất bại dồn dập vào trace.log để chẩn đoán.
+    /// CHỈ GHI LOG — cố ý KHÔNG tự restart mihomo, xem giải thích dài ở khai
+    /// báo <see cref="WarpDialFailureMarker"/> (vòng lặp tự nuôi phá hoại).
     /// </summary>
     private void OnMihomoLogLine(string line)
     {
         if (!line.Contains(WarpDialFailureMarker, StringComparison.Ordinal)) return;
 
-        bool shouldRestart = false;
         lock (_interfaceChangeLock)
         {
             var now = DateTime.UtcNow;
-
-            // Bỏ qua dial-failure trong lúc mihomo còn "khởi động nguội" — tự
-            // hết, restart giữa lúc này chỉ làm gián đoạn client đang connect.
-            if (now - _mihomoStartedAtUtc < StartupGracePeriod) return;
-
             _recentDialFailures.Enqueue(now);
             while (_recentDialFailures.Count > 0 && now - _recentDialFailures.Peek() > DialFailureWindow)
                 _recentDialFailures.Dequeue();
 
-            if (_recentDialFailures.Count < DialFailureThreshold) return;
-            if (now - _lastInterfaceAutoRestartUtc < AutoRestartDebounce) return; // debounce
+            if (_recentDialFailures.Count < DialFailureLogThreshold) return;
+            if (now - _lastDialFailureLogUtc < DialFailureLogCooldown) return;
 
-            _lastInterfaceAutoRestartUtc = now;
-            _recentDialFailures.Clear();
-            shouldRestart = true;
-        }
-
-        if (!shouldRestart) return;
-
-        if (Volatile.Read(ref _multiClientLaunchDepth) > 0)
-        {
-            _restartPendingAfterLaunch = true;
+            _lastDialFailureLogUtc = now;
             DiagnosticLogService.Trace(
-                $"[MihomoService] {DialFailureThreshold} dial WireGuard thất bại trong {DialFailureWindow.TotalSeconds}s, nhưng Multi-Client đang launch — HOÃN restart tới khi launch xong.");
-            return;
+                $"[MihomoService] {_recentDialFailures.Count} dial WireGuard thất bại trong {DialFailureWindow.TotalSeconds}s. " +
+                "Nếu game mất kết nối kéo dài, thử Stop Boost rồi Start Boost lại. " +
+                "(chỉ cảnh báo — app cố ý KHÔNG tự restart mihomo)");
         }
-
-        DiagnosticLogService.Trace(
-            $"[MihomoService] {DialFailureThreshold} dial WireGuard thất bại liên tục trong {DialFailureWindow.TotalSeconds}s (bind interface lỗi, mihomo#1728) — tự restart mihomo để bind lại.");
-        _ = ApplyChannelsAsync();
     }
 
     /// <summary>

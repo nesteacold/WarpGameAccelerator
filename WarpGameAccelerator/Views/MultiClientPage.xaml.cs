@@ -189,13 +189,6 @@ public sealed partial class MultiClientPage : Page
     /// </summary>
     private async void StartBtn_Click(object sender, RoutedEventArgs e)
     {
-        // Chặn MihomoService tự restart (do phát hiện dial-fail) trong suốt
-        // lúc đang launch — restart giữa lúc này luôn cắt ngang client đang
-        // connect, dù nguyên nhân dial-fail có thật hay chỉ do quá tải tạm
-        // thời từ chính việc mở nhiều client cùng lúc. Nếu vẫn còn cần
-        // restart, MihomoService tự hoãn lại và thực hiện ngay sau khi
-        // EndMultiClientLaunch() được gọi ở finally bên dưới.
-        MihomoService.BeginMultiClientLaunch();
         try
         {
             int target = _clientCount;
@@ -268,7 +261,6 @@ public sealed partial class MultiClientPage : Page
             _refreshTimer.Start();
             RefreshClientList();
             DiagnosticLogService.Trace("StartBtn_Click hoàn tất");
-            MihomoService.EndMultiClientLaunch();
         }
     }
 
