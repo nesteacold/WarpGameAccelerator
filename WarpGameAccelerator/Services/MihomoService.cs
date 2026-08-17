@@ -68,14 +68,31 @@ public class MihomoService
     // deadline exceeded" trong 1 cửa sổ thời gian ngắn. mihomo chỉ log ở mức
     // warning (dial thành công không log) nên không đếm được tỉ lệ thành
     // công/thất bại, nhưng khi bind lỗi thật thì 100% dial đều fail liên tục
-    // — ngưỡng 5 lần thất bại trong 20 giây gần như không thể xảy ra do mất
-    // gói ngẫu nhiên thông thường, chỉ xảy ra khi tunnel chết hẳn.
+    // trong NHIỀU PHÚT (đã quan sát thực tế) — ngưỡng đủ cao/đủ dài để phân
+    // biệt với burst ngắn tự nhiên vẫn bắt được sự cố thật rất nhanh.
+    //
+    // 2 nguồn false-positive đã gặp (v1.14.3), cả 2 đều KHÔNG phải bind lỗi
+    // thật mà là burst dial-fail tự nhiên, ngắn hạn, tự hết:
+    // 1) mihomo vừa mới start luôn có vài giây "khởi động nguội" (TUN/route
+    //    chưa ổn định hẳn) → StartupGracePeriod bỏ qua dial-failure trong
+    //    khoảng ngắn ngay sau khi mihomo start.
+    // 2) Relaunch 1 client game (vd kill task rồi mở lại) khiến process mới
+    //    mở hàng loạt kết nối cùng lúc (login/resource/telemetry server) —
+    //    dồn dập tại đúng thời điểm đó có thể khiến vài dial timeout dù tunnel
+    //    hoàn toàn khoẻ, KHÔNG liên quan gì tới việc mihomo mới start. Nâng
+    //    ngưỡng đủ cao (8 lần / 30s) để burst từ 1 client không tự kích hoạt,
+    //    trong khi bind lỗi thật (kéo dài liên tục nhiều phút) vẫn bắt được
+    //    chỉ chậm hơn vài giây so với ngưỡng cũ.
+    // vẫn bình thường. Thêm StartupGracePeriod: bỏ qua dial-failure trong
+    // khoảng thời gian ngắn ngay sau khi mihomo vừa start, chỉ tính từ sau đó.
     private const string WarpDialFailureMarker = "dial WARP-Direct";
-    private const int DialFailureThreshold = 5;
-    private static readonly TimeSpan DialFailureWindow = TimeSpan.FromSeconds(20);
+    private const int DialFailureThreshold = 8;
+    private static readonly TimeSpan DialFailureWindow = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AutoRestartDebounce = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan StartupGracePeriod = TimeSpan.FromSeconds(25);
     private readonly Queue<DateTime> _recentDialFailures = new();
     private DateTime _lastInterfaceAutoRestartUtc = DateTime.MinValue;
+    private DateTime _mihomoStartedAtUtc = DateTime.MinValue;
     private readonly object _interfaceChangeLock = new();
 
     public MihomoService()
@@ -555,8 +572,13 @@ rules:
         var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
         try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
 
-        // Phiên mihomo mới — xoá sạch lịch sử dial-failure của phiên cũ.
-        lock (_interfaceChangeLock) { _recentDialFailures.Clear(); }
+        // Phiên mihomo mới — xoá sạch lịch sử dial-failure của phiên cũ, đánh
+        // dấu thời điểm start để áp dụng StartupGracePeriod.
+        lock (_interfaceChangeLock)
+        {
+            _recentDialFailures.Clear();
+            _mihomoStartedAtUtc = DateTime.UtcNow;
+        }
 
         try
         {
@@ -729,6 +751,11 @@ rules:
         lock (_interfaceChangeLock)
         {
             var now = DateTime.UtcNow;
+
+            // Bỏ qua dial-failure trong lúc mihomo còn "khởi động nguội" — tự
+            // hết, restart giữa lúc này chỉ làm gián đoạn client đang connect.
+            if (now - _mihomoStartedAtUtc < StartupGracePeriod) return;
+
             _recentDialFailures.Enqueue(now);
             while (_recentDialFailures.Count > 0 && now - _recentDialFailures.Peek() > DialFailureWindow)
                 _recentDialFailures.Dequeue();

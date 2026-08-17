@@ -23,9 +23,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <AssemblyVersion>1.14.4.0</AssemblyVersion>
-    <FileVersion>1.14.4.0</FileVersion>
-    <Version>1.14.4</Version>
+    <AssemblyVersion>1.14.5.0</AssemblyVersion>
+    <FileVersion>1.14.5.0</FileVersion>
+    <Version>1.14.5</Version>
   </PropertyGroup>
 
   <ItemGroup>
