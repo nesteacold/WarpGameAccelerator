@@ -120,7 +120,10 @@ public partial class SettingsViewModel : ObservableObject
             
             // Start download right away from settings
             UpdateStatusText = _loc.SettUpdateDownloading;
-            await _updateService.DownloadAndInstallUpdateAsync(_latestDownloadUrl);
+            var error = await _updateService.DownloadAndInstallUpdateAsync(_latestDownloadUrl);
+            // Chỉ tới được đây nếu cập nhật KHÔNG khởi động được (thành công thì
+            // app đã Environment.Exit(0)). Hiện lỗi thay vì đứng im ở "Đang tải".
+            if (error != null) UpdateStatusText = error;
         }
         else if (string.IsNullOrEmpty(version))
         {

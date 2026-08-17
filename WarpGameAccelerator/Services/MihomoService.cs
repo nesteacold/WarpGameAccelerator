@@ -305,11 +305,25 @@ public class MihomoService
             }
             byte[] clientBytes = ExtractClientBytes(acc.ClientId);
 
-            // Cổng 2408 (mặc định WireGuard/WARP) bị router/ISP bóp riêng
-            // chiều upload trên máy đã test (đo được ~1 Mbps cố định, lặp lại
-            // nhiều lần). Đổi sang 4500 — đã kiểm chứng đạt băng thông tốt hơn
-            // rõ rệt trên cùng mạng này.
-            port = 4500;
+            // KHÔNG ghi đè cứng port ở đây — dùng đúng port của node người dùng
+            // chọn (mặc định 2408 của WARP), hoặc port từ endpoint tài khoản.
+            //
+            // LỊCH SỬ (đừng lặp lại): v1.12.4 từng hardcode `port = 4500;` vô
+            // điều kiện, dựa trên phép đo CHỈ TRÊN MỘT MÁY/MỘT MẠNG để né việc
+            // ISP bóp upload ở cổng 2408. Hệ quả: mọi người dùng bị ép sang
+            // 4500 bất kể mạng của họ, và chính lựa chọn node trong UI bị vô
+            // hiệu (chọn 2408 nhưng config vẫn sinh ra 4500).
+            //
+            // UDP 4500 là cổng chuẩn của IPsec NAT-T, nên rất nhiều router gia
+            // đình/thiết bị ISP có ALG "IPsec passthrough" can thiệp riêng vào
+            // cổng này (sửa gói, NAT binding timeout bất thường, drop gói không
+            // giống IPsec thật). Triệu chứng quan sát được trên nhiều máy:
+            // tunnel lên được rồi chết đột ngột, MỌI đích đến cùng timeout
+            // "context deadline exceeded" một lượt (kể cả đích không phải server
+            // game), trong khi mạng thường vẫn hoàn toàn bình thường.
+            //
+            // Nếu về sau có máy thật sự bị bóp ở 2408, hãy thêm lựa chọn port
+            // vào UI chọn node cho riêng máy đó — KHÔNG hardcode cho tất cả.
 
             acc.Endpoint = $"{host}:{port}";
 
