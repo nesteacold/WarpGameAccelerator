@@ -15,6 +15,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <conv:DetectedToBrushConverter x:Key="DetectedToBrush"/>
         <conv:DetectedToTextConverter x:Key="DetectedToText"/>
+        <conv:StringToVisibilityConverter x:Key="StringToVis"/>
     </Page.Resources>
 
     <ScrollViewer Padding="16,12,16,16">
@@ -211,6 +212,62 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+            </Border>
+
+            <!-- ══ Section: Bug Report ═══════════════════════════ -->
+            <TextBlock Text="{x:Bind Loc.SettSectionBugReport, Mode=OneWay}"
+                       FontSize="10" FontWeight="SemiBold"
+                       CharacterSpacing="150"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,4"/>
+
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="{x:Bind Loc.SettBugReportTitle, Mode=OneWay}"
+                               FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                    <TextBlock Text="{x:Bind Loc.SettBugReportSubtitle, Mode=OneWay}"
+                               FontSize="11" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                    <TextBlock Text="{x:Bind Loc.SettBugReportCategoryLabel, Mode=OneWay}"
+                               FontSize="11" Margin="0,4,0,0"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <ComboBox ItemsSource="{x:Bind ViewModel.BugReportCategories}"
+                              SelectedItem="{x:Bind ViewModel.SelectedBugReportCategory, Mode=TwoWay}"
+                              DisplayMemberPath="DisplayName"
+                              HorizontalAlignment="Stretch"/>
+
+                    <TextBox Text="{x:Bind ViewModel.BugReportDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PlaceholderText="{x:Bind Loc.SettBugReportDescPlaceholder, Mode=OneWay}"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="64" MaxHeight="120"/>
+                    <TextBlock Text="{x:Bind ViewModel.BugReportDescError, Mode=OneWay}"
+                               FontSize="11" Foreground="#FF5252"
+                               Visibility="{x:Bind ViewModel.BugReportDescError, Mode=OneWay, Converter={StaticResource StringToVis}}"/>
+
+                    <Border Background="{ThemeResource CardStrokeColorDefaultBrush}"
+                            CornerRadius="6" Padding="8,6">
+                        <TextBlock Text="{x:Bind ViewModel.BugReportAttachmentPreview, Mode=OneWay}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Border>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                   Text="{x:Bind ViewModel.BugReportStatusText, Mode=OneWay}"
+                                   FontSize="12" Foreground="#00E676" FontWeight="SemiBold" TextWrapping="Wrap"
+                                   Margin="0,0,8,0"/>
+                        <Button Grid.Column="1" VerticalAlignment="Center"
+                                Content="{x:Bind Loc.SettBtnSendBugReport, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.SendBugReportCommand}"
+                                IsEnabled="{x:Bind ViewModel.CanSendBugReport, Mode=OneWay}"
+                                Style="{StaticResource AccentButtonStyle}"/>
+                    </Grid>
+                </StackPanel>
             </Border>
 
             <!-- ══ Section: About ════════════════════════════════ -->

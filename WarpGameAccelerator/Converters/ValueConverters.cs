@@ -76,6 +76,16 @@ public class DetectedToBrushConverter : IValueConverter
         throw new NotImplementedException();
 }
 
+/// <summary>string rỗng/null → Collapsed, có nội dung → Visible.</summary>
+public class StringToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        string.IsNullOrWhiteSpace(value as string) ? Visibility.Collapsed : Visibility.Visible;
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
 /// <summary>Conflict detected (bool) → nhãn badge.</summary>
 public class DetectedToTextConverter : IValueConverter
 {

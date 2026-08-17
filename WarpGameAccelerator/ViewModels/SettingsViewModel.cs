@@ -68,6 +68,34 @@ public partial class SettingsViewModel : ObservableObject
     // Conflict Detection (WireGuard for Windows / Hyper-V vms_pp binding...)
     public ObservableCollection<ConflictItemViewModel> ConflictItems { get; } = new();
 
+    // Bug report
+    public List<BugReportCategoryOption> BugReportCategories { get; } = new()
+    {
+        new(WarpGameAccelerator.Services.BugReportCategory.Disconnect, "Mất kết nối / rớt mạng khi chơi"),
+        new(WarpGameAccelerator.Services.BugReportCategory.Lag, "Giật, lag không rớt hẳn"),
+        new(WarpGameAccelerator.Services.BugReportCategory.MultiClient, "Multi-Client không mở được"),
+        new(WarpGameAccelerator.Services.BugReportCategory.WarpAccount, "Không kết nối WARP / lấy token lỗi"),
+        new(WarpGameAccelerator.Services.BugReportCategory.Update, "Cập nhật app lỗi"),
+        new(WarpGameAccelerator.Services.BugReportCategory.Other, "Khác"),
+    };
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BugReportAttachmentPreview))]
+    private BugReportCategoryOption _selectedBugReportCategory;
+
+    [ObservableProperty] private string _bugReportDescription  = string.Empty;
+    [ObservableProperty] private string _bugReportDescError    = string.Empty;
+    [ObservableProperty] private string _bugReportStatusText   = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSendBugReport))]
+    private bool _isSendingBugReport = false;
+
+    public bool CanSendBugReport => !IsSendingBugReport;
+
+    public string BugReportAttachmentPreview =>
+        WarpGameAccelerator.Services.BugReportService.GetAttachmentPreview(SelectedBugReportCategory.Value, IsVietnamese);
+
     public string AutoStartToggleLabel =>
         AutoStartEnabled ? "Tự khởi động cùng Windows (BẬT)" : "Tự khởi động cùng Windows (TẮT)";
 
@@ -79,11 +107,13 @@ public partial class SettingsViewModel : ObservableObject
         _autoStartEnabled = StartupHelper.IsAutoStartEnabled();
         LoadPingTargets();
         _selectedPingTarget = PingTargets.FirstOrDefault() ?? PingTarget.Defaults[0];
+        _selectedBugReportCategory = BugReportCategories[0];
 
         _loc.PropertyChanged += (_, __) =>
         {
             OnPropertyChanged(nameof(IsVietnamese));
             OnPropertyChanged(nameof(Loc));
+            OnPropertyChanged(nameof(BugReportAttachmentPreview));
         };
 
         LoadConflictItems();
@@ -284,6 +314,31 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task SendBugReportAsync()
+    {
+        if (string.IsNullOrWhiteSpace(BugReportDescription))
+        {
+            BugReportDescError = _loc.SettBugReportDescError;
+            return;
+        }
+        BugReportDescError = string.Empty;
+        IsSendingBugReport  = true;
+        BugReportStatusText = IsVietnamese ? "Đang gửi..." : "Sending...";
+
+        var (success, message) = await WarpGameAccelerator.Services.BugReportService.SendAsync(
+            SelectedBugReportCategory.Value, BugReportDescription);
+
+        BugReportStatusText = message;
+        IsSendingBugReport   = false;
+        if (success) BugReportDescription = string.Empty;
+    }
+
+    partial void OnBugReportDescriptionChanged(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) BugReportDescError = string.Empty;
+    }
+
+    [RelayCommand]
     private static void OpenCloudflareWarp()
     {
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -329,4 +384,19 @@ public partial class ConflictItemViewModel : ObservableObject
     }
 
     partial void OnIsEnabledChanged(bool value) => ConflictDetectionService.SetEnabled(Id, value);
+}
+
+/// <summary>1 lựa chọn trong dropdown loại lỗi — bọc enum để ComboBox hiển thị tên tiếng Việt dễ đọc.</summary>
+public class BugReportCategoryOption
+{
+    public WarpGameAccelerator.Services.BugReportCategory Value { get; }
+    public string DisplayName { get; }
+
+    public BugReportCategoryOption(WarpGameAccelerator.Services.BugReportCategory value, string displayName)
+    {
+        Value = value;
+        DisplayName = displayName;
+    }
+
+    public override string ToString() => DisplayName;
 }

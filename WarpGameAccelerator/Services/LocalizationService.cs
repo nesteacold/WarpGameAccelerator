@@ -125,6 +125,16 @@ public partial class LocalizationService : ObservableObject
     public string SettUpdateError        => VI("Lỗi kiểm tra cập nhật",     "Error checking for updates");
     public string SettUpdateDownloading  => VI("Đang tải & Cài đặt...",     "Downloading & Installing...");
 
+    // ── Bug report ─────────────────────────────────────────────
+    public string SettSectionBugReport   => VI("GỬI BÁO LỖI",              "SEND BUG REPORT");
+    public string SettBugReportTitle     => VI("Gửi báo lỗi",               "Send bug report");
+    public string SettBugReportSubtitle  => VI("Đính kèm log gần nhất để dev phân tích nhanh hơn", "Attach recent logs so it's faster to debug");
+    public string SettBugReportCategoryLabel => VI("Loại lỗi",             "Category");
+    public string SettBugReportDescPlaceholder => VI("Ví dụ: 4 client rớt lúc 21h, không tự vào lại được", "e.g.: 4 clients dropped at 9pm, couldn't reconnect");
+    public string SettBugReportDescError => VI("Nhập mô tả trước khi gửi.", "Enter a description first.");
+    public string SettBtnSendBugReport   => VI("Gửi báo lỗi",               "Send report");
+    public string SettBugReportNotConfigured => VI("Chưa cấu hình kênh gửi báo lỗi", "Bug report channel not configured");
+
     // ── Connection Engine Mode ────────────────────────────────
     public string SettSectionEngine      => VI("CHẾ ĐỘ KẾT NỐI (ENGINE)", "CONNECTION MODE (ENGINE)");
     public string SettEngineDirectTitle  => VI("Game Mode (Direct WireGuard) 🔥 Khuyên dùng", "Game Mode (Direct WireGuard) 🔥 Recommended");
