@@ -115,8 +115,20 @@ public class BugReportService
                 chosen = tailLines.TakeLast(60).ToList();
             }
 
+            // Cắt theo TỪNG DÒNG nguyên vẹn (bỏ dòng cũ nhất trước), không cắt giữa
+            // dòng theo số ký tự — cắt theo char có thể chặt đứt 1 dòng thành 2 mảnh
+            // vô nghĩa (vd "[11:33:43.778]" còn lại "3:43.778]").
+            int totalChars = chosen.Sum(l => l.Length + 1);
+            int dropped = 0;
+            while (totalChars > maxChars && chosen.Count > 1)
+            {
+                totalChars -= chosen[0].Length + 1;
+                chosen.RemoveAt(0);
+                dropped++;
+            }
+
             var text = string.Join('\n', chosen);
-            if (text.Length > maxChars) text = "...(cắt bớt)...\n" + text[^maxChars..];
+            if (dropped > 0) text = $"...(đã cắt {dropped} dòng cũ hơn)...\n" + text;
             return text;
         }
         catch { return string.Empty; }
