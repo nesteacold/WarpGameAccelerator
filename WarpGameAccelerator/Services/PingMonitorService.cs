@@ -54,13 +54,14 @@ public class PingMonitorService : IDisposable
             try
             {
                 var ping = await MeasurePingAsync(_targetHost);
+                RecordSample(ping >= 0);
                 UpdateHistory(ping);
 
                 var stats = new PingStats
                 {
                     CurrentPingMs    = ping,
                     BaselinePingMs   = _baselinePingMs,
-                    PacketLossPercent = ping < 0 ? 100.0 : 0.0,
+                    PacketLossPercent = CurrentLossPercent(),
                     TargetHost       = _targetHost,
                     Timestamp        = DateTime.Now
                 };
@@ -79,16 +80,29 @@ public class PingMonitorService : IDisposable
         _targetProcessName = processNameStr;
     }
 
+    /// <summary>
+    /// Đo RTT ICMP THẬT tới <paramref name="host"/> (endpoint edge WARP).
+    /// Trả về -1 nếu không đo được. KHÔNG bịa số.
+    ///
+    /// ĐÂY KHÔNG PHẢI PING TỚI SERVER GAME — và cũng không thể là như vậy:
+    /// khi TUN bật, ICMP tới đích qua tunnel do mihomo giả lập, còn TCP-connect
+    /// hoàn tất ở userspace (~1.6ms đo được) trước khi mihomo dial thật, nên cả
+    /// hai đều không cho RTT thật tới server game. Server game (cổng 4000) lại
+    /// không gửi byte nào khi vừa kết nối nên cũng không đo được qua byte đầu.
+    ///
+    /// Vì vậy: ô PING trên Dashboard hiển thị RTT tới EDGE (có nhãn rõ), còn
+    /// tình trạng đường tới server game lấy từ MihomoService.LastGameDialFailureUtc.
+    ///
+    /// Bản trước gọi CloudflareNodeService.PingNodeAsync ở đây và return ngay;
+    /// hàm đó luôn trả > 0 (kể cả nhánh catch bịa 36/47/58 + Random) nên nhánh
+    /// đo thật bên dưới thực tế KHÔNG BAO GIỜ chạy.
+    /// </summary>
     public async Task<long> MeasurePingAsync(string host)
     {
+        if (string.IsNullOrWhiteSpace(host)) return -1;
+
         try
         {
-            // 1. Lấy Node được chọn hiện tại và đo ICMP RTT (khớp 100% với Node Dialog, không bị Wintun 1ms intercept)
-            var selectedNode = CloudflareNodeService.GetSelectedNode();
-            long nodePing = await CloudflareNodeService.PingNodeAsync(selectedNode);
-            if (nodePing > 0) return nodePing;
-
-            // 2. Fallback ICMP Ping tới target host
             using var pinger = new Ping();
             var reply = await pinger.SendPingAsync(host, 1200);
             return reply.Status == IPStatus.Success ? reply.RoundtripTime : -1;
@@ -173,6 +187,38 @@ public class PingMonitorService : IDisposable
             await Task.Delay(500);
         }
         return results.Count > 0 ? (long)results.Average() : 0;
+    }
+
+    /// <summary>
+    /// Loss THẬT tính trên cửa sổ mẫu gần nhất (mỗi mẫu = 1 lần ICMP tới edge).
+    /// Bản trước gán 0%% hoặc 100%% từ MỘT mẫu duy nhất, mà mẫu đó lại luôn > 0
+    /// vì lấy từ hàm bịa số ⇒ ô LOSS luôn hiển thị 0.0%% bất kể thực tế.
+    ///
+    /// Đây là loss tới EDGE, không phải loss tới server game (xem MeasurePingAsync).
+    /// </summary>
+    private double CurrentLossPercent()
+    {
+        lock (_sampleLock)
+        {
+            // Chua co mau nao => KHONG duoc tra 0.0 (nhu the la bao "khong mat goi"
+            // trong khi thuc te chua do gi). Tra -1 de UI hien "khong do duoc".
+            if (_recentSamples.Count == 0) return -1.0;
+            int lost = _recentSamples.Count(ok => !ok);
+            return 100.0 * lost / _recentSamples.Count;
+        }
+    }
+
+    private const int LossWindowSamples = 20;
+    private readonly object _sampleLock = new();
+    private readonly Queue<bool> _recentSamples = new();
+
+    private void RecordSample(bool ok)
+    {
+        lock (_sampleLock)
+        {
+            _recentSamples.Enqueue(ok);
+            while (_recentSamples.Count > LossWindowSamples) _recentSamples.Dequeue();
+        }
     }
 
     private void UpdateHistory(long ping)

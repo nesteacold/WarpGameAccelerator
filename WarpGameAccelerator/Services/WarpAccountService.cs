@@ -41,8 +41,25 @@ public class WarpMasqueAccountInfo
     public string PeerPublicKey { get; set; } = string.Empty;
     public string IPv4          { get; set; } = string.Empty;
     public string IPv6          { get; set; } = string.Empty;
+    /// <summary>
+    /// Hostname MASQUE. LƯU Ý: hostname này KHÔNG có bản ghi A (đo 2026-08-22),
+    /// nên nó chỉ dùng làm <c>sni</c> cho TLS — không resolve ra IP được.
+    /// Địa chỉ để kết nối nằm ở <see cref="ServerIp"/>.
+    /// </summary>
     public string Server        { get; set; } = "consumer-masque.cloudflareclient.com";
     public int    Port          { get; set; } = 443;
+    /// <summary>
+    /// IP endpoint MASQUE, ĐỌC TỪ API (<c>config.peers[0].endpoint.v4</c>) chứ không
+    /// hardcode — để nếu Cloudflare đổi hạ tầng thì app tự cập nhật ở lần refresh.
+    /// Rỗng nghĩa là chưa lấy được; khi đó MihomoService dùng hằng số dự phòng.
+    /// </summary>
+    public string ServerIp      { get; set; } = string.Empty;
+    /// <summary>
+    /// Các cổng Cloudflare khai là dùng được cho MASQUE (<c>endpoint.ports</c>).
+    /// Đo được 2026-08-22: 443, 500, 1701, 4500, 4443, 8443, 8095. Giữ lại để sau
+    /// này thử đổi cổng khi nghi nhà mạng tiết lưu cổng đang dùng.
+    /// </summary>
+    public string ServerPorts   { get; set; } = string.Empty;
     /// <summary>Đã đặt tên thiết bị trên Cloudflare (phân biệt trong app 1.1.1.1) hay chưa.</summary>
     public bool   DeviceNameSet { get; set; } = false;
 }
@@ -647,6 +664,29 @@ public class WarpAccountService
                     !string.IsNullOrEmpty(acc.PeerPublicKey) && !string.IsNullOrEmpty(acc.IPv4))
                 {
                     await EnsureMasqueDeviceNamedAsync(acc);
+
+                    // Tài khoản lưu từ bản cũ chưa có ServerIp/ServerPorts — lấy một lần
+                    // từ API rồi ghi lại, để lần sau khỏi phải gọi mạng. Lỗi thì bỏ qua:
+                    // MihomoService còn hằng số dự phòng, không được chặn Boost.
+                    if (string.IsNullOrEmpty(acc.ServerIp))
+                    {
+                        try
+                        {
+                            using var refreshClient = new HttpClient();
+                            refreshClient.DefaultRequestHeaders.Add("User-Agent", "okhttp/3.12.1");
+                            refreshClient.DefaultRequestHeaders.Add("CF-Client-Version", MasqueClientVersionHdr);
+                            refreshClient.DefaultRequestHeaders.Authorization =
+                                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", acc.Token);
+                            await RefreshMasqueConfigAsync(refreshClient, acc);
+                            if (!string.IsNullOrEmpty(acc.ServerIp))
+                            {
+                                var upd = JsonSerializer.Serialize(acc, new JsonSerializerOptions { WriteIndented = true });
+                                await File.WriteAllTextAsync(MasqueAccountFilePath, upd);
+                            }
+                        }
+                        catch { }
+                    }
+
                     return acc;
                 }
             }
@@ -772,6 +812,28 @@ public class WarpAccountService
                 var peer = peersEl[0];
                 if (peer.TryGetProperty("public_key", out var peerPkEl))
                     acc.PeerPublicKey = NormalizePemToBase64(peerPkEl.GetString() ?? "");
+
+                // Endpoint do CHÍNH Cloudflare khai — nguồn đáng tin duy nhất, vì
+                // hostname consumer-masque.cloudflareclient.com không có bản ghi A.
+                // Dạng trả về là "162.159.198.2:0" (port 0 = dùng port ở ngoài), nên
+                // phải bỏ phần sau dấu ':' cuối.
+                if (peer.TryGetProperty("endpoint", out var epEl))
+                {
+                    if (epEl.TryGetProperty("v4", out var epV4El))
+                    {
+                        var raw = epV4El.GetString() ?? "";
+                        var lastColon = raw.LastIndexOf(':');
+                        var ipPart = lastColon > 0 ? raw[..lastColon] : raw;
+                        if (System.Net.IPAddress.TryParse(ipPart, out _)) acc.ServerIp = ipPart;
+                    }
+                    if (epEl.TryGetProperty("ports", out var portsEl) &&
+                        portsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        acc.ServerPorts = string.Join(",", portsEl.EnumerateArray()
+                            .Where(p => p.ValueKind == JsonValueKind.Number)
+                            .Select(p => p.GetInt32().ToString()));
+                    }
+                }
             }
         }
 

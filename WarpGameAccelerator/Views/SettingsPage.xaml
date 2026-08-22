@@ -71,7 +71,27 @@
 
             <Border Style="{StaticResource GlassCard}">
                 <StackPanel Spacing="12">
-                    <!-- Direct WireGuard (Super Speed / Recommended) -->
+                    <!-- Direct MASQUE (QUIC/443) — trước đây nằm trong Dev Panel,
+                         đưa ra ngoài 2026-08-22 sau khi đo thấy WireGuard/2408 mất
+                         kết nối theo cửa sổ mà MASQUE thì không (xem CLAUDE.md
+                         mục "Ba engine mode"). -->
+                    <RadioButton IsChecked="{x:Bind ViewModel.IsDirectMasqueBeta, Mode=TwoWay}"
+                                 GroupName="ConnectionEngineGroup"
+                                 ToolTipService.ToolTip="{x:Bind Loc.SettEngineMasqueDesc, Mode=OneWay}"
+                                 HorizontalAlignment="Stretch">
+                        <StackPanel Margin="6,0,0,0">
+                            <TextBlock Text="{x:Bind Loc.SettEngineMasqueTitle, Mode=OneWay}"
+                                       FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                            <TextBlock Text="{x:Bind Loc.SettEngineMasqueDesc, Mode=OneWay}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+
+                    <MenuFlyoutSeparator Margin="-12,0,-12,0"/>
+
+                    <!-- Direct WireGuard -->
                     <RadioButton IsChecked="{x:Bind ViewModel.IsDirectWireGuard, Mode=TwoWay}"
                                  GroupName="ConnectionEngineGroup"
                                  ToolTipService.ToolTip="{x:Bind Loc.SettEngineDirectDesc, Mode=OneWay}"

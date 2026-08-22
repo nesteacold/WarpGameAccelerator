@@ -100,13 +100,18 @@
 
                 <!-- Change button + Select Node button -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <!-- LEGACY (2026-08-22): nút "Node Server" đã ẩn. Chọn node theo vùng
+                         là bất khả thi với anycast — đã kiểm 13 tổ hợp endpoint/cổng/IPv6,
+                         tất cả đều ra colo=SIN. Xem header CloudflareNodeService.cs.
+                         Giữ handler SelectNodeBtn_Click trong code-behind để tham khảo. -->
                     <Button x:Name="SelectNodeBtn"
                             Content="🌐 Node Server"
+                            Visibility="Collapsed"
                             FontSize="12"
                             Padding="10,6"
                             CornerRadius="8"
                             Click="SelectNodeBtn_Click"
-                            ToolTipService.ToolTip="Chọn Node Server Cloudflare (Taiwan, HK, Auto...)"/>
+                            ToolTipService.ToolTip="LEGACY — không còn dùng"/>
 
                     <Button Content="{x:Bind Loc.DashChange, Mode=OneWay}"
                             Style="{StaticResource AccentButtonStyle}"
@@ -224,7 +229,7 @@
             <!-- Ping card -->
             <Border Grid.Column="0" Style="{StaticResource StatCard}">
                 <StackPanel Spacing="2">
-                    <TextBlock Text="PING"
+                    <TextBlock Text="PING (EDGE WARP)"
                                FontSize="10"
                                FontWeight="SemiBold"
                                CharacterSpacing="100"
@@ -240,6 +245,10 @@
                         <Run Text="{x:Bind Loc.DashBefore, Mode=OneWay}"/>
                         <Run Text="{x:Bind ViewModel.BaselineDisplay, Mode=OneWay}"/>
                     </TextBlock>
+                    <TextBlock Text="RTT tới edge WARP"
+                               FontSize="9" TextTrimming="CharacterEllipsis"
+                               ToolTipService.ToolTip="RTT tới edge WARP — KHÔNG phải ping tới server game. RTT tới server game không đo được từ client khi TUN bật (ICMP bị mihomo giả lập, TCP-connect hoàn tất ở userspace). Ở chế độ WARP Client Proxy thì cả RTT tới edge cũng không đo được."
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                 </StackPanel>
             </Border>
 
@@ -254,8 +263,9 @@
                     <TextBlock FontSize="22" FontWeight="Bold"
                                Text="{x:Bind ViewModel.LossDisplay, Mode=OneWay}"
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                    <TextBlock Text="Packet Loss"
-                               FontSize="10"
+                    <TextBlock Text="20 mẫu gần nhất"
+                               FontSize="10" TextTrimming="CharacterEllipsis"
+                               ToolTipService.ToolTip="Tỉ lệ mẫu đo tới edge WARP bị thất bại, tính trên 20 mẫu gần nhất. Dấu — nghĩa là chưa có mẫu nào hoặc không đo được."
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
             </Border>
@@ -290,13 +300,20 @@
                     <RowDefinition Height="60"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0"
-                           Text="PING HISTORY"
-                           FontSize="10"
-                           FontWeight="SemiBold"
-                           CharacterSpacing="100"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Margin="0,0,0,6"/>
+                <Grid Grid.Row="0" Margin="0,0,0,6">
+                    <TextBlock Text="PING HISTORY"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               CharacterSpacing="100"
+                               HorizontalAlignment="Left"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <!-- Trang thai THAT cua duong toi server game (tu log dial mihomo) -->
+                    <TextBlock Text="{x:Bind ViewModel.GameLinkText, Mode=OneWay}"
+                               Foreground="{x:Bind ViewModel.GameLinkBrush, Mode=OneWay}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Right"/>
+                </Grid>
 
                 <!-- Custom Canvas sparkline - redrawn from code-behind -->
                 <Canvas x:Name="PingSparkline"

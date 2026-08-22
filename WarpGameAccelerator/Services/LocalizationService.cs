@@ -96,6 +96,13 @@ public partial class LocalizationService : ObservableObject
     public string PickerBtnBrowse        => VI("📂  Duyệt file",            "📂  Browse");
     public string PickerBtnSelect        => VI("✅  Chọn",                   "✅  Select");
     public string PickerLoading          => VI("Đang tải processes...",      "Loading processes...");
+    public string PickerBtnNewProfile     => VI("➕  Tạo profile mới (chọn nhiều tiến trình)",
+                                                "➕  New profile (select multiple processes)");
+    public string PickerNewProfileTitle   => VI("Đặt tên profile",            "Name this profile");
+    public string PickerNewProfileHint    => VI("Ví dụ: Age of Wushu TW",     "e.g. Age of Wushu TW");
+    public string PickerNewProfileSaved   => VI("Đã tạo profile",             "Profile created");
+    public string PickerDeleteProfileTitle=> VI("Xoá profile này?",           "Delete this profile?");
+    public string PickerDeleteProfileYes  => VI("Xoá",                        "Delete");
     public string PickerInfoBanner       => VI("Split Tunneling: chỉ process được chọn đi qua WARP+. Chrome, Discord, YouTube giữ nguyên mạng gốc.",
                                                "Split Tunneling: only selected process routes through WARP+. Chrome, Discord, YouTube use your normal network.");
 
@@ -137,15 +144,15 @@ public partial class LocalizationService : ObservableObject
 
     // ── Connection Engine Mode ────────────────────────────────
     public string SettSectionEngine      => VI("CHẾ ĐỘ KẾT NỐI (ENGINE)", "CONNECTION MODE (ENGINE)");
-    public string SettEngineDirectTitle  => VI("Game Mode (Direct WireGuard) 🔥 Khuyên dùng", "Game Mode (Direct WireGuard) 🔥 Recommended");
+    public string SettEngineDirectTitle  => VI("Direct WireGuard (UDP 2408)", "Direct WireGuard (UDP 2408)");
     public string SettEngineDirectBadge  => VI("(Khuyên dùng)", "(Recommended)");
-    public string SettEngineDirectDesc   => VI("Khuyên dùng cho Game thời gian thực. Tối ưu Ping, chống rớt mạng, không cần cài app WARP.",
+    public string SettEngineDirectDesc   => VI("Không cần cài app WARP. Cổng 2408 dễ bị nhận diện là VPN nên một số nhà mạng làm chậm/mất gói vào giờ cao điểm.",
                                                "Recommended for real-time games. Lowest ping, persistent connection, no WARP app needed.");
-    public string SettEngineWarpTitle    => VI("Chế độ Tương Thích (WARP Client)", "WARP Client Proxy (Compatibility Mode)");
-    public string SettEngineWarpDesc     => VI("Dành cho duyệt Web / App thông thường. Yêu cầu ứng dụng Cloudflare WARP gốc.",
+    public string SettEngineWarpTitle    => VI("WARP Client Proxy (cần app WARP gốc)", "WARP Client Proxy (needs official WARP app)");
+    public string SettEngineWarpDesc     => VI("Để app WARP gốc lo phần tunnel (MASQUE). Ổn định, nhưng phải cài và giữ WARP gốc chạy.",
                                                "For general browsing & apps. Requires official Cloudflare WARP app.");
-    public string SettEngineMasqueTitle  => VI("Direct Mode (MASQUE) 🧪 Beta", "Direct Mode (MASQUE) 🧪 Beta");
-    public string SettEngineMasqueDesc   => VI("THỬ NGHIỆM — giao thức khác WireGuard, dùng tài khoản riêng, không liên quan Direct WireGuard. Có thể không ổn định.",
+    public string SettEngineMasqueTitle  => VI("Direct MASQUE (QUIC, cổng 443) — nên thử trước", "Direct MASQUE (QUIC, port 443) — try this first");
+    public string SettEngineMasqueDesc   => VI("Không cần app WARP. Đi cổng 443 nên khó bị nhà mạng phân biệt với HTTPS, và QUIC tự truyền lại gói mất. Tài khoản riêng, độc lập với Direct WireGuard.",
                                                "EXPERIMENTAL — different protocol from WireGuard, uses its own separate account, unrelated to Direct WireGuard. May be unstable.");
 
     // ── Update Dialog ────────────────────────────────────────

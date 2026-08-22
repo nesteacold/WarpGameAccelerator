@@ -1,4 +1,35 @@
 // ============================================================
+// LEGACY — KHÔNG CÒN DÙNG (đánh dấu 2026-08-22). Giữ lại để tham khảo.
+//
+// VÌ SAO BỎ: chức năng này hứa "chọn node theo vùng" (Taiwan / Hong Kong /
+// Singapore) nhưng điều đó BẤT KHẢ THI về nguyên lý. Mọi endpoint WARP đều là
+// địa chỉ ANYCAST: cùng một IP được quảng bá từ mọi PoP Cloudflare, và PoP nào
+// nhận gói do BGP của ISP quyết định — client không có tiếng nói.
+//
+// ĐÃ KIỂM 13 TỔ HỢP, mỗi cái dựng tunnel WireGuard THẬT rồi đọc `colo` từ
+// https://1.1.1.1/cdn-cgi/trace (bàn thử cô lập: mihomo không có section `tun`,
+// nên không thể làm mất mạng máy):
+//   - 4 IP  (162.159.192.1 / .192.6 / .195.1 / 188.114.96.1) x cổng 2408  -> SIN
+//   - 4 cổng (2408 / 500 / 1701 / 4500)                                    -> SIN
+//   - 2 endpoint IPv6 (2606:4700:d0::a29f:c006 / ...c001)                  -> SIN
+//   - 2 IP mới do API Cloudflare tự trả về khi đăng ký                     -> SIN
+//   - 162.159.193.1 (dải mà TÀI LIỆU Cloudflare ghi cho WireGuard)  -> KHÔNG LÊN
+// Không một ngoại lệ nào. Giả lập vị trí lúc đăng ký cũng vô hiệu: hai lần đăng
+// ký từ cùng Việt Nam cho hai IP khác nhau (.192.6 và .192.8) => đó chỉ là luân
+// phiên trong một dải anycast, không phải chọn theo vị trí.
+//
+// Muốn chọn PoP thật thì cần IP UNICAST riêng cho từng PoP — đúng thứ Cloudflare
+// bán trong Zero Trust ("dedicated egress"), không có ở bản consumer.
+//
+// TỆ HƠN: bản đầu của file này còn BỊA số ping (RTT thật + hằng số cứng theo nhãn
+// node + Random), và PingMonitorService gọi nó trước tiên nên ô PING trên
+// Dashboard không liên quan gì tới server game. Xem CLAUDE.md mục
+// "Chỉ số hiển thị: KHÔNG được bịa".
+//
+// GIỮ LẠI vì: cách gọi API đăng ký, cấu trúc GameNode, và phương pháp đo colo
+// vẫn hữu ích nếu sau này chuyển sang Zero Trust hoặc relay tự dựng.
+// ============================================================
+// ============================================================
 // Services/CloudflareNodeService.cs
 // Quản lý danh sách Node Endpoint Cloudflare, đo Ping UDP/ICMP & Trace PoP
 // ============================================================
@@ -89,48 +120,35 @@ public class CloudflareNodeService
     }
 
     // ── Đo Ping End-to-End thực tế tới Game Server qua từng Node ──────────────
+    /// <summary>
+    /// Đo RTT ICMP THẬT tới endpoint của node. Trả về -1 nếu không đo được.
+    ///
+    /// KHÔNG cộng thêm hằng số theo nhãn node, KHÔNG jitter ngẫu nhiên, KHÔNG
+    /// bịa số khi lỗi. Bản trước làm cả ba: lấy RTT thật rồi cộng offset cứng
+    /// theo tên node (tw01 +32, tw02 +35, hkg01 +42...) cộng Random 0-2ms, và
+    /// nhánh catch trả về 36/47/58 + Random. Hệ quả: thứ tự "Taiwan tốt hơn HK
+    /// tốt hơn SIN" là do hằng số viết cứng, không phải kết quả đo — trong khi
+    /// đo thật thì cả 4 endpoint đều ~48-50ms vì đều là anycast Cloudflare và
+    /// cùng về một PoP (đo được: colo=SIN cho mọi endpoint từ ISP Việt Nam).
+    ///
+    /// LƯU Ý VỀ Ý NGHĨA: đây là RTT tới EDGE Cloudflare, KHÔNG phải ping tới
+    /// server game. Đừng dùng giá trị này làm "ping game" (xem PingMonitorService).
+    /// </summary>
     public static async Task<int> PingNodeAsync(GameNode node)
     {
-        if (node.IsAuto) return 35; // Will be set to best non-auto ping
+        if (string.IsNullOrWhiteSpace(node.EndpointIp)) return -1;
 
         try
         {
-            // Đo trễ thực tế bằng System.Net.NetworkInformation.Ping (ICMP)
             using var ping = new System.Net.NetworkInformation.Ping();
             var reply = await ping.SendPingAsync(node.EndpointIp, 1200);
-
-            int baseLatency = 0;
-            if (reply.Status == System.Net.NetworkInformation.IPStatus.Success)
-            {
-                baseLatency = (int)reply.RoundtripTime;
-            }
-
-            // Tính toán End-to-End Latency thực tế dựa trên tuyến cáp tới khu vực game (Taiwan / HK / Singapore)
-            int rtt = node.Id switch
-            {
-                var id when id.Contains("tw01") => Math.Max(35, baseLatency + 32),
-                var id when id.Contains("tw02") => Math.Max(38, baseLatency + 35),
-                var id when id.Contains("tw03") => Math.Max(41, baseLatency + 38),
-                var id when id.Contains("hkg01") => Math.Max(46, baseLatency + 42),
-                var id when id.Contains("hkg02") => Math.Max(49, baseLatency + 45),
-                var id when id.Contains("sin01") => Math.Max(56, baseLatency + 52),
-                _ => Math.Max(36, baseLatency + 33)
-            };
-
-            // Thêm chút jitter ngẫu nhiên nhỏ (1-3ms) mô phỏng kết nối mạng thực tế
-            int jitter = Random.Shared.Next(0, 3);
-            return rtt + jitter;
+            return reply.Status == System.Net.NetworkInformation.IPStatus.Success
+                 ? (int)reply.RoundtripTime
+                 : -1;
         }
         catch
         {
-            // Trả về ping mặc định thực tế nếu ICMP bị firewall chặn
-            return node.Id switch
-            {
-                var id when id.Contains("tw")  => 36 + Random.Shared.Next(0, 4),
-                var id when id.Contains("hkg") => 47 + Random.Shared.Next(0, 4),
-                var id when id.Contains("sin") => 58 + Random.Shared.Next(0, 4),
-                _ => 36
-            };
+            return -1;
         }
     }
 
@@ -148,8 +166,10 @@ public class CloudflareNodeService
         var autoNode = nodes.FirstOrDefault(n => n.IsAuto);
         if (autoNode != null)
         {
-            int best = nodes.Where(x => !x.IsAuto).Min(x => x.PingMs);
-            autoNode.PingMs = best;
+            // Chỉ xét node ĐO ĐƯỢC (PingMs >= 0). Trước đây Min() lấy cả -1 nên
+            // node lỗi lại thành "tốt nhất".
+            var measured = nodes.Where(x => !x.IsAuto && x.PingMs >= 0).ToList();
+            autoNode.PingMs = measured.Count > 0 ? measured.Min(x => x.PingMs) : -1;
         }
     }
 

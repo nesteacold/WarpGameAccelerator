@@ -119,6 +119,29 @@ public class GameProfileService
         Save();
     }
 
+    /// <summary>
+    /// Xoá một custom profile. KHÔNG xoá được profile built-in — chúng không nằm trong
+    /// custom_profiles.json nên Save() sẽ không ghi lại việc xoá, và lần Load() sau
+    /// chúng quay lại; xoá kiểu đó chỉ tạo ra sự khác biệt tạm thời gây nhầm lẫn.
+    /// Trả về true nếu thực sự đã xoá.
+    /// </summary>
+    public bool RemoveCustom(GameProfile profile)
+    {
+        if (profile == null || !profile.IsCustom) return false;
+
+        // So khớp theo tham chiếu trước; nếu không có (ví dụ object đến từ deserialize
+        // khác) thì so theo tên + danh sách exe.
+        var target = _allProfiles.FirstOrDefault(p => ReferenceEquals(p, profile))
+                  ?? _allProfiles.FirstOrDefault(p => p.IsCustom
+                        && p.Name.Equals(profile.Name, StringComparison.OrdinalIgnoreCase)
+                        && p.ExecutablesJoined.Equals(profile.ExecutablesJoined, StringComparison.OrdinalIgnoreCase));
+        if (target == null) return false;
+
+        _allProfiles.Remove(target);
+        Save();
+        return true;
+    }
+
     // ── Persistence ──────────────────────────────────────────────────────────
 
     private void Load()

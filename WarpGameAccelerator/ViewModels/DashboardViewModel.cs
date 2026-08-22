@@ -49,6 +49,14 @@ public partial class DashboardViewModel : ObservableObject
     // XAML, không phản ánh trạng thái tài khoản thật (khác biệt với WarpAccountPage
     // đã bind đúng). Cập nhật thật sau mỗi lần Boost thành công.
     [ObservableProperty] private string _routeTierText = "—";
+
+    // Trang thai THAT cua duong toi server game, suy ra tu log dial cua mihomo
+    // (MihomoService.LastGameDialFailureUtc). Day la thay the cho o PING cu —
+    // o do lay so tu PingNodeAsync (RTT edge + hang so theo nhan node) nen no
+    // hien binh thuong ngay ca khi moi ket noi toi server game dang timeout.
+    [ObservableProperty] private string _gameLinkText = "—";
+    [ObservableProperty] private Microsoft.UI.Xaml.Media.SolidColorBrush _gameLinkBrush =
+        new(Microsoft.UI.ColorHelper.FromArgb(255, 200, 200, 200));
     [ObservableProperty] private Microsoft.UI.Xaml.Media.SolidColorBrush _routeTierBrush =
         new(Microsoft.UI.ColorHelper.FromArgb(255, 200, 200, 200));
 
@@ -65,9 +73,13 @@ public partial class DashboardViewModel : ObservableObject
         CurrentState is AppState.Idle or AppState.Connected or AppState.Error;
 
     // ── Display string properties (XAML-friendly, avoid complex converter chains) ──
-    public string PingDisplay      => CurrentPingMs > 0   ? $"{CurrentPingMs} ms" : "-- ms";
+    // -1 = KHONG do duoc (khong phai 0). Xem GameLinkText de biet duong toi
+    // server game co dang loi hay khong — do moi la thong tin quyet dinh.
+    // O the rong 1/3 man hinh, chuoi dai o FontSize 22 bi cat ("khong do d..."),
+    // nen trang thai khong do duoc dung dau gach ngang; ly do nam o caption + ToolTip.
+    public string PingDisplay      => CurrentPingMs > 0   ? $"{CurrentPingMs} ms" : "—";
     public string BaselineDisplay  => BaselinePingMs > 0  ? $"{BaselinePingMs} ms" : "-- ms";
-    public string LossDisplay      => $"{PacketLossPercent:F1} %";
+    public string LossDisplay      => PacketLossPercent < 0 ? "—" : $"{PacketLossPercent:F1} %";
 
     /// <summary>Tên hiển thị thân thiện: dùng tên Game Profile nếu có, không thì dùng tên exe thô</summary>
     public string GameDisplayName  => _selectedProfile?.Name ?? (string.IsNullOrEmpty(SelectedProcessName) ? _loc.DashNoGameSelected : SelectedProcessName);
@@ -174,16 +186,13 @@ public partial class DashboardViewModel : ObservableObject
 
         EngineMode engineMode = SettingsViewModel.LoadEngineMode();
 
-        // Lấy Node được chọn để đo ping thực tế khớp 100% với Node Dialog
-        var selectedNode = CloudflareNodeService.GetSelectedNode();
-        if (selectedNode != null && !string.IsNullOrEmpty(selectedNode.EndpointIp))
-        {
-            _pingMonitor.SetTarget(selectedNode.EndpointIp);
-        }
-        else
-        {
-            _pingMonitor.SetTarget("162.159.192.1");
-        }
+        // Đích đo ping = endpoint của tunnel theo engine mode đang dùng. Phải là IP nằm
+        // trong inet4-route-exclude-address, nếu không ICMP sẽ đi qua TUN và bị mihomo
+        // GIẢ LẬP (số vô nghĩa) — xem CLAUDE.md mục chẩn đoán.
+        // LEGACY: trước đây lấy từ CloudflareNodeService.GetSelectedNode() (đã bỏ).
+        _pingMonitor.SetTarget(engineMode == EngineMode.DirectMasqueBeta
+            ? "162.159.198.2"     // endpoint MASQUE (API khai: config.peers[0].endpoint.v4)
+            : "162.159.192.1");   // endpoint WireGuard
 
         var exesToBoost = _selectedProfile?.ExecutablesJoined ?? SelectedProcessName;
         if (string.IsNullOrWhiteSpace(exesToBoost)) exesToBoost = "fxgame";
@@ -283,8 +292,9 @@ public partial class DashboardViewModel : ObservableObject
         await _warpService.DisconnectAsync();
 
         CurrentState = AppState.Idle;
-        CurrentPingMs = 0;
-        PacketLossPercent = 0;
+        // -1 = "khong do duoc" (khong phai 0 ms / 0% — hai so do co nghia khac han).
+        CurrentPingMs = -1;
+        PacketLossPercent = -1;
         SaveBoostState();
         BoostStopped?.Invoke();
     }
@@ -305,14 +315,55 @@ public partial class DashboardViewModel : ObservableObject
         SaveBoostState();
     }
 
+    /// <summary>
+    /// RTT/loss o day la tinh TOI EDGE WARP. Chi dang tin khi endpoint cua mode
+    /// dang dung NAM TRONG inet4-route-exclude-address — luc do ICMP toi no di
+    /// truc tiep ra NIC vat ly.
+    ///   - DirectWireGuard  : endpoint 162.159.192.1 duoc loai tru  => DO DUOC
+    ///   - DirectMasqueBeta : endpoint 162.159.198.2 duoc loai tru  => DO DUOC
+    ///   - WarpClientProxy  : KHONG co endpoint nao duoc loai tru   => ICMP di qua
+    ///     TUN va bi mihomo GIA LAP, so vo nghia => hien "không đo được".
+    /// SUA 2026-08-22: truoc day chi cho DirectWireGuard, nen sau khi MASQUE thanh
+    /// mode mac dinh thi ca 3 o (PING/LOSS/HISTORY) deu tro thanh "—" oan.
+    /// </summary>
     private void OnPingUpdated(object? sender, PingStats stats)
     {
+        var mode = SettingsViewModel.LoadEngineMode();
+        bool edgeMeasurable = mode == Models.EngineMode.DirectWireGuard
+                           || mode == Models.EngineMode.DirectMasqueBeta;
+
+        // Coi la "dang loi" neu mihomo bao dial that bai trong 15 giay gan nhat.
+        // Nguong nay co y de ngan: mot client retry cung sinh loi, nen day la
+        // "co loi ket noi", KHONG phai ket luan tunnel da chet.
+        var lastFail = _mihomoService.LastGameDialFailureUtc;
+        bool recentFail = lastFail.HasValue &&
+                          (DateTime.UtcNow - lastFail.Value) < TimeSpan.FromSeconds(15);
+
         _dispatcher.TryEnqueue(() =>
         {
-            CurrentPingMs     = stats.CurrentPingMs;
+            CurrentPingMs     = edgeMeasurable ? stats.CurrentPingMs : -1;
             BaselinePingMs    = stats.BaselinePingMs;
-            PacketLossPercent = stats.PacketLossPercent;
-            PingHistory       = new List<long>(_pingMonitor.PingHistory);
+            PacketLossPercent = edgeMeasurable ? stats.PacketLossPercent : -1;
+            // Khong ve do thi tu so bi gia lap: cung ly do voi CurrentPingMs o tren.
+            PingHistory       = edgeMeasurable
+                              ? new List<long>(_pingMonitor.PingHistory)
+                              : new List<long>();
+
+            if (CurrentState != AppState.Connected)
+            {
+                GameLinkText  = "—";
+                GameLinkBrush = new(Microsoft.UI.ColorHelper.FromArgb(255, 200, 200, 200));
+            }
+            else if (recentFail)
+            {
+                GameLinkText  = "SERVER GAME: có lỗi kết nối";
+                GameLinkBrush = new(Microsoft.UI.ColorHelper.FromArgb(255, 255, 120, 120));
+            }
+            else
+            {
+                GameLinkText  = "SERVER GAME: bình thường";
+                GameLinkBrush = new(Microsoft.UI.ColorHelper.FromArgb(255, 120, 220, 140));
+            }
         });
     }
 

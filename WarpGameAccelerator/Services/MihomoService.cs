@@ -10,7 +10,17 @@ namespace WarpGameAccelerator.Services;
 public class MihomoService
 {
     // IP anycast Cloudflare cho consumer-masque.cloudflareclient.com — dùng khi resolver
-    // hệ thống không trả bản ghi A (fallback, không phải giá trị chính).
+    // hệ thống không trả bản ghi A (thực tế 2026-08-22: hostname này KHÔNG có bản ghi A,
+    // nên fallback này LUÔN được dùng).
+    //
+    // ĐÍNH CHÍNH (2026-08-22): từng đổi thành 162.159.197.4 vì đọc sai
+    // `policy.always_include` thành endpoint. SAI — always_include là danh sách IP mà
+    // chính sách buộc đi qua tunnel, KHÔNG phải nơi để kết nối tới.
+    // Endpoint thật do API khai ở `config.peers[0].endpoint.v4` = "162.159.198.2:0"
+    // (kèm ports 443,500,1701,4500,4443,8443,8095). Nên 198.2 là ĐÚNG.
+    //
+    // Hằng số này giờ chỉ là DỰ PHÒNG cuối: đường chính là WarpMasqueAccountInfo.ServerIp
+    // đọc từ API, nên Cloudflare đổi hạ tầng thì app tự cập nhật.
     private const string MasqueFallbackIp = "162.159.198.2";
 
     /// <summary>
@@ -23,6 +33,26 @@ public class MihomoService
         "sqm.woniu.com",                    // telemetry
         "crashlogs.mobilegame.woniu.com"    // bugreport.exe
     ];
+
+    /// <summary>
+    /// Dải IP world server của game (nơi client vào map sau khi đăng nhập xong).
+    ///
+    /// Là lưới an toàn theo ĐÍCH, phát ra TRƯỚC mọi rule PROCESS-NAME (mihomo lấy
+    /// rule khớp đầu tiên) nên nhóm này vào tunnel được kể cả khi mihomo không
+    /// attribute được tiến trình. Đích vẫn là proxy — KHÔNG phải DIRECT: IP Việt
+    /// Nam bị server game chặn nên đi thẳng sẽ không đăng nhập được.
+    ///
+    /// GIỮ LẠI theo yêu cầu người dùng (2026-08-21) dù thí nghiệm đi kèm nó
+    /// (find-process-mode: strict) đã bị revert vì không cải thiện.
+    ///
+    /// ĐÍNH CHÍNH (2026-08-22): ban đầu tưởng rule này làm log mất tên tiến trình
+    /// — SAI. Đo được 'dial WARP-Masque (match IPCIDR/103.197.172.0/24)
+    /// 198.18.0.1:1622(fxgame.exe)' ⇒ attribution vẫn có khi khớp bằng IP-CIDR.
+    /// Tên tiến trình xuất hiện khi mihomo TRA ĐƯỢC tiến trình, không phụ thuộc
+    /// rule nào khớp. Probe bằng 'curl -Z' thường không tra được vì tiến trình
+    /// quá ngắn — khi đó nhận diện bằng dải cổng nguồn ('198.18.0.1:&lt;port&gt;').
+    /// </summary>
+    private const string GameWorldServerCidr = "103.197.172.0/24";
 
     /// <summary>
     /// IP được cố ý loại khỏi route TUN để làm **đường đối chứng** khi chẩn đoán
@@ -39,6 +69,37 @@ public class MihomoService
     /// Đây là công cụ chẩn đoán — xoá được sau khi điều tra xong.
     /// </summary>
     private static readonly string[] DiagnosticBypassIps = ["8.8.8.8/32"];
+
+    /// <summary>
+    /// Cờ THỬ NGHIỆM: đưa dải world server Taiwan (<see cref="GameWorldServerCidr"/>)
+    /// ra ĐI THẲNG (không qua tunnel) thay vì qua proxy.
+    ///
+    /// Bật/tắt bằng cách tạo/xoá file <c>Data\world_direct.flag</c> rồi Stop/Start
+    /// Boost — KHÔNG cần build lại, để A/B qua lại được nhiều lần.
+    ///
+    /// GIẢ THUYẾT đang kiểm (2026-08-22): server game chặn IP Việt Nam ở khâu
+    /// ĐĂNG NHẬP (các server Bắc Kinh), còn world server Taiwan chỉ nhận token và
+    /// KHÔNG kiểm lại IP. Nếu đúng thì cấu hình này thắng cả hai mặt:
+    ///   - Độ trễ: VN→Taiwan đi thẳng ~35-45ms thay vì ~80-85ms qua Cloudflare SIN
+    ///     (đo được: RTT tới edge SIN 48-50ms + chặng SIN→Taiwan ~32-37ms).
+    ///   - Ổn định: bỏ hẳn chặng Cloudflare→Taiwan — chặng DUY NHẤT bị lỗi trong
+    ///     2 ngày điều tra (DIRECT 0 lỗi/590 mẫu, qua tunnel 3-49% tuỳ giờ).
+    ///
+    /// RỦI RO: nếu world server CÓ kiểm IP (hoặc buộc session cùng IP với lúc
+    /// login) thì sẽ không vào được map. Probe TCP KHÔNG phân biệt được hai
+    /// trường hợp này vì server drop im lặng — chỉ vào game thật mới biết.
+    /// </summary>
+    private static bool IsWorldServerDirect()
+    {
+        try
+        {
+            var flag = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WarpGameAccelerator", "Data", "world_direct.flag");
+            return System.IO.File.Exists(flag);
+        }
+        catch { return false; }
+    }
 
     private GracefulProcessLauncher.LaunchedProcess? _launched;
     private CancellationTokenSource? _activeStartCts;
@@ -78,13 +139,87 @@ public class MihomoService
     // rủi ro tự kill tunnel của tất cả client. KHÔNG thêm lại cơ chế tự
     // restart nếu không có cách phân biệt chắc chắn "tunnel chết toàn cục" vs
     // "một tiến trình đang retry" (mihomo hiện không cung cấp tín hiệu đó).
-    private const string WarpDialFailureMarker = "dial WARP-Direct";
+    // Bao ca 2 ten outbound: "WARP-Direct" (Direct WireGuard) va "WARP_OUT"
+    // (WARP Client Proxy). Ban truoc chi match "dial WARP-Direct" nen o che do
+    // Tuong Thich thi bo sot 100% loi dial.
+    private const string WarpDialFailureMarker = "dial WARP";
     private const int DialFailureLogThreshold = 20;
     private static readonly TimeSpan DialFailureWindow = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan DialFailureLogCooldown = TimeSpan.FromMinutes(5);
     private readonly Queue<DateTime> _recentDialFailures = new();
     private DateTime _lastDialFailureLogUtc = DateTime.MinValue;
     private readonly object _interfaceChangeLock = new();
+
+    // ── Tín hiệu "đường tới server game có đang lỗi không" ──
+    //
+    // Dashboard cần một tín hiệu THẬT về đường tới server game. Trước đây ô
+    // PING lấy số từ CloudflareNodeService.PingNodeAsync (RTT tới edge cộng
+    // hằng số theo nhãn node), nên nó vẫn hiển thị bình thường ngay cả khi
+    // mọi kết nối tới server game đang timeout — đúng triệu chứng đã ghi
+    // trong CLAUDE.md: "ping/loss trong app vẫn báo bình thường".
+    //
+    // mihomo KHÔNG log kết nối thành công, chỉ log thất bại. Nên tín hiệu này
+    // là "có lỗi dial gần đây hay không", KHÔNG phải "tunnel đã chết": một
+    // client retry cũng sinh lỗi trong khi các client khác vẫn chơi bình
+    // thường. Vì vậy UI phải diễn đạt là "có lỗi kết nối", đừng khẳng định
+    // mất hẳn (đã trả giá cho suy luận đó khi tự restart mihomo, xem trên).
+    private long _lastGameDialFailureTicks;
+
+    /// <summary>
+    /// Thời điểm (UTC) gần nhất mihomo báo dial THẤT BẠI tới một đích công
+    /// cộng qua outbound tunnel. null = chưa ghi nhận lần nào trong phiên này.
+    /// </summary>
+    public DateTime? LastGameDialFailureUtc
+    {
+        get
+        {
+            long t = Interlocked.Read(ref _lastGameDialFailureTicks);
+            return t == 0 ? null : new DateTime(t, DateTimeKind.Utc);
+        }
+    }
+
+    /// <summary>
+    /// IP server game resolve được ở lần sinh config gần nhất (xem
+    /// <see cref="BuildGameServerIpRulesAsync"/>). Dùng để nhận diện dial thất bại
+    /// nào là "tới server game", không phải mọi dial thất bại qua tunnel.
+    /// </summary>
+    private static volatile string[] _gameServerIps = [];
+
+    /// <summary>
+    /// Chỉ tính dial thất bại có đích LÀ SERVER GAME.
+    ///
+    /// SỬA 2026-08-22: bản trước chỉ loại đích LAN/loopback rồi coi MỌI đích công
+    /// cộng là "lỗi server game". Hệ quả: profile custom chứa trình duyệt (vd
+    /// msedge.exe) làm đèn "SERVER GAME" bật đỏ liên tục, vì trình duyệt luôn có
+    /// vài kết nối thất bại (quảng cáo/telemetry/host bị chặn/IPv6 literal) —
+    /// trong khi game hoàn toàn bình thường. Nhãn nói "SERVER GAME" thì tín hiệu
+    /// phải đúng là server game, không phải "có gì đó trong tunnel bị lỗi".
+    ///
+    /// Nhận diện theo 3 nhóm: dải world server, hostname của hãng game (log có thể
+    /// ghi hostname vì DNS dùng redir-host), và các IP resolve được lúc sinh config.
+    /// </summary>
+    private static bool IsGameServerFailure(string line)
+    {
+        if (!line.Contains("error:", StringComparison.Ordinal)) return false;
+
+        int arrow = line.IndexOf("--> ", StringComparison.Ordinal);
+        if (arrow < 0) return false;
+        string dest = line.Substring(arrow + 4);
+
+        // 1) Dải world server (Taiwan) — nhóm hay lỗi nhất.
+        if (dest.StartsWith("103.197.172.", StringComparison.Ordinal)) return true;
+
+        // 2) Hostname của hãng game.
+        foreach (var host in GameServerHosts)
+            if (dest.Contains(host, StringComparison.OrdinalIgnoreCase)) return true;
+
+        // 3) IP đã resolve lúc sinh config (auth/patch/telemetry).
+        var ips = _gameServerIps;
+        foreach (var ip in ips)
+            if (dest.StartsWith(ip, StringComparison.Ordinal)) return true;
+
+        return false;
+    }
 
     public MihomoService()
     {
@@ -282,16 +417,15 @@ public class MihomoService
         {
             // Chế độ Siêu Tốc (Direct Mode Cloudflare WARP WireGuard)
             var acc = await WarpAccountService.GetOrCreateAccountAsync();
-            var selectedNode = CloudflareNodeService.GetSelectedNode();
+            // LEGACY (2026-08-22): trước đây đọc CloudflareNodeService.GetSelectedNode()
+            // để lấy endpoint theo "node" người dùng chọn. Đã bỏ — chọn node theo vùng là
+            // bất khả thi (anycast), và một file selected_node.json cũ còn sót sẽ ép một
+            // endpoint tuỳ ý, có thể là endpoint KHÔNG hoạt động (đã đo: 162.159.193.1
+            // không lên). Nay luôn dùng endpoint do chính tài khoản/Cloudflare cấp.
             string host = "162.159.192.1";
             int port = 2408;
 
-            if (selectedNode != null && !selectedNode.IsAuto && !string.IsNullOrEmpty(selectedNode.EndpointIp))
-            {
-                host = selectedNode.EndpointIp;
-                port = selectedNode.Port;
-            }
-            else if (!string.IsNullOrEmpty(acc.Endpoint))
+            if (!string.IsNullOrEmpty(acc.Endpoint))
             {
                 // Dùng endpoint thật từ tài khoản (wgcf trả về host dạng
                 // "engage.cloudflareclient.com:2408" hoặc "IP:port")
@@ -303,6 +437,30 @@ public class MihomoService
                         port = parsedPort;
                 }
             }
+            // Endpoint tu tai khoan la HOSTNAME ("engage.cloudflareclient.com:2408").
+            // Phai resolve ra IP THUAN truoc khi ghi config, vi 2 ly do:
+            //  (1) mihomo tu resolve field "server" bang resolver rieng cua no (khong qua
+            //      DNS cua app) — hostname co the fail AM THAM, dial luon
+            //      "context deadline exceeded" du server song. Da gap dung loi nay o
+            //      nhanh MASQUE va Personal-WG.
+            //  (2) inet4-route-exclude-address CHI nhan IP thuan. Neu de hostname thi
+            //      endpoint KHONG duoc loai khoi route TUN, va ping tới edge tren
+            //      Dashboard se bi mihomo GIA LAP (so vo nghia).
+            // WireGuard khong co TLS/SNI nen khong can giu lai hostname goc.
+            if (!System.Net.IPAddress.TryParse(host, out _))
+            {
+                try
+                {
+                    var eps = await System.Net.Dns.GetHostAddressesAsync(host);
+                    var v4 = eps.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                    host = v4 != null ? v4.ToString() : "162.159.192.1";
+                }
+                catch
+                {
+                    host = "162.159.192.1";
+                }
+            }
+
             byte[] clientBytes = ExtractClientBytes(acc.ClientId);
 
             // KHÔNG ghi đè cứng port ở đây — dùng đúng port của node người dùng
@@ -361,8 +519,12 @@ public class MihomoService
             // dùng IP thô cho "server" (không phải hostname) — áp dụng lại quy tắc đó ở đây:
             // resolve hostname ra IP thật, giữ hostname gốc ở field "sni" để TLS ClientHello
             // vẫn đúng.
-            string masqueServerIp = masqueAcc.Server;
-            if (!System.Net.IPAddress.TryParse(masqueAcc.Server, out _))
+            // Ưu tiên IP do API khai (ServerIp). Chỉ khi rỗng mới thử resolve hostname
+            // — mà hostname này không có bản ghi A nên gần như luôn rơi về hằng số.
+            string masqueServerIp = !string.IsNullOrEmpty(masqueAcc.ServerIp)
+                                  ? masqueAcc.ServerIp
+                                  : masqueAcc.Server;
+            if (!System.Net.IPAddress.TryParse(masqueServerIp, out _))
             {
                 try
                 {
@@ -471,6 +633,10 @@ public class MihomoService
 
         // Dựng khối inet4-route-exclude-address từ danh sách đã thu (endpoint
         // WARP/MASQUE + IP đối chứng chẩn đoán). Phải là raw IP, không hostname.
+        // Khi thử world-direct: loại dải này khỏi route TUN luôn, để traffic KHÔNG
+        // vào mihomo chút nào. Nhờ đó dùng stack TCP của OS (có retransmit SYN, thứ
+        // mà dial của mihomo không có) và RTT tới server game đo được thật.
+        if (IsWorldServerDirect()) excludeIps.Add(GameWorldServerCidr);
         excludeIps.AddRange(DiagnosticBypassIps);
         string excludeRoute = excludeIps.Count > 0
             ? "\n  inet4-route-exclude-address:" + string.Concat(excludeIps.Select(ip => $"\n    - {ip}"))
@@ -537,11 +703,20 @@ log-level: warning
 # KHÔNG dùng luật DOMAIN-SUFFIX để vá, vì như vậy mọi ứng dụng (kể cả trình
 # duyệt) truy cập domain đó đều bị kéo qua tunnel, ăn vào băng thông WARP+.
 #
-# ĐÃ THỬ 'strict' (điều tra treo datapath) và ĐÃ REVERT: nó KHÔNG giảm treo
-# (tunnel vẫn 'context deadline exceeded'), nên không có lý do gì để đánh đổi
-# rủi ro rò rỉ ở trên. Nguyên nhân treo thật là Hyper-V — đừng thử lại 'strict'
-# trừ khi có triệu chứng MỚI chỉ đúng vào process-detection.
-# (xem mục 'Hyper-V xung đột với TUN' trong CLAUDE.md)
+# ĐÃ THỬ 'strict' 2 LẦN, ĐỀU REVERT — đừng thử lần thứ ba:
+#  (1) Trong lúc điều tra treo datapath: không giảm treo (tunnel vẫn
+#      'context deadline exceeded'). Nguyên nhân treo thật là Hyper-V.
+#  (2) 2026-08-21, thử 'strict' KÈM rule IP-CIDR cho dải world server
+#      103.197.172.0/24 (đặt trước các PROCESS-NAME) để nhóm hay lỗi nhất khỏi
+#      phải tra bảng tiến trình. Giả thuyết: 'always' tra bảng TCP cho MỌI kết
+#      nối, chi phí tăng theo số kết nối đang mở (5 client giữ hàng trăm), nên
+#      dial hết deadline. KẾT QUẢ: KHÔNG cải thiện — người dùng vẫn mất kết nối,
+#      log vẫn 42 lỗi 'dial WARP-Direct (match IPCIDR/...)' trong cửa sổ đo.
+#      Đã revert 'strict' về 'always'. Rule IP-CIDR cho dải world server thì
+#      GIỮ LẠI theo yêu cầu người dùng — nó vô hại về routing (vẫn qua tunnel) và
+#      vẫn là lưới an toàn khi không attribute được tiến trình; đánh đổi là log
+#      mất tên tiến trình cho nhóm đó (xem GameWorldServerCidr). (Ghi chú: 'strict' lần này KHÔNG gây rò rỉ —
+#      chỉ 6 dòng 'match Match/' và đều là chrome.exe, không phải traffic game.)
 find-process-mode: always
 {dnsAndTunConfig}
 
@@ -643,13 +818,28 @@ rules:
             }
         }
 
-        if (ips.Count == 0) return "";
-
         var sb = new StringBuilder();
-        sb.AppendLine("  # Lưới an toàn: IP server game — cứu các kết nối mihomo không");
-        sb.AppendLine("  # attribute được tiến trình (xem BuildGameServerIpRulesAsync).");
-        foreach (var ip in ips)
-            sb.AppendLine($"  - IP-CIDR,{ip}/32,{proxyName}");
+
+        // Dải world server: rule TĨNH, luôn phát ra dù DNS lỗi (xem GameWorldServerCidr).
+        // Đích tuỳ cờ world_direct.flag — xem IsWorldServerDirect().
+        bool worldDirect = IsWorldServerDirect();
+        string worldTarget = worldDirect ? "DIRECT" : proxyName;
+        sb.AppendLine(worldDirect
+            ? "  # THU NGHIEM: world server di THANG (khong qua tunnel) — world_direct.flag"
+            : "  # Lưới an toàn theo đích: dải world server (vào map)");
+        sb.AppendLine($"  - IP-CIDR,{GameWorldServerCidr},{worldTarget}");
+
+        // Ghi nhớ để IsGameServerFailure() biết đâu là đích của server game.
+        _gameServerIps = [.. ips];
+
+        if (ips.Count > 0)
+        {
+            sb.AppendLine("  # Lưới an toàn: IP server game — cứu các kết nối mihomo không");
+            sb.AppendLine("  # attribute được tiến trình (xem BuildGameServerIpRulesAsync).");
+            foreach (var ip in ips)
+                sb.AppendLine($"  - IP-CIDR,{ip}/32,{proxyName}");
+        }
+
         return sb.ToString();
     }
 
@@ -747,6 +937,9 @@ rules:
     private void OnMihomoLogLine(string line)
     {
         if (!line.Contains(WarpDialFailureMarker, StringComparison.Ordinal)) return;
+
+        if (IsGameServerFailure(line))
+            Interlocked.Exchange(ref _lastGameDialFailureTicks, DateTime.UtcNow.Ticks);
 
         lock (_interfaceChangeLock)
         {

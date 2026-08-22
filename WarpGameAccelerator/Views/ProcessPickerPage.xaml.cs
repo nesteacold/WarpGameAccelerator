@@ -86,6 +86,113 @@ public sealed partial class ProcessPickerPage : Page
         }
     }
 
+    /// <summary>
+    /// Tạo profile custom gồm NHIỀU tiến trình. Không viết dialog mới — dùng lại
+    /// <see cref="MultiProcessPickerDialog"/> (vốn đã phục vụ Kênh VPN cá nhân),
+    /// rồi hỏi tên và lưu qua <see cref="GameProfileService.AddCustom"/> (đã tự
+    /// persist ra Data\custom_profiles.json).
+    /// </summary>
+    private async void NewProfileBtn_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        try
+        {
+            var processService = App.Services.GetRequiredService<ProcessService>();
+            var picker = new MultiProcessPickerDialog(processService, System.Array.Empty<string>())
+            {
+                XamlRoot = Content.XamlRoot
+            };
+            if (await picker.ShowAsync() != ContentDialogResult.Primary) return;
+
+            var selected = picker.GetSelectedProcessNames();
+            if (selected.Count == 0) return;
+
+            // Hỏi tên. Gợi ý sẵn tên tiến trình đầu để không phải gõ từ đầu.
+            var nameBox = new TextBox
+            {
+                PlaceholderText = Loc.PickerNewProfileHint,
+                Text = System.IO.Path.GetFileNameWithoutExtension(selected[0])
+            };
+            var nameDialog = new ContentDialog
+            {
+                Title             = Loc.PickerNewProfileTitle,
+                Content           = nameBox,
+                PrimaryButtonText = Loc.PickerBtnSelect,
+                CloseButtonText   = Loc.ExitBtnCancel,
+                DefaultButton     = ContentDialogButton.Primary,
+                XamlRoot          = Content.XamlRoot
+            };
+            if (await nameDialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+            var profileName = nameBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(profileName)) profileName = selected[0];
+
+            var profileService = App.Services.GetRequiredService<GameProfileService>();
+            var profile = new GameProfile
+            {
+                Name        = profileName,
+                IconGlyph   = "\uE7FC",
+                IsCustom    = true,
+                Executables = selected
+            };
+            profileService.AddCustom(profile);
+
+            // Chọn luôn profile vừa tạo rồi quay lại Dashboard — cùng luồng với
+            // việc bấm vào một profile có sẵn.
+            OnProfileConfirmed(profile);
+        }
+        catch (System.Exception ex)
+        {
+            // async void: KHÔNG được để exception thoát ra — sẽ kill cả process và
+            // không handler nào bắt được (xem CLAUDE.md mục Process lifecycle).
+            DiagnosticLogService.Trace($"[ProcessPicker] Tạo profile custom lỗi: {ex.Message}");
+            CrashReportService.RecordCrash(ex, "NewProfileBtn_Click");
+        }
+    }
+
+    /// <summary>
+    /// Xoá profile custom. Nút này chỉ hiện với IsCustom == true (Visibility bind
+    /// thẳng vào IsCustom trong DataTemplate), nên built-in không bao giờ xoá được.
+    /// </summary>
+    private async void DeleteProfileBtn_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is not Button btn || btn.Tag is not GameProfile profile) return;
+
+            var confirm = new ContentDialog
+            {
+                Title             = Loc.PickerDeleteProfileTitle,
+                Content           = $"{profile.Name}\n\n{profile.ExecutablesJoined}",
+                PrimaryButtonText = Loc.PickerDeleteProfileYes,
+                CloseButtonText   = Loc.ExitBtnCancel,
+                DefaultButton     = ContentDialogButton.Close,
+                XamlRoot          = Content.XamlRoot
+            };
+            if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+
+            var profileService = App.Services.GetRequiredService<GameProfileService>();
+            if (!profileService.RemoveCustom(profile)) return;
+
+            // Danh sách là IReadOnlyList thường -> phải bắn PropertyChanged tay.
+            ViewModel.NotifyProfilesChanged();
+
+            // Nếu đang chọn đúng profile vừa xoá thì Dashboard sẽ trỏ vào một profile
+            // không còn tồn tại. Chuyển về profile đầu tiên còn lại cho khỏi treo trạng thái.
+            var dashVm = App.Services.GetRequiredService<DashboardViewModel>();
+            if (dashVm.GameDisplayName == profile.Name)
+            {
+                var fallback = profileService.All.FirstOrDefault();
+                if (fallback != null) dashVm.SetSelectedProfile(fallback);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            // async void: exception thoát ra sẽ kill process (xem CLAUDE.md).
+            DiagnosticLogService.Trace($"[ProcessPicker] Xoá profile lỗi: {ex.Message}");
+            CrashReportService.RecordCrash(ex, "DeleteProfileBtn_Click");
+        }
+    }
+
     private void OnProfileConfirmed(GameProfile profile)
     {
         var dashVm = App.Services.GetRequiredService<DashboardViewModel>();

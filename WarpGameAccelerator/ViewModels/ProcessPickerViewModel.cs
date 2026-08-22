@@ -22,6 +22,13 @@ public partial class ProcessPickerViewModel : ObservableObject
     /// <summary>Danh sách game profiles built-in + custom để hiển thị ở tab "Game đã biết"</summary>
     public IReadOnlyList<GameProfile> GameProfiles => _profileService.All;
 
+    /// <summary>
+    /// Bắn PropertyChanged cho <see cref="GameProfiles"/>. Cần gọi sau khi thêm/xoá
+    /// profile: property này trả về IReadOnlyList thường (không phải
+    /// ObservableCollection) nên x:Bind KHÔNG tự biết là danh sách đã đổi.
+    /// </summary>
+    public void NotifyProfilesChanged() => OnPropertyChanged(nameof(GameProfiles));
+
     public event Action<GameProcess>? ProcessConfirmed;
     public event Action<GameProfile>? ProfileConfirmed;
     public event Action? BrowseRequested;

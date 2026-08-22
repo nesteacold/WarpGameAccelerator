@@ -243,7 +243,10 @@ public partial class SettingsViewModel : ObservableObject
             }
         }
         catch { }
-        return WarpGameAccelerator.Models.EngineMode.DirectWireGuard; // Default
+        // Mặc định MASQUE (đổi 2026-08-22): trên mạng đo được, WireGuard/UDP 2408
+        // mất kết nối theo cửa sổ vài phút còn MASQUE/443 thì không — xem CLAUDE.md
+        // mục "Ba engine mode". Người dùng vẫn đổi được sang 2 mode kia trong Settings.
+        return WarpGameAccelerator.Models.EngineMode.DirectMasqueBeta; // Default
     }
 
     private static void SaveEngineMode(WarpGameAccelerator.Models.EngineMode mode)

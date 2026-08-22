@@ -39,8 +39,19 @@
             <!-- ─ Tab 1: Game đã biết ─────────────────────────── -->
             <PivotItem Header="{x:Bind Loc.PickerTabProfiles, Mode=OneWay}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <StackPanel>
+                    <!-- Tạo profile custom nhiều tiến trình. Dùng lại
+                         MultiProcessPickerDialog (đã có sẵn cho Kênh VPN cá nhân). -->
+                    <Button x:Name="NewProfileBtn"
+                            Content="{x:Bind Loc.PickerBtnNewProfile, Mode=OneWay}"
+                            Click="NewProfileBtn_Click"
+                            HorizontalAlignment="Stretch"
+                            CornerRadius="12"
+                            Padding="16,12"
+                            FontSize="12"
+                            Margin="0,8,0,8"/>
                     <ItemsControl ItemsSource="{x:Bind ViewModel.GameProfiles, Mode=OneWay}"
-                                  Margin="0,8,0,0">
+                                  Margin="0,0,0,0">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:GameProfile">
                                 <Button HorizontalAlignment="Stretch"
@@ -79,17 +90,30 @@
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                         </StackPanel>
 
-                                        <!-- Arrow -->
-                                        <FontIcon Grid.Column="2"
-                                                  Glyph="&#xE76C;"
-                                                  FontSize="12"
-                                                  Opacity="0.5"
-                                                  VerticalAlignment="Center"/>
+                                        <!-- Xoá (chỉ profile custom) + mũi tên -->
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                    Spacing="4" VerticalAlignment="Center">
+                                            <Button Click="DeleteProfileBtn_Click"
+                                                    Tag="{x:Bind}"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Padding="8,6"
+                                                    CornerRadius="8"
+                                                    ToolTipService.ToolTip="Xoá profile này"
+                                                    Visibility="{x:Bind IsCustom, Converter={StaticResource BoolToVis}}">
+                                                <FontIcon Glyph="&#xE74D;" FontSize="13" Foreground="#E05252"/>
+                                            </Button>
+                                            <FontIcon Glyph="&#xE76C;"
+                                                      FontSize="12"
+                                                      Opacity="0.5"
+                                                      VerticalAlignment="Center"/>
+                                        </StackPanel>
                                     </Grid>
                                 </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                  </StackPanel>
                 </ScrollViewer>
             </PivotItem>
 
