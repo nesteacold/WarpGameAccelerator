@@ -16,6 +16,12 @@ public sealed partial class WarpAccountPage : Page
 {
     private readonly LocalizationService _loc;
 
+    /// <summary>
+    /// Trang này đang xem/tác động tài khoản MASQUE hay tài khoản WireGuard.
+    /// Quyết định theo engine mode lúc mở trang (xem <see cref="LoadAccountInfoAsync"/>).
+    /// </summary>
+    private bool _isMasqueAccount;
+
     public WarpAccountPage()
     {
         InitializeComponent();
@@ -23,38 +29,101 @@ public sealed partial class WarpAccountPage : Page
         _ = LoadAccountInfoAsync();
     }
 
+    /// <summary>
+    /// Nạp thông tin tài khoản ĐANG THỰC SỰ ĐƯỢC DÙNG, chọn theo engine mode.
+    ///
+    /// SỬA 2026-08-22: trước đây trang này luôn đọc tài khoản WireGuard
+    /// (warp_account.json). Từ v1.15.0 mặc định là Direct MASQUE, mà mode đó đăng ký
+    /// THIẾT BỊ RIÊNG (warp_masque_account.json — id/token/license khác hẳn). Hệ quả
+    /// của bản cũ: trang hiển thị tier của một tài khoản không được dùng, và nút
+    /// "Áp dụng Key" nâng cấp sai tài khoản — người dùng nhập key WARP+ xong mà
+    /// tunnel vẫn chạy Free, không có cách nào biết.
+    /// </summary>
     private async Task LoadAccountInfoAsync()
     {
-        var info = await WarpAccountService.GetOrCreateAccountAsync();
-        if (!string.IsNullOrEmpty(info.Id))
-        {
-            AccountIdText.Text = $"ID: {info.Id[..Math.Min(16, info.Id.Length)]}...";
-        }
+        var mode = ViewModels.SettingsViewModel.LoadEngineMode();
+        _isMasqueAccount = mode == Models.EngineMode.DirectMasqueBeta;
 
-        // Hiển thị trạng thái tài khoản — KHÔNG dựa vào info.License có giá trị
-        // hay không, vì Cloudflare gán license_key cho mọi thiết bị đăng ký
-        // (cả tài khoản Free, dùng cho referral). Phải hỏi thẳng API để biết
-        // đúng trạng thái warp_plus thật.
-        var status = await WarpAccountService.GetAccountStatusAsync(info);
-        bool isPlusTier = status?.WarpPlus == true;
-        UpdateTierDisplay(isPlusTier);
-    }
+        string id;
+        (bool WarpPlus, string AccountType)? status;
 
-    private void UpdateTierDisplay(bool isPlus)
-    {
-        if (isPlus)
+        if (_isMasqueAccount)
         {
-            AccountTierText.Text = "WARP+  ✅";
-            AccountBadge.Background = new SolidColorBrush(ColorHelper.FromArgb(30, 255, 185, 0));
-            AccountIcon.Foreground  = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 185, 0));
-            AccountIcon.Glyph       = "\uE8D4";
+            var acc = await WarpAccountService.GetOrCreateMasqueAccountAsync();
+            id     = acc.Id;
+            status = await WarpAccountService.GetMasqueAccountStatusAsync(acc);
         }
         else
         {
-            AccountTierText.Text = "WARP Free";
+            var acc = await WarpAccountService.GetOrCreateAccountAsync();
+            id     = acc.Id;
+            status = await WarpAccountService.GetAccountStatusAsync(acc);
+        }
+
+        AccountIdText.Text = string.IsNullOrEmpty(id)
+            ? "Chưa có tài khoản"
+            : $"ID: {id[..Math.Min(16, id.Length)]}...";
+
+        // Hỏi thẳng API mới biết tier thật — KHÔNG suy từ field License, vì
+        // Cloudflare gán license_key cho cả tài khoản Free (dùng cho referral).
+        // API không trả lời được thì hiện "chưa xác định", không đoán là Free.
+        UpdateTierDisplay(status?.WarpPlus, status?.AccountType);
+
+        AccountScopeText.Text = mode switch
+        {
+            Models.EngineMode.DirectMasqueBeta => "Tài khoản của Direct MASQUE — đây là tunnel đang chạy.",
+            Models.EngineMode.DirectWireGuard  => "Tài khoản của Direct WireGuard — đây là tunnel đang chạy.",
+            _                                  => "Tài khoản của Direct WireGuard — KHÔNG phải tunnel đang chạy."
+        };
+
+        // WARP Client Proxy: tunnel do app WARP gốc dựng bằng tài khoản riêng của
+        // nó, app này không chạm tới. Key nhập ở đây sẽ vào tài khoản WireGuard
+        // đang không được dùng => phải nói rõ, không để người dùng nhập vô ích.
+        bool proxyMode = mode == Models.EngineMode.WarpClientProxy;
+        KeyScopeWarn.Text = proxyMode
+            ? "⚠️  Mode WARP Client Proxy: tunnel do app WARP gốc quản lý, nên key nhập ở đây KHÔNG áp cho đường đang chạy. Hãy nhập key trong app 1.1.1.1, hoặc đổi sang Direct MASQUE / Direct WireGuard."
+            : string.Empty;
+        KeyScopeWarn.Visibility = proxyMode ? Visibility.Visible : Visibility.Collapsed;
+
+        // File wgcf là định dạng của WireGuard — không dùng được cho MASQUE.
+        bool importOffTarget = _isMasqueAccount || proxyMode;
+        ImportScopeNote.Text = importOffTarget
+            ? "⚠️  File wgcf chỉ áp cho tài khoản Direct WireGuard. Import ở đây KHÔNG đổi tài khoản của mode đang bật."
+            : string.Empty;
+        ImportScopeNote.Visibility = importOffTarget ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Hiện tier. <paramref name="isPlus"/> = null nghĩa là KHÔNG hỏi được API
+    /// (mất mạng, chưa có tài khoản, bị rate-limit) — khi đó phải nói "chưa xác
+    /// định", không được hiện "WARP Free" vì đó là đoán (xem CLAUDE.md: không bịa
+    /// chỉ số hiển thị).
+    /// </summary>
+    private void UpdateTierDisplay(bool? isPlus, string? accountType = null)
+    {
+        AccountIcon.Glyph = "\uE8D4";
+
+        if (isPlus == true)
+        {
+            AccountTierText.Text    = "WARP+  ✅";
+            AccountBadge.Background = new SolidColorBrush(ColorHelper.FromArgb(30, 255, 185, 0));
+            AccountIcon.Foreground  = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 185, 0));
+        }
+        else if (isPlus == false)
+        {
+            // account_type có 3 giá trị: free / limited / unlimited. Chỉ "unlimited"
+            // là WARP+ thật, nhưng "limited" khác "free" nên ghi ra cho rõ.
+            AccountTierText.Text = string.Equals(accountType, "limited", StringComparison.OrdinalIgnoreCase)
+                ? "WARP Free (limited)"
+                : "WARP Free";
             AccountBadge.Background = new SolidColorBrush(ColorHelper.FromArgb(26, 0, 120, 212));
             AccountIcon.Foreground  = new SolidColorBrush(ColorHelper.FromArgb(255, 0, 120, 212));
-            AccountIcon.Glyph       = "\uE8D4";
+        }
+        else
+        {
+            AccountTierText.Text    = "Chưa xác định được tier";
+            AccountBadge.Background = new SolidColorBrush(ColorHelper.FromArgb(26, 128, 128, 128));
+            AccountIcon.Foreground  = new SolidColorBrush(ColorHelper.FromArgb(255, 150, 150, 150));
         }
     }
 
@@ -71,7 +140,10 @@ public sealed partial class WarpAccountPage : Page
         ApplyKeyBtn.Content   = "Đang kiểm tra...";
         StatusMsg.Visibility  = Visibility.Collapsed;
 
-        var (success, message) = await WarpAccountService.UpdateLicenseAsync(key);
+        // Áp vào tài khoản của mode đang bật — không phải luôn luôn WireGuard.
+        var (success, message) = _isMasqueAccount
+            ? await WarpAccountService.UpdateMasqueLicenseAsync(key)
+            : await WarpAccountService.UpdateLicenseAsync(key);
 
         ApplyKeyBtn.IsEnabled = true;
         ApplyKeyBtn.Content   = "Áp dụng Key";
@@ -79,10 +151,10 @@ public sealed partial class WarpAccountPage : Page
         if (success)
         {
             ShowStatus($"✅  {message}", isError: false);
-            UpdateTierDisplay(isPlus: true);
-            // Lưu key vào account info
-            var info = await WarpAccountService.GetOrCreateAccountAsync();
             LicenseKeyBox.Text = string.Empty;
+            // Đọc lại tier từ API thay vì mặc định coi là WARP+: server nhận key
+            // không đồng nghĩa tier đã thành unlimited.
+            await LoadAccountInfoAsync();
         }
         else
         {
@@ -198,11 +270,12 @@ public sealed partial class WarpAccountPage : Page
     private async void ResetBtn_Click(object sender, RoutedEventArgs e)
     {
         // Hiển thị dialog xác nhận trước khi xóa
+        var which = _isMasqueAccount ? "MASQUE" : "WireGuard";
         var dialog = new ContentDialog
         {
             XamlRoot            = Content.XamlRoot,
             Title               = "Xác nhận Reset tài khoản",
-            Content             = "Bạn có chắc chắn muốn xóa tài khoản WARP hiện tại?\n\nKey WARP+ sẽ bị gỡ và một tài khoản WARP Free mới sẽ được tạo tự động khi bạn Boost lần sau.",
+            Content             = $"Bạn có chắc chắn muốn xóa tài khoản WARP {which} hiện tại?\n\nKey WARP+ sẽ bị gỡ và một tài khoản WARP Free mới sẽ được tạo tự động khi bạn Boost lần sau.\n\nTài khoản của mode còn lại KHÔNG bị ảnh hưởng.",
             PrimaryButtonText   = "🗑️  Xóa & Reset",
             CloseButtonText     = "Hủy",
             DefaultButton       = ContentDialogButton.Close
@@ -213,7 +286,9 @@ public sealed partial class WarpAccountPage : Page
 
         ResetBtn.IsEnabled = false;
 
-        var (success, message) = await WarpAccountService.ResetToFreeAsync();
+        var (success, message) = _isMasqueAccount
+            ? await WarpAccountService.ResetMasqueAccountAsync()
+            : await WarpAccountService.ResetToFreeAsync();
 
         ResetBtn.IsEnabled   = true;
         ResetMsg.Text        = success ? $"✅  {message}" : $"❌  {message}";
@@ -224,8 +299,10 @@ public sealed partial class WarpAccountPage : Page
 
         if (success)
         {
-            // Cập nhật lại UI về trạng thái Free
-            UpdateTierDisplay(isPlus: false);
+            // File tài khoản vừa bị xoá nên chưa có tier nào để nói. KHÔNG gọi
+            // LoadAccountInfoAsync() ở đây: nó sẽ đăng ký ngay một tài khoản mới,
+            // trái với thông báo "sẽ tự tạo lại khi Boost lần sau".
+            UpdateTierDisplay(null);
             AccountIdText.Text = "Chưa có tài khoản";
         }
     }

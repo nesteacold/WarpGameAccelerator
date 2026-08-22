@@ -42,6 +42,12 @@
                                        Text="Chưa có tài khoản"
                                        FontSize="12"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <!-- Nói rõ đây là tài khoản của engine mode nào: mỗi mode
+                                 đăng ký thiết bị riêng nên tier có thể khác nhau. -->
+                            <TextBlock x:Name="AccountScopeText"
+                                       Text=""
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                         </StackPanel>
                     </StackPanel>
 
@@ -76,6 +82,14 @@
                             Click="ApplyKeyBtn_Click"
                             CornerRadius="6"/>
 
+                    <!-- Chỉ hiện khi key sẽ áp vào tài khoản KHÔNG phải tài khoản mà
+                         tunnel đang chạy (mode WARP Client Proxy). -->
+                    <TextBlock x:Name="KeyScopeWarn"
+                               Text=""
+                               FontSize="11" TextWrapping="Wrap"
+                               Foreground="#E0A030"
+                               Visibility="Collapsed"/>
+
                     <!-- Status Message -->
                     <TextBlock x:Name="StatusMsg"
                                Text=""
@@ -99,6 +113,12 @@
                     <TextBlock Text="Nếu bạn đã có tài khoản đăng ký sẵn bằng wgcf (wgcf-account.toml + wgcf-profile.conf), import vào đây để dùng cho Direct Mode."
                                FontSize="12" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                    <TextBlock x:Name="ImportScopeNote"
+                               Text=""
+                               FontSize="11" TextWrapping="Wrap"
+                               Foreground="#E0A030"
+                               Visibility="Collapsed"/>
 
                     <Button x:Name="ImportAccountBtn"
                             Content="📂  Chọn file wgcf-account.toml"
