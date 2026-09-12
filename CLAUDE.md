@@ -163,6 +163,42 @@ Danh sách node trong `CloudflareNodeService.GetDefaultNodes()` chỉ là các *
 
 **Nhưng cùng colo KHÔNG có nghĩa cùng đường đi.** Muốn đổi vùng thật thì cần thứ ngoài WARP consumer (Zero Trust dedicated egress — chưa kiểm chứng, hoặc relay qua VPS ở vùng đích).
 
+### MASQUE endpoint lab (`MasqueEndpointLab.cs`) — colo trôi dạt GIỮA CÁC LẦN DỰNG TUNNEL, không phải trong 1 phiên đang chạy
+
+Công cụ đo cô lập (Settings → chọn endpoint MASQUE thủ công): dựng **một mihomo con riêng, tách biệt** cho mỗi endpoint ứng viên (không đụng phiên Boost thật), bắt buộc Boost đang tắt (`ScanCoreAsync` throw nếu còn tiến trình `mihomo`). Kết quả 2026-09-12: 76 tổ hợp → 54 SIN, 17 HKG, 5 lỗi SSL, **0 Taiwan/VN**. Quan trọng: dựng lại tunnel cho **cùng một endpoint** cho colo khác nhau giữa các lần (`[2606:4700:103::1]:1701` → HKG, HKG, SIN qua 3 lần dựng). Vậy chọn endpoint IP/port cụ thể **không ghim được colo** — colo do phía Cloudflare quyết định lúc handshake, không phải do endpoint client chọn.
+
+**Đã đối chiếu với tunnel Boost thật đang chạy** (2026-09-12, mihomo uptime 177 phút không restart): đo colo bằng 2 cách — `https://1.1.1.1/cdn-cgi/trace` (khớp rule `IP-CIDR` sẵn có, không cần đổi gì) và `https://www.cloudflare.com/cdn-cgi/trace` qua harness đổi tên (xem mục Harness bên dưới) — cả hai đều ra **SIN ổn định 6/6 lần**, không trôi dạt như phiên cô lập. Kết luận: colo **cố định trong một session đã handshake xong**; sự trôi dạt chỉ xảy ra **lúc dựng tunnel mới** (mỗi lần handshake là một lần "quay số" colo). Hệ quả cho hướng tối ưu: muốn né SIN thì phải tác động vào **thời điểm dựng tunnel** (retry-until-good-colo trước khi coi Boost là xong), không phải chọn endpoint cụ thể hay chỉnh gì trong lúc đang chạy.
+
+**Chưa làm:** đo N lần dựng-huỷ liên tiếp CÙNG một endpoint để biết tỉ lệ ra HKG/SIN có ổn định theo endpoint hay ngẫu nhiên tuyệt đối (Astra mới có 3 mẫu cho 2 endpoint, chưa đủ để kết luận endpoint nào "may" hơn). Nếu có endpoint cho tỉ lệ HKG cao hơn hẳn, retry-until-HKG mới đáng làm; nếu ngẫu nhiên đều thì phải chấp nhận hoặc retry mù (dựng lại tới khi được, không chọn được endpoint để thiên vị).
+
+### Đích đo Cloudflare tự nó che mất khác biệt HKG/SIN tới Taiwan (Astra, 2026-09-12)
+
+**Vấn đề với mọi phép đo trước đó trong mục này:** tất cả đều đo tới chính hạ tầng Cloudflare (`1.1.1.1`, `www.cloudflare.com/cdn-cgi/trace`). Đích đó **nằm trong cùng mạng Cloudflare** nên không lộ ra khác biệt của chặng **sau** Cloudflare tới một mạng đích thật — đúng cái người chơi quan tâm (server game nằm ngoài Cloudflare). Cần đích **ngoài** Cloudflare, thuộc đúng khu vực muốn khảo sát, để phép đo có ý nghĩa.
+
+**Chọn đích:** `bfage.com` (DNS → `112.121.98.88`, ASN `AS7532` GAMANIA CloudForce TW) được thử trước nhưng **không dùng được** — HTTP/HTTPS qua mọi tổ hợp tunnel chỉ timeout/502/TLS EOF, kể cả preflight trực tiếp không qua tunnel. Đổi sang `www.ntu.edu.tw` (DNS → `140.112.8.116`, ASN `AS17716` NTU-TW, xác nhận qua RIPEstat) — trả `HTTP 200` ổn định, dùng được làm đích tham chiếu mạng Taiwan. **Lưu ý quan trọng: NTU khác mạng với server game** (`103.197.172.0/24`), nên kết quả **không** suy ra được ping Age of Wushu thật, chỉ cho biết "route tới một điểm ở Taiwan nói chung".
+
+**Kết quả (mỗi dòng là 1 tunnel MASQUE cô lập riêng, không đụng phiên Boost thật — core gốc PID giữ nguyên suốt phép đo):**
+
+| Endpoint | Giao thức | Colo quan sát | Trung vị (ms) | Khoảng |
+|---|---|---|---:|---:|
+| `[2606:4700:103::1]:443` | H3 | HKG | 69 | 67–70 |
+| `162.159.198.2:443` | H3 | SIN | 103 | 97–121 |
+| `162.159.198.2:443` | H2 | SIN | 106 | 103–112 |
+| `[2606:4700:103::1]:443`, dựng lại | H3 | SIN | 1195 | 186–1676 |
+| `162.159.198.2:443`, dựng lại | H3 | SIN | 210 | 179–3211 |
+| `162.159.198.2:443`, dựng lại | H2 | SIN | 134 | 105–145 |
+
+(Số là thời gian phản hồi HTTP request 2–6 sau khi dựng tunnel, không phải TCP RTT; request đầu sau timeout có thể gồm chi phí reconnect.)
+
+**Rút ra được — và giới hạn của nó:**
+- Lượt đầu: tunnel ra colo HKG nhanh hơn hẳn tới NTU (69ms) so với 2 tunnel ra colo SIN (103/106ms) — đây là bằng chứng cụ thể đầu tiên cho thấy **khác biệt HKG/SIN có ảnh hưởng thật tới một đích ngoài Cloudflare**, điều mà mọi phép đo `cdn-cgi/trace` trước đó không thể lộ ra.
+- **Nhưng không bền:** dựng lại đúng endpoint IPv6 từng cho HKG thì lần này lại ra SIN (khớp phát hiện "colo trôi dạt giữa các lần dựng" ở trên) và NTU tệ hẳn (median 1195ms, có timeout) — tức chưa có "endpoint thắng" cố định.
+- **Chưa tách được biến:** một lượt lặp lại xấu đi ở cả 3 tổ hợp cùng lúc (kể cả 2 cái vẫn giữ SIN) — nên KHÔNG thể quy kết quả xấu riêng cho H2 hay riêng cho SIN; có khả năng là nhiễu theo cửa sổ thời gian (cùng họ hiện tượng với mục "Sự cố 103.197.172.0/24" bên dưới — lỗi/spike theo cửa sổ vài phút, không phải hằng số của cấu hình).
+- H3 vs H2: **chưa có kết luận** — mẫu còn quá ít và lẫn với nhiễu theo thời gian.
+- `DIRECT` tiếp tục bị loại khỏi phương án chơi (đã xác nhận: IP Việt Nam bị chặn ở tầng ứng dụng, xem mục `103.197.172.0/24` bên dưới) — không liên quan gì tới phát hiện này, ghi lại để không ai đề xuất lại.
+
+**Hướng đáng làm tiếp (chưa làm):** thay vì chọn cố định 1 endpoint theo lần đo cũ, giữ sống nhiều tunnel ứng viên song song, đo xen kẽ định kỳ tới một đích ngoài-Cloudflare cùng vùng đích thật, rồi mới quyết định dùng tunnel nào — **không** dựng lại tunnel sau khi đã chọn theo colo của một lần scan cũ (dựng lại = quay số colo lại, xem phát hiện gốc ở trên). Báo cáo đầy đủ + dữ liệu thô: `docs/taiwan-target-findings.md`, `docs/ntu-target-measurements.json`.
+
 ## Harness đo mạng qua tunnel (dùng lại được)
 
 Cách đo đã phá được nhiều ca trong dự án này, chi phí thấp:
