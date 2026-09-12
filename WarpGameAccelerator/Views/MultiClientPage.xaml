@@ -13,8 +13,6 @@
     Background="Transparent">
 
     <Page.Resources>
-        <conv:HasTokenBackgroundConverter x:Key="TokenBg"/>
-        <conv:HasTokenBorderConverter x:Key="TokenBorder"/>
         <conv:HasTokenDotConverter x:Key="TokenDot"/>
         <conv:ExpandChevronConverter x:Key="ExpandChevron"/>
         <conv:CountToEmptyVisibilityConverter x:Key="CountEmptyVis"/>
@@ -27,33 +25,10 @@
         <StackPanel Padding="24,20,24,32" Spacing="16">
 
             <!-- Header -->
-            <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <TextBlock Grid.Column="0"
-                           Text="MULTI-CLIENT LAUNCHER"
-                           FontSize="13" FontWeight="SemiBold"
-                           VerticalAlignment="Center"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           CharacterSpacing="80"/>
-
-                <!-- Token status — account-level, không thuộc riêng thư mục nào -->
-                <Border Grid.Column="1"
-                        Background="{x:Bind ViewModel.HasToken, Mode=OneWay, Converter={StaticResource TokenBg}}"
-                        BorderBrush="{x:Bind ViewModel.HasToken, Mode=OneWay, Converter={StaticResource TokenBorder}}"
-                        BorderThickness="1" CornerRadius="6" Padding="10,6">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                                 Fill="{x:Bind ViewModel.HasToken, Mode=OneWay, Converter={StaticResource TokenDot}}"/>
-                        <TextBlock Text="{x:Bind ViewModel.TokenStatusText, Mode=OneWay}"
-                                   FontSize="11" VerticalAlignment="Center"
-                                   ToolTipService.ToolTip="{x:Bind ViewModel.TokenPreviewText, Mode=OneWay}"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
+            <TextBlock Text="MULTI-CLIENT LAUNCHER"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       CharacterSpacing="80"/>
 
             <!-- Toolbar: quét tự động + thêm tay -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -140,9 +115,13 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <CheckBox Grid.Column="0"
-                                                      IsChecked="{x:Bind IsChecked, Mode=TwoWay}"
-                                                      VerticalAlignment="Center"/>
+                                            <!-- Chấm trạng thái token RIÊNG của thư mục này (mỗi thư mục
+                                                 = 1 tài khoản/phiên đăng nhập độc lập) — xanh = đã có
+                                                 token, cam = chưa (lần MỞ GAME kế sẽ đăng nhập lại). -->
+                                            <Ellipse Grid.Column="0" Width="10" Height="10"
+                                                     VerticalAlignment="Center"
+                                                     Fill="{x:Bind HasToken, Mode=OneWay, Converter={StaticResource TokenDot}}"
+                                                     ToolTipService.ToolTip="{x:Bind TokenTooltip, Mode=OneWay}"/>
 
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                                 <TextBlock Text="{x:Bind ShortPath, Mode=OneWay}"

@@ -98,31 +98,7 @@ public class DetectedToTextConverter : IValueConverter
 
 // ── Converters riêng cho MultiClientPage (bảng nhiều thư mục) ──────────
 
-/// <summary>Có token hay chưa (bool) → nền badge trạng thái token.</summary>
-public class HasTokenBackgroundConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, string language) =>
-        value is true
-            ? new SolidColorBrush(ColorHelper.FromArgb(26, 0, 200, 100))
-            : new SolidColorBrush(ColorHelper.FromArgb(26, 255, 149, 0));
-
-    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
-        throw new NotImplementedException();
-}
-
-/// <summary>Có token hay chưa (bool) → viền badge trạng thái token.</summary>
-public class HasTokenBorderConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, string language) =>
-        value is true
-            ? new SolidColorBrush(ColorHelper.FromArgb(51, 0, 200, 100))
-            : new SolidColorBrush(ColorHelper.FromArgb(51, 255, 149, 0));
-
-    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
-        throw new NotImplementedException();
-}
-
-/// <summary>Có token hay chưa (bool) → chấm tròn trạng thái token.</summary>
+/// <summary>Có token hay chưa (bool) → chấm tròn trạng thái token (per-folder, xem MultiClientPage).</summary>
 public class HasTokenDotConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language) =>

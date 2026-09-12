@@ -25,8 +25,15 @@ public class AowTokenInfo
 /// Một thư mục cài đặt game đã biết (tự quét được hoặc người dùng thêm tay).
 /// Persist trong Data\game_folders.json — thay thế field GameFolder đơn lẻ
 /// cũ trong aow_token.json để hỗ trợ nhiều thư mục cùng lúc.
+///
+/// Token TỪNG là account-level (dùng chung mọi thư mục) — đã đổi thành
+/// PER-FOLDER: mỗi thư mục là một tài khoản/phiên đăng nhập riêng (lấy bằng
+/// cách mở fxlaunch.exe của CHÍNH thư mục đó lần đầu, đợi fxgame.exe chạy,
+/// rồi đọc token từ command line của nó — xem EnsureClientsRunningAsync/
+/// WaitForTokenInternalAsync). Token cũ lưu ở aow_token.json không được
+/// migrate sang đây vì không rõ token đó thuộc thư mục nào.
 /// </summary>
-public record GameFolderEntry(string Path, int LastClientCount, DateTimeOffset AddedAt);
+public record GameFolderEntry(string Path, int LastClientCount, DateTimeOffset AddedAt, string Token = "");
 
 public class RunningClient
 {
@@ -72,14 +79,15 @@ public class MultiClientService
     private const int ConnectWaitTimeoutMs = 60000;
 
     /// <summary>
-    /// Token là account-level, dùng chung cho MỌI thư mục. Hai lệnh mở-client
-    /// (dù xuất phát từ hai thư mục khác nhau) cùng chạy đồng thời vẫn có thể
-    /// khiến hai client cùng xác thực một token gần như đồng thời → 1 cái bị
-    /// đá ("Mạng đứt kết nối") — y hệt rủi ro ban đầu khi chỉ có 1 thư mục.
-    /// Do đó khoá TOÀN BỘ luồng mở-client (EnsureClientsRunningAsync) bằng 1
-    /// semaphore tĩnh để tuần tự hoá GIỮA CÁC THƯ MỤC — không phải để cộng
-    /// dồn MinLaunchIntervalMs (constant đó vẫn chỉ là pacing NỘI BỘ của một
-    /// lần gọi, xem LaunchClientsToTotalAsync).
+    /// Token giờ là PER-FOLDER (mỗi thư mục = 1 tài khoản/phiên riêng — xem
+    /// ghi chú tại GameFolderEntry.Token), nên rủi ro "hai thư mục cùng xác
+    /// thực chung 1 token" không còn. Vẫn giữ khoá TOÀN BỘ luồng mở-client
+    /// (EnsureClientsRunningAsync) qua semaphore tĩnh này vì lý do khác: launch
+    /// helper spawn tiến trình con dùng chung tài nguyên (log file DXVK, UAC
+    /// prompt) — hai thư mục launch đúng lúc nhau vẫn có thể tranh chấp ở tầng
+    /// đó (xem MinLaunchIntervalMs). Không phải để cộng dồn MinLaunchIntervalMs
+    /// của nhau — constant đó vẫn chỉ là pacing NỘI BỘ một lần gọi, xem
+    /// LaunchClientsToTotalAsync.
     /// </summary>
     private static readonly SemaphoreSlim LaunchGate = new(1, 1);
 
@@ -409,23 +417,11 @@ public class MultiClientService
         return parts.Length > 0 ? parts[0] : string.Empty;
     }
 
-    // ── Lưu / Đọc token ──────────────────────────────────────
-    // Token là ACCOUNT-LEVEL (không gắn với 1 thư mục cụ thể) — từ khi hỗ trợ
-    // nhiều thư mục, không còn ghi kèm GameFolder nữa (field đó là legacy,
-    // chỉ đọc để migrate — xem LoadGameFolders).
-    public static async Task SaveTokenAsync(string token)
-    {
-        var info = new AowTokenInfo
-        {
-            Token      = token,
-            SavedAt    = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-        };
-        var dir = Path.GetDirectoryName(TokenFilePath)!;
-        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        await File.WriteAllTextAsync(TokenFilePath,
-            JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true }));
-    }
-
+    // ── Đọc token cũ (legacy, chỉ dùng cho migration) ────────
+    // Token KHÔNG còn ghi ở tầng global từ khi chuyển sang per-folder — file
+    // aow_token.json chỉ còn được ĐỌC (không ghi) để migrate field GameFolder
+    // cũ một lần duy nhất (xem LoadGameFolders). Token của thư mục nào giờ
+    // sống trong GameFolderEntry.Token của chính thư mục đó.
     public static AowTokenInfo? LoadToken()
     {
         try
@@ -435,11 +431,6 @@ public class MultiClientService
             return JsonSerializer.Deserialize<AowTokenInfo>(json);
         }
         catch { return null; }
-    }
-
-    public static void DeleteToken()
-    {
-        if (File.Exists(TokenFilePath)) File.Delete(TokenFilePath);
     }
 
     /// <summary>
@@ -536,13 +527,18 @@ public class MultiClientService
 
     /// <summary>
     /// Luồng đầy đủ để mở đủ N cửa sổ cho MỘT thư mục — dùng cho UI dạng
-    /// nhiều-thư-mục (mỗi hàng gọi hàm này với thư mục + đích của riêng nó).
-    /// Nếu thư mục chưa có client nào chạy VÀ chưa có token, tự mở launcher +
-    /// chờ đăng nhập trước (y hệt luồng thủ công cũ), rồi mới mở nốt cho đủ
-    /// targetTotal. Toàn bộ được khoá bằng <see cref="LaunchGate"/> nên hai
-    /// thư mục gọi đồng thời sẽ tự xếp hàng thay vì đua nhau xác thực chung
-    /// một token — nhưng KHÔNG cộng dồn <see cref="MinLaunchIntervalMs"/> của
-    /// nhau, mỗi lời gọi vẫn chỉ trả giá pacing của chính nó.
+    /// nhiều-thư-mục (mỗi hàng gọi hàm này với thư mục + token + đích của
+    /// riêng nó — token PER-FOLDER, xem GameFolderEntry.Token). Nếu thư mục
+    /// chưa có client nào chạy VÀ chưa có token riêng, tự mở fxlaunch.exe của
+    /// CHÍNH thư mục đó + chờ người dùng đăng nhập, đọc token từ fxgame.exe
+    /// vừa chạy lên, rồi mới mở nốt cho đủ targetTotal. <paramref name="existingToken"/>
+    /// là token đã lưu của RIÊNG thư mục này (rỗng nếu thư mục chưa từng đăng
+    /// nhập) — kết quả trả về (Token) là token cuối cùng caller cần lưu lại
+    /// vào đúng thư mục đó. Toàn bộ vẫn khoá bằng <see cref="LaunchGate"/> để
+    /// hai thư mục launch đồng thời không tranh chấp tài nguyên launch helper
+    /// dùng chung — xem ghi chú tại LaunchGate — KHÔNG cộng dồn
+    /// <see cref="MinLaunchIntervalMs"/> của nhau, mỗi lời gọi vẫn chỉ trả giá
+    /// pacing của chính nó.
     /// </summary>
     public static async Task<(int Launched, string Message, string Token)> EnsureClientsRunningAsync(
         string gameFolder, string existingToken, int targetTotal, IProgress<string>? progress = null)
@@ -596,8 +592,10 @@ public class MultiClientService
 
     /// <summary>
     /// Chờ tới khi lấy được token từ fxgame.exe đang chạy — thử mỗi 2s trong
-    /// tối đa 60s để người dùng có thời gian đăng nhập trong launcher. Lưu
-    /// lại ngay khi lấy được (token là account-level, dùng chung mọi thư mục).
+    /// tối đa 60s để người dùng có thời gian đăng nhập trong launcher. Chỉ
+    /// TRẢ VỀ token, không tự lưu ở đây — token giờ thuộc về đúng thư mục vừa
+    /// gọi (per-folder), nên caller (EnsureClientsRunningAsync → ViewModel)
+    /// mới biết phải ghi vào GameFolderEntry.Token của thư mục nào.
     /// </summary>
     private static async Task<string> WaitForTokenInternalAsync(IProgress<string>? progress)
     {
@@ -608,7 +606,6 @@ public class MultiClientService
             var (ok, token, _) = await DetectTokenAsync();
             if (ok && !string.IsNullOrEmpty(token))
             {
-                await SaveTokenAsync(token);
                 DiagnosticLogService.Trace($"  lấy được token sau {(i + 1) * 2}s");
                 return token;
             }

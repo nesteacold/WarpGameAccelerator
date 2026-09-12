@@ -21,7 +21,11 @@ public partial class GameFolderRowViewModel : ObservableObject
     public string Path { get; }
     public DateTimeOffset AddedAt { get; }
 
-    [ObservableProperty] private bool _isChecked = true;
+    // Token PER-FOLDER — mỗi thư mục là 1 tài khoản/phiên đăng nhập riêng
+    // (xem GameFolderEntry.Token). Lấy được bằng cách mở fxlaunch.exe của
+    // CHÍNH thư mục này lần đầu, chờ fxgame.exe chạy lên, rồi đọc token từ
+    // command line của nó (MultiClientService.EnsureClientsRunningAsync).
+    [ObservableProperty] private string _token = string.Empty;
     [ObservableProperty] private int _clientCount;
     [ObservableProperty] private string _versionText = string.Empty;
     [ObservableProperty] private int _runningCount;
@@ -36,21 +40,34 @@ public partial class GameFolderRowViewModel : ObservableObject
 
     public bool HasVersion => !string.IsNullOrEmpty(VersionText);
 
+    public bool HasToken => !string.IsNullOrEmpty(Token);
+
+    /// <summary>Tooltip cho chấm trạng thái token — không lộ toàn bộ token ra UI.</summary>
+    public string TokenTooltip => HasToken
+        ? $"Token riêng của thư mục này: {(Token.Length > 20 ? Token[..12] + "•••" + Token[^8..] : Token)}"
+        : "Chưa có token — bấm MỞ GAME để đăng nhập lần đầu và lấy token cho thư mục này";
+
     /// <summary>"đang chạy/tổng cấu hình" — gộp sẵn thành chuỗi để bind an toàn qua x:Bind.</summary>
     public string BadgeText => $"{RunningCount}/{ClientCount} cửa sổ";
 
     /// <summary>Chuỗi hiển thị của ô nhập số cửa sổ (TextBox chỉ bind string qua x:Bind).</summary>
     public string ClientCountText => ClientCount.ToString();
 
-    public GameFolderRowViewModel(string path, int clientCount, DateTimeOffset addedAt)
+    public GameFolderRowViewModel(string path, int clientCount, DateTimeOffset addedAt, string token = "")
     {
         Path = path;
         ClientCount = clientCount <= 0 ? 1 : clientCount;
         AddedAt = addedAt;
+        Token = token;
         TryLoadVersion();
     }
 
     partial void OnVersionTextChanged(string value) => OnPropertyChanged(nameof(HasVersion));
+    partial void OnTokenChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasToken));
+        OnPropertyChanged(nameof(TokenTooltip));
+    }
     partial void OnRunningCountChanged(int value) => OnPropertyChanged(nameof(BadgeText));
     partial void OnClientCountChanged(int value)
     {
@@ -96,11 +113,8 @@ public partial class MultiClientViewModel : ObservableObject
 
     [ObservableProperty] private bool _hasUnknownClients;
 
-    // Token — account-level, KHÔNG gắn với 1 thư mục cụ thể.
-    [ObservableProperty] private string _currentToken = string.Empty;
-    [ObservableProperty] private bool _hasToken;
-    [ObservableProperty] private string _tokenStatusText = "Chưa có token — bấm MỞ GAME ở một thư mục để lấy token";
-    [ObservableProperty] private string _tokenPreviewText = "Token: —";
+    // Token giờ PER-FOLDER — xem GameFolderRowViewModel.Token/HasToken.
+    // Không còn khái niệm token account-level dùng chung ở tầng ViewModel này.
 
     [ObservableProperty] private bool _isDiscovering;
     [ObservableProperty] private string _discoveryStatusText = string.Empty;
@@ -118,21 +132,14 @@ public partial class MultiClientViewModel : ObservableObject
     public void OnNavigatedTo() => _refreshTimer.Start();
     public void OnNavigatedFrom() => _refreshTimer.Stop();
 
-    // ── Khởi động: nạp token + danh sách thư mục đã lưu ─────
+    // ── Khởi động: nạp danh sách thư mục đã lưu (token đi kèm mỗi thư mục) ──
     private void LoadState()
     {
         try
         {
-            var tokenInfo = MultiClientService.LoadToken();
-            if (tokenInfo != null && !string.IsNullOrEmpty(tokenInfo.Token))
-            {
-                CurrentToken = tokenInfo.Token;
-                SetTokenStatus(hasToken: true);
-            }
-
             var entries = MultiClientService.LoadGameFolders();
             foreach (var e in entries)
-                Folders.Add(new GameFolderRowViewModel(e.Path, e.LastClientCount, e.AddedAt));
+                Folders.Add(new GameFolderRowViewModel(e.Path, e.LastClientCount, e.AddedAt, e.Token));
         }
         catch (Exception ex)
         {
@@ -140,31 +147,11 @@ public partial class MultiClientViewModel : ObservableObject
         }
     }
 
-    private void SetTokenStatus(bool hasToken)
-    {
-        HasToken = hasToken;
-        if (hasToken)
-        {
-            TokenStatusText = "Token sẵn sàng ✅";
-            var preview = CurrentToken.Length > 20
-                ? CurrentToken[..12] + "•••" + CurrentToken[^8..]
-                : CurrentToken;
-            TokenPreviewText = $"Token: {preview}";
-        }
-        else
-        {
-            TokenStatusText = "Chưa có token — bấm MỞ GAME ở một thư mục để lấy token";
-            TokenPreviewText = "Token: —";
-        }
-    }
-
     private void PersistFolders()
     {
-        var entries = Folders.Select(f => new GameFolderEntry(f.Path, f.ClientCount, f.AddedAt)).ToList();
+        var entries = Folders.Select(f => new GameFolderEntry(f.Path, f.ClientCount, f.AddedAt, f.Token)).ToList();
         MultiClientService.SaveGameFolders(entries);
     }
-
-    partial void OnCurrentTokenChanged(string value) => SetTokenStatus(!string.IsNullOrEmpty(value));
 
     // ── Thêm thư mục ─────────────────────────────────────────
     [RelayCommand]
@@ -274,10 +261,10 @@ public partial class MultiClientViewModel : ObservableObject
 
             var progress = new Progress<string>(t => row.StatusText = t);
             var (_, msg, token) = await MultiClientService.EnsureClientsRunningAsync(
-                row.Path, CurrentToken, row.ClientCount, progress);
+                row.Path, row.Token, row.ClientCount, progress);
 
-            if (!string.IsNullOrEmpty(token) && token != CurrentToken)
-                CurrentToken = token;
+            if (!string.IsNullOrEmpty(token) && token != row.Token)
+                row.Token = token;
 
             row.StatusText = msg;
             PersistFolders();
