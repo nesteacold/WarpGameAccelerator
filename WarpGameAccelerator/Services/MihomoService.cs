@@ -55,6 +55,17 @@ public class MihomoService
     private const string GameWorldServerCidr = "103.197.172.0/24";
 
     /// <summary>
+    /// Dải cổng nguồn LOCAL dành riêng cho traffic PROBE của
+    /// <see cref="MasqueTunnelSweepService"/> khi tính năng multi-candidate MASQUE
+    /// (xem <see cref="MultiCandidateSettings"/>) đang bật. Rule
+    /// <c>SRC-PORT,31337-31347,PROBE-PATH</c> tách hẳn traffic đo colo khỏi traffic
+    /// game thật (đi qua GAME-PATH) — chỉ áp dụng khi
+    /// <see cref="ActiveMasqueControl"/> khác null.
+    /// </summary>
+    public const int ProbeSrcPortRangeStart = 31337;
+    public const int ProbeSrcPortRangeEnd = 31347;
+
+    /// <summary>
     /// IP được cố ý loại khỏi route TUN để làm **đường đối chứng** khi chẩn đoán
     /// mất kết nối: traffic tới IP này đi thẳng ra NIC vật lý, KHÔNG qua mihomo.
     ///
@@ -106,6 +117,40 @@ public class MihomoService
     private readonly string _coreDir;
     private readonly string _exePath;
     private readonly string _configPath;
+
+    /// <summary>
+    /// Endpoint (host:port) THẬT SỰ vừa được ghi vào config.yaml cho kênh game —
+    /// khác với "lựa chọn đã lưu" (<see cref="MasqueEndpointLab.LoadSelection"/>),
+    /// nguồn đó chỉ là Ý ĐỊNH của người dùng, không chứng minh nó đã được áp dụng.
+    ///
+    /// Lý do cần tách riêng: đã xảy ra thực tế lựa chọn lưu trong file một endpoint
+    /// (IPv6, colo HKG) nhưng người dùng ngỡ đó là endpoint đang chạy trong khi
+    /// tunnel thật đang dùng endpoint khác (IPv4, colo SIN) — chỉ phát hiện được
+    /// bằng cách đo trực tiếp tunnel đang Boost. Property này là "nguồn sự thật"
+    /// để Dashboard/Settings hiện đúng cái đang chạy, không phải cái đã lưu.
+    /// Null khi không ở engine mode Direct (WireGuard/MASQUE) hoặc chưa Boost.
+    /// </summary>
+    public string? ActiveEndpointDisplay { get; private set; }
+
+    /// <summary>
+    /// Cùng nguồn với <see cref="ActiveEndpointDisplay"/>, tách riêng phần địa chỉ
+    /// (host:port thô) khỏi phần nhãn chế độ — để UI hiện địa chỉ dạng monospace
+    /// và nhãn chế độ dạng caption riêng, thay vì một chuỗi dài bị cắt chữ.
+    /// </summary>
+    public string? ActiveEndpointAddress { get; private set; }
+
+    /// <summary>Nhãn ngắn mô tả CÁCH endpoint ở trên được chọn (mặc định / đã chọn tay / qua warp-svc...).</summary>
+    public string? ActiveEndpointMode { get; private set; }
+
+    /// <summary>
+    /// Phiên "nhiều tunnel MASQUE dự phòng" (opt-in, xem <see cref="MultiCandidateSettings"/>)
+    /// đang chạy trong core mihomo hiện tại — null khi tính năng tắt, không phải mode
+    /// Direct MASQUE, hoặc build multi-candidate thất bại (đã fallback về 1 outbound đơn).
+    /// Giữ port + secret của external-controller phiên NÀY trong RAM (không persist,
+    /// không log) để <see cref="SwitchGamePathAsync"/> và <c>MasqueTunnelSweepService</c>
+    /// gọi được REST API mà không cần dò lại config.yaml.
+    /// </summary>
+    public MasqueControlSession? ActiveMasqueControl { get; private set; }
 
     // ── Theo dõi dial WireGuard thất bại (CHỈ GHI LOG, KHÔNG tự xử lý) ──
     //
@@ -388,19 +433,86 @@ public class MihomoService
         string cloudflareApiRules = "";
         // Lưới an toàn tầng 2 theo IP đích — chỉ dựng khi kênh game đang chạy.
         string gameServerIpRules = "";
+        // Chỉ khác rỗng khi multi-candidate MASQUE bật thành công (xem bên dưới):
+        // "external-controller"/"secret" (top-level YAML) + rule SRC-PORT cho PROBE-PATH.
+        string controlApiConfig = "";
+        string probeSrcPortRule = "";
 
         if (!IsGameChannelActive)
         {
             // Chỉ kênh cá nhân đang chạy — bỏ hẳn section proxy/rule game,
             // mihomo chỉ phục vụ Personal-WG (+ MATCH,DIRECT cho traffic còn lại).
+            ActiveEndpointDisplay = null;
+            ActiveEndpointAddress = null;
+            ActiveEndpointMode = null;
+            ActiveMasqueControl = null;
         }
         else
         {
-        cloudflareApiRules = $@"  - IP-CIDR,1.1.1.1/32,{proxyName}
-  - IP-CIDR,1.0.0.1/32,{proxyName}
+        // ── Multi-candidate MASQUE (opt-in, mặc định TẮT — xem MultiCandidateSettings) ──
+        // Phải quyết định TRƯỚC khi build rules ở dưới (cloudflareApiRules/gameServerIpRules/
+        // rulesBuilder đều nhắm vào "đích rule game", cần biết đó là 1 outbound đơn
+        // (proxyName) hay group "GAME-PATH" trước khi ghi các dòng đó ra.
+        //
+        // KHI TẮT (mặc định): useCandidateGroups luôn false, masqueAccPrefetch luôn null,
+        // gameRuleTarget == proxyName y hệt trước đây ⇒ YAML sinh ra cho DirectMasqueBeta
+        // BYTE-FOR-BYTE giống bản chưa có tính năng này. Chỉ mode DirectMasqueBeta mới
+        // có thể bật cờ này; WireGuard/WarpClientProxy không đụng tới.
+        bool useCandidateGroups = false;
+        var masqueCandidates = new List<(string Name, MasqueEndpoint Endpoint)>();
+        WarpMasqueAccountInfo? masqueAccPrefetch = null;
+
+        if (mode == EngineMode.DirectMasqueBeta && MultiCandidateSettings.IsEnabled())
+        {
+            try
+            {
+                masqueAccPrefetch = await WarpAccountService.GetOrCreateMasqueAccountAsync();
+                var (defIp, defPort, defNetwork) = await ResolveMasqueDefaultEndpointAsync(masqueAccPrefetch);
+
+                // Candidate 0 LUÔN là endpoint mặc định/đã chọn tay hiện tại — đảm bảo
+                // luôn có ít nhất 1 candidate kể cả khi chưa từng chạy MasqueEndpointLab.
+                var built = new List<MasqueEndpoint> { new(defIp, defPort, defNetwork) };
+
+                var history = MasqueEndpointLab.LoadResults();
+                if (history != null)
+                {
+                    foreach (var row in history.Results)
+                    {
+                        if (built.Count >= 4) break;
+                        if (!row.Success) continue;
+                        if (built.Any(e => e.Address == row.Endpoint.Address && e.Port == row.Endpoint.Port)) continue;
+                        built.Add(row.Endpoint);
+                    }
+                }
+
+                if (built.Count > 0)
+                {
+                    for (int i = 0; i < built.Count; i++)
+                        masqueCandidates.Add(($"WARP-Masque-C{i}", built[i]));
+                    useCandidateGroups = true;
+                }
+            }
+            catch
+            {
+                // Build danh sách candidate lỗi giữa chừng (DNS/tài khoản/đọc file kết
+                // quả scan cũ hỏng...) — KHÔNG được để lỗi này chặn Boost. Rơi về path
+                // 1 outbound đơn như khi tính năng tắt.
+                useCandidateGroups = false;
+                masqueCandidates.Clear();
+                masqueAccPrefetch = null;
+            }
+        }
+
+        string gameRuleTarget = useCandidateGroups ? "GAME-PATH" : proxyName;
+
+        cloudflareApiRules = $@"  - IP-CIDR,1.1.1.1/32,{gameRuleTarget}
+  - IP-CIDR,1.0.0.1/32,{gameRuleTarget}
 ";
 
-        gameServerIpRules = await BuildGameServerIpRulesAsync(proxyName);
+        gameServerIpRules = await BuildGameServerIpRulesAsync(gameRuleTarget);
+
+        if (useCandidateGroups)
+            probeSrcPortRule = $"  - SRC-PORT,{ProbeSrcPortRangeStart}-{ProbeSrcPortRangeEnd},PROBE-PATH\n";
 
         // Tách chuỗi processName thành mảng các tên tiến trình
         var processes = processName.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
@@ -410,7 +522,7 @@ public class MihomoService
             if (cleanP.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 cleanP = cleanP.Substring(0, cleanP.Length - 4);
 
-            rulesBuilder.AppendLine($"  - PROCESS-NAME,{cleanP}.exe,{proxyName}");
+            rulesBuilder.AppendLine($"  - PROCESS-NAME,{cleanP}.exe,{gameRuleTarget}");
         }
 
         if (mode == EngineMode.DirectWireGuard)
@@ -484,6 +596,9 @@ public class MihomoService
             // vào UI chọn node cho riêng máy đó — KHÔNG hardcode cho tất cả.
 
             acc.Endpoint = $"{host}:{port}";
+            ActiveEndpointAddress = $"{host}:{port}";
+            ActiveEndpointMode = "WireGuard";
+            ActiveEndpointDisplay = $"{ActiveEndpointAddress} ({ActiveEndpointMode})";
 
             proxyConfig = $@"
   - name: {proxyName}
@@ -505,13 +620,19 @@ public class MihomoService
             {
                 excludeIps.Add($"{host}/32");
             }
+            ActiveMasqueControl = null;
         }
-        else if (mode == EngineMode.DirectMasqueBeta)
+        else if (mode == EngineMode.DirectMasqueBeta && !useCandidateGroups)
         {
             // BETA — Direct Mode qua MASQUE (QUIC/HTTP-3). Tài khoản/key HOÀN
             // TOÀN riêng (WarpMasqueAccountInfo) — không đụng, không ảnh hưởng
             // gì tới tài khoản/config của Direct WireGuard ở nhánh trên.
-            var masqueAcc = await WarpAccountService.GetOrCreateMasqueAccountAsync();
+            //
+            // NHÁNH NÀY GIỮ NGUYÊN Y HỆT trước khi có multi-candidate MASQUE — chạy
+            // khi tính năng đó tắt (mặc định) HOẶC khi build candidate list ở trên
+            // thất bại (fallback an toàn). YAML sinh ra phải byte-for-byte giống bản
+            // cũ trong cả hai trường hợp, vì MASQUE là engine mode MẶC ĐỊNH của app.
+            var masqueAcc = masqueAccPrefetch ?? await WarpAccountService.GetOrCreateMasqueAccountAsync();
 
             // mihomo masque adapter tự resolve field "server" bằng resolver riêng của nó
             // (không đi qua fake-ip DNS của app) — dùng hostname trực tiếp bị "dns resolve
@@ -541,12 +662,22 @@ public class MihomoService
                 }
             }
 
+            var endpointOverride = MasqueEndpointLab.LoadSelection();
+            if (endpointOverride != null) masqueServerIp = endpointOverride.Address;
+            int masquePort = endpointOverride?.Port ?? masqueAcc.Port;
+            ActiveEndpointAddress = endpointOverride != null
+                ? new MasqueEndpoint(masqueServerIp, masquePort, endpointOverride.Network).ToString()
+                : $"{masqueServerIp}:{masquePort}";
+            ActiveEndpointMode = endpointOverride != null ? "MASQUE, đã chọn tay" : "MASQUE, mặc định";
+            ActiveEndpointDisplay = $"{ActiveEndpointAddress} ({ActiveEndpointMode})";
+
             proxyConfig = $@"
   - name: {proxyName}
     type: masque
-    server: {masqueServerIp}
+    network: {endpointOverride?.Network ?? "h3"}
+    server: ""{masqueServerIp}""
     sni: {masqueAcc.Server}
-    port: {masqueAcc.Port}
+    port: {masquePort}
     ip: {masqueAcc.IPv4}
     private-key: {masqueAcc.PrivateKey}
     public-key: {masqueAcc.PeerPublicKey}
@@ -554,14 +685,98 @@ public class MihomoService
     udp: true
     remote-dns-resolve: true";
 
-            if (System.Net.IPAddress.TryParse(masqueServerIp, out _))
+            if (System.Net.IPAddress.TryParse(masqueServerIp, out var endpointAddress)
+                && endpointAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             {
                 excludeIps.Add($"{masqueServerIp}/32");
             }
+            ActiveMasqueControl = null;
+        }
+        else if (mode == EngineMode.DirectMasqueBeta && useCandidateGroups)
+        {
+            // ═══ THỬ NGHIỆM, OPT-IN (MultiCandidateSettings) ═══
+            // Dựng SEVERAL outbound MASQUE (mỗi candidate 1 outbound riêng, cùng tài
+            // khoản/key) + 2 proxy-group "type: select" (GAME-PATH cho traffic game
+            // thật, PROBE-PATH tách riêng cho MasqueTunnelSweepService đo colo) +
+            // external-controller/secret để chuyển candidate đang active bằng REST
+            // API (PUT /proxies/GAME-PATH) thay vì kill+rebuild toàn bộ mihomo — vì
+            // rebuild = dựng tunnel mới = "quay số" lại colo (xem CLAUDE.md mục MASQUE
+            // endpoint lab). CHƯA kiểm chứng bằng traffic game thật — xem plan.
+            var masqueAcc = masqueAccPrefetch ?? await WarpAccountService.GetOrCreateMasqueAccountAsync();
+
+            var candidateNames = masqueCandidates.Select(c => c.Name).ToList();
+            var proxiesSb = new StringBuilder();
+            foreach (var (name, endpoint) in masqueCandidates)
+            {
+                proxiesSb.Append($@"
+  - name: {name}
+    type: masque
+    network: {endpoint.Network ?? "h3"}
+    server: ""{endpoint.Address}""
+    sni: {masqueAcc.Server}
+    port: {endpoint.Port}
+    ip: {masqueAcc.IPv4}
+    private-key: {masqueAcc.PrivateKey}
+    public-key: {masqueAcc.PeerPublicKey}
+    mtu: 1280
+    udp: true
+    remote-dns-resolve: true");
+
+                if (System.Net.IPAddress.TryParse(endpoint.Address, out var candAddr)
+                    && candAddr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    excludeIps.Add($"{endpoint.Address}/32");
+                }
+            }
+
+            string proxiesListYaml = string.Join(", ", candidateNames);
+            proxiesSb.Append($@"
+proxy-groups:
+  - name: GAME-PATH
+    type: select
+    proxies: [{proxiesListYaml}]
+  - name: PROBE-PATH
+    type: select
+    proxies: [{proxiesListYaml}]");
+            proxyConfig = proxiesSb.ToString();
+
+            // Candidate 0 (mặc định/đã chọn tay) là active ban đầu của GAME-PATH —
+            // mihomo chọn phần tử ĐẦU trong "proxies:" của 1 group select làm mặc định.
+            var defaultCandidate = masqueCandidates[0];
+            ActiveEndpointAddress = defaultCandidate.Endpoint.ToString();
+            ActiveEndpointMode = $"MASQUE multi-candidate ({masqueCandidates.Count} tunnel, GAME-PATH → {defaultCandidate.Name})";
+            ActiveEndpointDisplay = $"{ActiveEndpointAddress} ({ActiveEndpointMode})";
+
+            // external-controller: reserve cổng loopback ngẫu nhiên giống cách
+            // MasqueEndpointLab.ProbeAsync đã làm (TcpListener(Loopback, 0) rồi Stop
+            // ngay trước khi ghi config) — bind thật diễn ra khi mihomo tự khởi động.
+            using var controllerReservation = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            controllerReservation.Start();
+            int controllerPort = ((System.Net.IPEndPoint)controllerReservation.LocalEndpoint).Port;
+            controllerReservation.Stop();
+
+            // Bí mật CHỈ SỐNG TRONG RAM của phiên này — không persist, không log.
+            // Đây là credential cục bộ (loopback-only), không phải chỉ số hiển thị,
+            // nên quy tắc "không Random trên đường hiển thị số liệu" không áp dụng —
+            // vẫn cố ý dùng RNG mật mã để tránh mọi nhập nhằng.
+            string controllerSecret = System.Security.Cryptography.RandomNumberGenerator.GetHexString(32);
+
+            controlApiConfig = $@"
+external-controller: 127.0.0.1:{controllerPort}
+secret: ""{controllerSecret}""";
+
+            var controlClient = new MihomoControlClient(controllerPort, controllerSecret);
+            var candidateMap = masqueCandidates.ToDictionary(c => c.Name, c => c.Endpoint);
+            ActiveMasqueControl = new MasqueControlSession(controllerPort, controllerSecret, controlClient, candidateMap);
         }
         else
         {
             // Chế độ Tương Thích (WARP Client SOCKS5 Proxy 127.0.0.1:40000)
+            // warp-svc tự chọn endpoint bên trong tiến trình riêng của nó — app
+            // không đọc được (và không ghi) endpoint cụ thể nào ở đây.
+            ActiveEndpointAddress = null;
+            ActiveEndpointMode = "qua warp-svc (không xác định từ app)";
+            ActiveEndpointDisplay = ActiveEndpointMode;
             proxyConfig = @"
   - name: ""WARP_OUT""
     type: socks5
@@ -569,6 +784,7 @@ public class MihomoService
     port: 40000
     udp: true
     skip-cert-verify: true";
+            ActiveMasqueControl = null;
         }
         } // end if (IsGameChannelActive)
 
@@ -717,14 +933,14 @@ log-level: warning
 #      vẫn là lưới an toàn khi không attribute được tiến trình; đánh đổi là log
 #      mất tên tiến trình cho nhóm đó (xem GameWorldServerCidr). (Ghi chú: 'strict' lần này KHÔNG gây rò rỉ —
 #      chỉ 6 dòng 'match Match/' và đều là chrome.exe, không phải traffic game.)
-find-process-mode: always
+find-process-mode: always{controlApiConfig}
 {dnsAndTunConfig}
 
 proxies:
 {proxyConfig}{personalProxyConfig}
 
 rules:
-{cloudflareApiRules}{gameServerIpRules}  # PROCESS-NAME phải đứng TRƯỚC các rule DIRECT theo dải IP riêng bên dưới —
+{probeSrcPortRule}{cloudflareApiRules}{gameServerIpRules}  # PROCESS-NAME phải đứng TRƯỚC các rule DIRECT theo dải IP riêng bên dưới —
   # mihomo match rule theo thứ tự, dòng nào khớp trước thắng. Kênh VPN cá
   # nhân cố ý route tới LAN riêng (192.168.x.x...) của server đích XUYÊN
   # QUA tunnel — nếu để rule DIRECT theo dải IP riêng lên trước, mọi traffic
@@ -795,6 +1011,41 @@ rules:
     /// Resolve lại mỗi lần Boost nên IP đổi vẫn tự cập nhật; resolve lỗi thì bỏ
     /// qua host đó (trả về rule rỗng), không chặn Boost.
     /// </summary>
+    /// <summary>
+    /// Resolve endpoint MASQUE "mặc định/đã chọn tay hiện tại" — dùng làm candidate 0
+    /// của multi-candidate MASQUE (xem nhánh useCandidateGroups trong ApplyChannelsAsync).
+    ///
+    /// ĐÂY LÀ BẢN SAO có chủ đích của logic resolve trong nhánh DirectMasqueBeta
+    /// !useCandidateGroups (không refactor gộp lại) — để nhánh đó giữ nguyên tuyệt
+    /// đối không đổi khi tính năng multi-candidate tắt (mặc định), tránh mọi rủi ro
+    /// hồi quy trên engine mode mặc định của app.
+    /// </summary>
+    private static async Task<(string Ip, int Port, string Network)> ResolveMasqueDefaultEndpointAsync(WarpMasqueAccountInfo masqueAcc)
+    {
+        string masqueServerIp = !string.IsNullOrEmpty(masqueAcc.ServerIp)
+                              ? masqueAcc.ServerIp
+                              : masqueAcc.Server;
+        if (!System.Net.IPAddress.TryParse(masqueServerIp, out _))
+        {
+            try
+            {
+                var addrs = await System.Net.Dns.GetHostAddressesAsync(masqueAcc.Server);
+                var v4 = addrs.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                masqueServerIp = v4 != null ? v4.ToString() : MasqueFallbackIp;
+            }
+            catch
+            {
+                masqueServerIp = MasqueFallbackIp;
+            }
+        }
+
+        var endpointOverride = MasqueEndpointLab.LoadSelection();
+        if (endpointOverride != null)
+            return (endpointOverride.Address, endpointOverride.Port, endpointOverride.Network ?? "h3");
+
+        return (masqueServerIp, masqueAcc.Port, "h3");
+    }
+
     private static async Task<string> BuildGameServerIpRulesAsync(string proxyName)
     {
         var ips = new SortedSet<string>(StringComparer.Ordinal);
@@ -880,6 +1131,29 @@ rules:
         _activeStartCts?.Cancel();
         TryGracefulStop();
         KillMihomoProcess();
+        ActiveEndpointDisplay = null;
+        ActiveEndpointAddress = null;
+        ActiveEndpointMode = null;
+        ActiveMasqueControl = null;
+    }
+
+    /// <summary>
+    /// Chuyển candidate đang mang traffic game (group "GAME-PATH") sang
+    /// <paramref name="proxyName"/> BẰNG REST API của mihomo (PUT /proxies/GAME-PATH),
+    /// KHÔNG rebuild/restart process — mục đích cốt lõi của tính năng multi-candidate:
+    /// rebuild = dựng tunnel mới = "quay số" lại colo (xem CLAUDE.md mục MASQUE endpoint
+    /// lab), còn PUT trên 1 proxy-group type: select chỉ đổi 1 field nội bộ của
+    /// mihomo, không thấy có teardown kết nối trong source đã đọc (adapter/outboundgroup/selector.go)
+    /// — dù vậy điều đó CHƯA được kiểm chứng độc lập cho riêng lifecycle MASQUE/QUIC.
+    ///
+    /// Trả về false vô hại (không throw) nếu tính năng đang tắt hoặc session control
+    /// không tồn tại — gọi ở đây không được phép làm gãy luồng Boost.
+    /// </summary>
+    public async Task<bool> SwitchGamePathAsync(string proxyName)
+    {
+        var session = ActiveMasqueControl;
+        if (session == null) return false;
+        return await session.Client.SelectAsync("GAME-PATH", proxyName);
     }
 
     /// <summary>

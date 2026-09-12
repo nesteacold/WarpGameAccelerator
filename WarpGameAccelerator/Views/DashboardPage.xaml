@@ -282,8 +282,13 @@
                                Text="{x:Bind ViewModel.RouteTierText, Mode=OneWay}"
                                Foreground="{x:Bind ViewModel.RouteTierBrush, Mode=OneWay}"
                                TextWrapping="Wrap"/>
-                    <TextBlock Text="Auto Region"
-                               FontSize="10"
+                    <TextBlock Text="{x:Bind ViewModel.EndpointModeText, Mode=OneWay}"
+                               FontSize="9"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                    <TextBlock Text="{x:Bind ViewModel.EndpointText, Mode=OneWay}"
+                               FontFamily="Consolas"
+                               FontSize="10" TextTrimming="CharacterEllipsis"
+                               ToolTipService.ToolTip="{x:Bind ViewModel.EndpointText, Mode=OneWay}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
             </Border>

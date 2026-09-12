@@ -18,6 +18,7 @@ public partial class DashboardViewModel : ObservableObject
     private readonly GameProfileService _profileService;
     private readonly DispatcherQueue _dispatcher;
     private readonly NetworkOptimizerService _networkOptimizer;
+    private readonly MasqueTunnelSweepService? _tunnelSweep;
 
     // ── Observable Properties ────────────────────────────────
 
@@ -49,6 +50,14 @@ public partial class DashboardViewModel : ObservableObject
     // XAML, không phản ánh trạng thái tài khoản thật (khác biệt với WarpAccountPage
     // đã bind đúng). Cập nhật thật sau mỗi lần Boost thành công.
     [ObservableProperty] private string _routeTierText = "—";
+
+    // Endpoint THẬT SỰ đang chạy (MihomoService.ActiveEndpointDisplay), không
+    // phải lựa chọn đã lưu — xem ghi chú tại property gốc để biết vì sao 2 cái
+    // này từng lệch nhau và gây hiểu nhầm đã áp dụng đúng endpoint.
+    // Tách riêng địa chỉ (mono, có thể dài) và nhãn chế độ (caption ngắn) để
+    // card ROUTE không phải nhồi 1 chuỗi dài vào ô hẹp rồi cắt chữ.
+    [ObservableProperty] private string _endpointText = "—";
+    [ObservableProperty] private string _endpointModeText = "";
 
     // Trang thai THAT cua duong toi server game, suy ra tu log dial cua mihomo
     // (MihomoService.LastGameDialFailureUtc). Day la thay the cho o PING cu —
@@ -115,7 +124,8 @@ public partial class DashboardViewModel : ObservableObject
                               MihomoService mihomoService,
                               LocalizationService loc,
                               GameProfileService profileService,
-                              DispatcherQueue dispatcher)
+                              DispatcherQueue dispatcher,
+                              MasqueTunnelSweepService? tunnelSweep = null)
     {
         _warpService   = warpService;
         _pingMonitor   = pingMonitor;
@@ -124,8 +134,10 @@ public partial class DashboardViewModel : ObservableObject
         _profileService = profileService;
         _dispatcher    = dispatcher;
         _networkOptimizer = new NetworkOptimizerService();
+        _tunnelSweep   = tunnelSweep;
 
         _pingMonitor.PingUpdated += OnPingUpdated;
+        if (_tunnelSweep != null) _tunnelSweep.SweepUpdated += OnTunnelSweepUpdated;
 
         // Khi ngôn ngữ thay đổi, cập nhật toàn bộ display strings
         _loc.PropertyChanged += (_, __) =>
@@ -279,6 +291,33 @@ public partial class DashboardViewModel : ObservableObject
         {
             RouteTierText = "—";
         }
+
+        EndpointText = _mihomoService.ActiveEndpointAddress ?? _mihomoService.ActiveEndpointDisplay ?? "—";
+        EndpointModeText = _mihomoService.ActiveEndpointMode ?? "";
+    }
+
+    /// <summary>
+    /// Nối thêm colo đã xác thực (hoặc "chưa xác thực") vào EndpointModeText hiện có
+    /// — KHÔNG thay thế/tạo property mới, theo đúng yêu cầu: khi tính năng multi-
+    /// candidate MASQUE tắt (mặc định), sự kiện này không bao giờ được phát ra (xem
+    /// MasqueTunnelSweepService — nó chỉ hoạt động khi MihomoService.ActiveMasqueControl
+    /// khác null), nên EndpointModeText y hệt trước đây trong trường hợp đó.
+    /// </summary>
+    private void OnTunnelSweepUpdated(object? sender, IReadOnlyList<CandidateColoStatus> statuses)
+    {
+        var current = statuses.FirstOrDefault(s => s.IsCurrentSelection);
+        if (current == null) return;
+
+        string suffix = current.Colo != null && current.VerifiedAtUtc != null
+            ? $" · colo {current.Colo} (xác thực lúc {current.VerifiedAtUtc.Value.ToLocalTime():HH:mm:ss})"
+            : " · chưa xác thực";
+
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (CurrentState != AppState.Connected) return;
+            var baseMode = _mihomoService.ActiveEndpointMode ?? "";
+            EndpointModeText = baseMode + suffix;
+        });
     }
 
     private async Task StopBoostAsync()
@@ -286,6 +325,8 @@ public partial class DashboardViewModel : ObservableObject
         CurrentState = AppState.Disconnecting;
         _pingMonitor.Stop();
         _mihomoService.StopProxy();
+        EndpointText = "—";
+        EndpointModeText = "";
 
         await _networkOptimizer.RestoreAsync();
         await _warpService.ClearSplitTunnelAsync();

@@ -115,6 +115,7 @@ public partial class App : Application
         services.AddSingleton<UpdateService>();
         services.AddSingleton<WarpAccountService>();
         services.AddSingleton<LocalizationService>();
+        services.AddSingleton<MasqueTunnelSweepService>();
 
         // ViewModels — DispatcherQueue được resolve lazily khi ViewModel đầu tiên được dùng
         services.AddSingleton<DashboardViewModel>(sp => new DashboardViewModel(
@@ -124,7 +125,8 @@ public partial class App : Application
             sp.GetRequiredService<LocalizationService>(),
             sp.GetRequiredService<GameProfileService>(),
             DispatcherQueue.GetForCurrentThread()
-                ?? Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()!
+                ?? Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()!,
+            sp.GetRequiredService<MasqueTunnelSweepService>()
         ));
         services.AddSingleton<ProcessPickerViewModel>(sp =>
             new ProcessPickerViewModel(
