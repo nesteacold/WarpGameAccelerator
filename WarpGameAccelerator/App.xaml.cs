@@ -134,6 +134,7 @@ public partial class App : Application
             new SettingsViewModel(
                 sp.GetRequiredService<PingMonitorService>(),
                 sp.GetRequiredService<LocalizationService>()));
+        services.AddSingleton<MultiClientViewModel>();
 
         // Windows
         services.AddSingleton<MainWindow>();

@@ -25,10 +25,13 @@ public sealed partial class AowBoosterPage : Page
         try
         {
             // Ưu tiên thư mục đã lưu riêng cho AoW Booster; nếu chưa có, mượn
-            // tạm thư mục đã cấu hình ở Multi-Client (cùng là thư mục gốc AOW).
+            // tạm thư mục ĐẦU TIÊN đã cấu hình ở Multi-Client (cùng là thư mục
+            // gốc AOW) — game_folders.json thay thế field GameFolder cũ (đã
+            // legacy) trong aow_token.json từ khi Multi-Client hỗ trợ nhiều
+            // thư mục cùng lúc.
             var folder = await DxvkBoosterService.LoadSavedFolderAsync();
             if (string.IsNullOrEmpty(folder))
-                folder = MultiClientService.LoadToken()?.GameFolder;
+                folder = MultiClientService.GetFirstGameFolderOrNull();
 
             if (!string.IsNullOrEmpty(folder))
             {

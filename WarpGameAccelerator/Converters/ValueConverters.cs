@@ -95,3 +95,87 @@ public class DetectedToTextConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, string language) =>
         throw new NotImplementedException();
 }
+
+// ── Converters riêng cho MultiClientPage (bảng nhiều thư mục) ──────────
+
+/// <summary>Có token hay chưa (bool) → nền badge trạng thái token.</summary>
+public class HasTokenBackgroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(26, 0, 200, 100))
+            : new SolidColorBrush(ColorHelper.FromArgb(26, 255, 149, 0));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>Có token hay chưa (bool) → viền badge trạng thái token.</summary>
+public class HasTokenBorderConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(51, 0, 200, 100))
+            : new SolidColorBrush(ColorHelper.FromArgb(51, 255, 149, 0));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>Có token hay chưa (bool) → chấm tròn trạng thái token.</summary>
+public class HasTokenDotConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(255, 0, 200, 100))
+            : new SolidColorBrush(ColorHelper.FromArgb(255, 255, 149, 0));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>bool → bool đảo ngược — dùng cho IsEnabled (x:Bind không hỗ trợ toán tử "!" ở đây).</summary>
+public class InverseBoolConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        !(value is true);
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        !(value is true);
+}
+
+/// <summary>bool IsExpanded → nhãn chevron mở/thu gọn danh sách client.</summary>
+public class ExpandChevronConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true ? "▲  Thu gọn" : "▼  Xem client đang chạy";
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>int count == 0 → Visible (dùng cho empty-state), ngược lại Collapsed.</summary>
+public class CountToEmptyVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        int n = value switch { int i => i, long l => (int)l, _ => 0 };
+        return n == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>int count > 0 → Visible, ngược lại Collapsed.</summary>
+public class CountToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        int n = value switch { int i => i, long l => (int)l, _ => 0 };
+        return n > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}

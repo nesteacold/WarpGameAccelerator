@@ -13,9 +13,20 @@ namespace WarpGameAccelerator.Services;
 public class AowTokenInfo
 {
     public string Token       { get; set; } = string.Empty;
+    // LEGACY (trước v-nhiều-thư-mục): thư mục game duy nhất từng lưu kèm
+    // token. Từ khi có game_folders.json (danh sách nhiều thư mục), field
+    // này KHÔNG còn được ghi mới — chỉ giữ lại để đọc file cũ phục vụ
+    // migration một lần (xem MultiClientService.LoadGameFolders).
     public string GameFolder  { get; set; } = string.Empty;
     public string SavedAt     { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Một thư mục cài đặt game đã biết (tự quét được hoặc người dùng thêm tay).
+/// Persist trong Data\game_folders.json — thay thế field GameFolder đơn lẻ
+/// cũ trong aow_token.json để hỗ trợ nhiều thư mục cùng lúc.
+/// </summary>
+public record GameFolderEntry(string Path, int LastClientCount, DateTimeOffset AddedAt);
 
 public class RunningClient
 {
@@ -24,6 +35,15 @@ public class RunningClient
     // Hỏi thẳng WinAPI (WindowHelper.IsClientVisible) mỗi lần refresh thay vì
     // tự lưu cờ nội bộ — tránh lệch trạng thái nếu app tắt/mở lại giữa lúc ẩn.
     public bool   IsVisible { get; set; } = true;
+    // Thư mục (trong danh sách đã cấu hình) sở hữu tiến trình này, suy ra từ
+    // Process.MainModule.FileName. null = không khớp thư mục nào đã biết
+    // (bucket "không rõ thư mục" trên UI) — KHÔNG được coi là lỗi, có thể là
+    // client mở từ thư mục người dùng chưa thêm/quét ra.
+    public string? FolderPath { get; set; }
+
+    /// <summary>Chuỗi hiển thị gộp sẵn cho UI (tránh phải bind numeric field trực tiếp trong x:Bind).</summary>
+    public string DisplayText =>
+        $"PID {Pid}  ·  {StartTime}" + (IsVisible ? "" : "  ·  (đang ẩn)");
 }
 
 public class MultiClientService
@@ -50,6 +70,18 @@ public class MultiClientService
     /// mở tiếp thay vì treo — có thể người dùng chưa chọn nhân vật/vào game.
     /// </summary>
     private const int ConnectWaitTimeoutMs = 60000;
+
+    /// <summary>
+    /// Token là account-level, dùng chung cho MỌI thư mục. Hai lệnh mở-client
+    /// (dù xuất phát từ hai thư mục khác nhau) cùng chạy đồng thời vẫn có thể
+    /// khiến hai client cùng xác thực một token gần như đồng thời → 1 cái bị
+    /// đá ("Mạng đứt kết nối") — y hệt rủi ro ban đầu khi chỉ có 1 thư mục.
+    /// Do đó khoá TOÀN BỘ luồng mở-client (EnsureClientsRunningAsync) bằng 1
+    /// semaphore tĩnh để tuần tự hoá GIỮA CÁC THƯ MỤC — không phải để cộng
+    /// dồn MinLaunchIntervalMs (constant đó vẫn chỉ là pacing NỘI BỘ của một
+    /// lần gọi, xem LaunchClientsToTotalAsync).
+    /// </summary>
+    private static readonly SemaphoreSlim LaunchGate = new(1, 1);
 
     private static readonly string TokenFilePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -93,6 +125,181 @@ public class MultiClientService
         }
         catch { }
 
+        return null;
+    }
+
+    // ── Danh sách nhiều thư mục game (game_folders.json) ─────
+    private static readonly string GameFoldersFilePath =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                     "WarpGameAccelerator", "Data", "game_folders.json");
+
+    /// <summary>
+    /// Đọc danh sách thư mục đã lưu. Nếu file chưa từng tồn tại VÀ
+    /// aow_token.json cũ còn field GameFolder không rỗng, seed danh sách mới
+    /// từ đúng 1 thư mục đó một lần duy nhất (migration) rồi lưu lại — từ đây
+    /// về sau GameFolder trong token file không còn được đọc nữa.
+    /// </summary>
+    public static List<GameFolderEntry> LoadGameFolders()
+    {
+        try
+        {
+            if (File.Exists(GameFoldersFilePath))
+            {
+                var json = File.ReadAllText(GameFoldersFilePath);
+                var loaded = JsonSerializer.Deserialize<List<GameFolderEntry>>(json);
+                if (loaded != null) return loaded;
+                return new List<GameFolderEntry>();
+            }
+
+            // Chưa có file mới — thử migrate từ token cũ (chỉ 1 lần).
+            var legacy = LoadToken();
+            if (!string.IsNullOrWhiteSpace(legacy?.GameFolder) && Directory.Exists(legacy.GameFolder))
+            {
+                var seeded = new List<GameFolderEntry>
+                {
+                    new(legacy!.GameFolder, 2, DateTimeOffset.Now)
+                };
+                SaveGameFolders(seeded);
+                DiagnosticLogService.Trace(
+                    $"Migrate game_folders.json từ aow_token.json cũ: {legacy.GameFolder}");
+                return seeded;
+            }
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"LoadGameFolders EXCEPTION: {ex}");
+        }
+        return new List<GameFolderEntry>();
+    }
+
+    public static void SaveGameFolders(List<GameFolderEntry> folders)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(GameFoldersFilePath)!;
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(GameFoldersFilePath,
+                JsonSerializer.Serialize(folders, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"SaveGameFolders EXCEPTION: {ex}");
+        }
+    }
+
+    /// <summary>Dùng cho AowBoosterPage "mượn" thư mục — thay cho GameFolder cũ đã legacy.</summary>
+    public static string? GetFirstGameFolderOrNull()
+    {
+        var list = LoadGameFolders();
+        return list.Count > 0 ? list[0].Path : null;
+    }
+
+    /// <summary>
+    /// Quét mọi ổ đĩa cố định, đào 2-3 cấp thư mục từ gốc mỗi ổ, kiểm tra bằng
+    /// ValidateGameFolder (KHÔNG viết lại logic detect fxlaunch/fxgame — dùng
+    /// nguyên hàm đã kiểm chứng). Chạy có thể mất tới ~1 phút trên máy nhiều
+    /// ổ — gọi hàm này từ Task.Run ở tầng ViewModel, KHÔNG gọi trực tiếp trên
+    /// UI thread. Gặp thư mục hợp lệ thì dừng đào sâu tiếp nhánh đó (không cần
+    /// tìm bản cài đặt lồng bên trong bản cài đặt khác).
+    /// </summary>
+    public static List<string> DiscoverGameFolders(int maxDepth = 3, IProgress<string>? progress = null)
+    {
+        var found = new List<string>();
+        DriveInfo[] drives;
+        try
+        {
+            drives = DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Fixed && d.IsReady).ToArray();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"DiscoverGameFolders — không liệt kê được ổ đĩa: {ex.Message}");
+            return found;
+        }
+
+        foreach (var drive in drives)
+        {
+            progress?.Report($"Đang quét ổ {drive.Name} ...");
+            try
+            {
+                ScanDirectoryForGame(drive.RootDirectory.FullName, depth: 0, maxDepth, found);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLogService.Trace($"DiscoverGameFolders — lỗi quét {drive.Name}: {ex.Message}");
+            }
+        }
+
+        DiagnosticLogService.Trace($"DiscoverGameFolders — tìm thấy {found.Count} thư mục hợp lệ");
+        return found;
+    }
+
+    private static readonly HashSet<string> SkipDirNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Windows", "System Volume Information", "ProgramData", "$Recycle.Bin", "Recovery"
+    };
+
+    private static void ScanDirectoryForGame(string dir, int depth, int maxDepth, List<string> found)
+    {
+        try
+        {
+            var (valid, _) = ValidateGameFolder(dir);
+            if (valid)
+            {
+                found.Add(dir);
+                return; // đã ra kết quả ở nhánh này, không cần đào sâu thêm
+            }
+        }
+        catch { /* thư mục không đọc được (quyền truy cập...) — bỏ qua, không chặn scan */ }
+
+        if (depth >= maxDepth) return;
+
+        IEnumerable<string> subDirs;
+        try
+        {
+            subDirs = Directory.EnumerateDirectories(dir);
+        }
+        catch
+        {
+            return; // không có quyền đọc thư mục này — bỏ qua nhánh
+        }
+
+        foreach (var sub in subDirs)
+        {
+            try
+            {
+                var name = Path.GetFileName(sub);
+                if (!string.IsNullOrEmpty(name) && SkipDirNames.Contains(name)) continue;
+                ScanDirectoryForGame(sub, depth + 1, maxDepth, found);
+            }
+            catch { /* một nhánh lỗi không được làm hỏng cả lượt quét */ }
+        }
+    }
+
+    /// <summary>
+    /// Thư mục (trong danh sách đã biết) sở hữu file exe này, so theo tiền tố
+    /// đường dẫn đã chuẩn hoá — khớp cả trường hợp exe nằm trong bin64/Bin64.
+    /// </summary>
+    private static string? ResolveOwningFolder(string exePath, IReadOnlyList<string> knownFolders)
+    {
+        if (string.IsNullOrWhiteSpace(exePath)) return null;
+        try
+        {
+            var fullExe = Path.GetFullPath(exePath);
+            foreach (var folder in knownFolders)
+            {
+                if (string.IsNullOrWhiteSpace(folder)) continue;
+                string fullFolder;
+                try { fullFolder = Path.GetFullPath(folder).TrimEnd('\\', '/'); }
+                catch { continue; }
+
+                if (fullExe.Equals(fullFolder, StringComparison.OrdinalIgnoreCase) ||
+                    fullExe.StartsWith(fullFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return folder;
+                }
+            }
+        }
+        catch { }
         return null;
     }
 
@@ -203,12 +410,14 @@ public class MultiClientService
     }
 
     // ── Lưu / Đọc token ──────────────────────────────────────
-    public static async Task SaveTokenAsync(string token, string gameFolder)
+    // Token là ACCOUNT-LEVEL (không gắn với 1 thư mục cụ thể) — từ khi hỗ trợ
+    // nhiều thư mục, không còn ghi kèm GameFolder nữa (field đó là legacy,
+    // chỉ đọc để migrate — xem LoadGameFolders).
+    public static async Task SaveTokenAsync(string token)
     {
         var info = new AowTokenInfo
         {
             Token      = token,
-            GameFolder = gameFolder,
             SavedAt    = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
         };
         var dir = Path.GetDirectoryName(TokenFilePath)!;
@@ -250,7 +459,9 @@ public class MultiClientService
         if (gamePath == null)
             return (0, "Không tìm thấy fxgame.exe.");
 
-        int alreadyRunning = CountRunningFxgame();
+        // Đếm THEO THƯ MỤC (không phải toàn hệ thống) — hỗ trợ nhiều thư mục
+        // chạy song song mà không cộng dồn số cửa sổ của nhau.
+        int alreadyRunning = CountRunningFxgameInFolder(gameFolder);
         int count = targetTotal - alreadyRunning;
 
         DiagnosticLogService.Trace(
@@ -323,23 +534,149 @@ public class MultiClientService
         return (launched, msg);
     }
 
-    /// <summary>Số cửa sổ game (fxgame.exe) đang chạy.</summary>
+    /// <summary>
+    /// Luồng đầy đủ để mở đủ N cửa sổ cho MỘT thư mục — dùng cho UI dạng
+    /// nhiều-thư-mục (mỗi hàng gọi hàm này với thư mục + đích của riêng nó).
+    /// Nếu thư mục chưa có client nào chạy VÀ chưa có token, tự mở launcher +
+    /// chờ đăng nhập trước (y hệt luồng thủ công cũ), rồi mới mở nốt cho đủ
+    /// targetTotal. Toàn bộ được khoá bằng <see cref="LaunchGate"/> nên hai
+    /// thư mục gọi đồng thời sẽ tự xếp hàng thay vì đua nhau xác thực chung
+    /// một token — nhưng KHÔNG cộng dồn <see cref="MinLaunchIntervalMs"/> của
+    /// nhau, mỗi lời gọi vẫn chỉ trả giá pacing của chính nó.
+    /// </summary>
+    public static async Task<(int Launched, string Message, string Token)> EnsureClientsRunningAsync(
+        string gameFolder, string existingToken, int targetTotal, IProgress<string>? progress = null)
+    {
+        await LaunchGate.WaitAsync();
+        try
+        {
+            string token = existingToken;
+            int runningInFolder = CountRunningFxgameInFolder(gameFolder);
+
+            if (runningInFolder == 0 || string.IsNullOrEmpty(token))
+            {
+                progress?.Report("Đang mở launcher, hãy đăng nhập vào game...");
+                var pidsBefore = GetFxgamePids();
+
+                var (launcherOk, launcherMsg) = await LaunchFirstClientAsync(gameFolder);
+                if (!launcherOk) return (0, launcherMsg, token);
+
+                if (string.IsNullOrEmpty(token))
+                {
+                    token = await WaitForTokenInternalAsync(progress);
+                    if (string.IsNullOrEmpty(token))
+                    {
+                        return (0,
+                            "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.",
+                            token);
+                    }
+                }
+
+                // Chờ đúng client MỚI vừa mở kết nối xong trước khi mở tiếp —
+                // giới hạn theo PID mới để không bị "ăn ké" trạng thái đã kết
+                // nối sẵn của một thư mục KHÁC đang chạy song song.
+                if (targetTotal > CountRunningFxgameInFolder(gameFolder))
+                {
+                    int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
+                    if (newPid > 0)
+                        await WaitForClientConnectedAsync(newPid, 1, targetTotal, progress);
+                    else
+                        await WaitForAnyClientConnectedAsync(progress);
+                }
+            }
+
+            var (launched, msg) = await LaunchClientsToTotalAsync(gameFolder, token, targetTotal, progress);
+            return (launched, msg, token);
+        }
+        finally
+        {
+            LaunchGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Chờ tới khi lấy được token từ fxgame.exe đang chạy — thử mỗi 2s trong
+    /// tối đa 60s để người dùng có thời gian đăng nhập trong launcher. Lưu
+    /// lại ngay khi lấy được (token là account-level, dùng chung mọi thư mục).
+    /// </summary>
+    private static async Task<string> WaitForTokenInternalAsync(IProgress<string>? progress)
+    {
+        for (int i = 0; i < 30; i++)
+        {
+            await Task.Delay(2000);
+
+            var (ok, token, _) = await DetectTokenAsync();
+            if (ok && !string.IsNullOrEmpty(token))
+            {
+                await SaveTokenAsync(token);
+                DiagnosticLogService.Trace($"  lấy được token sau {(i + 1) * 2}s");
+                return token;
+            }
+
+            progress?.Report($"Đang chờ bạn đăng nhập... ({(i + 1) * 2}s)");
+        }
+
+        DiagnosticLogService.Trace("  TIMEOUT 60s — không lấy được token");
+        return string.Empty;
+    }
+
+    /// <summary>Số cửa sổ game (fxgame.exe) đang chạy, toàn hệ thống.</summary>
     public static int CountRunningClients() => CountRunningFxgame();
 
     /// <summary>
-    /// Chờ tới khi CÓ ÍT NHẤT MỘT client đã kết nối vào server game. Dùng sau
-    /// khi người dùng đăng nhập client đầu tiên: token xuất hiện ngay lúc
-    /// fxgame.exe vừa chạy, nhưng lúc đó nó MỚI BẮT ĐẦU xác thực. Mở client
-    /// thứ hai ngay sẽ khiến hai bên cùng xác thực một token → đứt kết nối.
+    /// Số cửa sổ game đang chạy CỦA RIÊNG một thư mục — dựa vào
+    /// Process.MainModule.FileName của từng fxgame.exe. Tiến trình không đọc
+    /// được MainModule (khác kiến trúc/quyền) bị bỏ qua khỏi phép đếm này;
+    /// đây là best-effort, không có cách nào đáng tin cậy hơn để quy tiến
+    /// trình về thư mục khi không attribute được module path.
     /// </summary>
-    public static async Task WaitForAnyClientConnectedAsync(IProgress<string>? progress = null)
+    public static int CountRunningFxgameInFolder(string folder)
+    {
+        var procs = Process.GetProcessesByName("fxgame");
+        try
+        {
+            int count = 0;
+            var folders = new[] { folder };
+            foreach (var p in procs)
+            {
+                try
+                {
+                    var exePath = p.MainModule?.FileName;
+                    if (exePath != null && ResolveOwningFolder(exePath, folders) != null) count++;
+                }
+                catch { }
+            }
+            return count;
+        }
+        finally
+        {
+            foreach (var p in procs) { try { p.Dispose(); } catch { } }
+        }
+    }
+
+    /// <summary>
+    /// Chờ tới khi CÓ ÍT NHẤT MỘT client (trong tập PID cho trước, hoặc bất kỳ
+    /// nếu không truyền) đã kết nối vào server game. Dùng sau khi người dùng
+    /// đăng nhập client đầu tiên: token xuất hiện ngay lúc fxgame.exe vừa
+    /// chạy, nhưng lúc đó nó MỚI BẮT ĐẦU xác thực. Mở client thứ hai ngay sẽ
+    /// khiến hai bên cùng xác thực một token → đứt kết nối.
+    /// </summary>
+    /// <param name="candidatePids">
+    /// Giới hạn việc chờ vào đúng các PID này (thường là PID mới xuất hiện từ
+    /// lần launch hiện tại) — quan trọng khi có NHIỀU thư mục: nếu không giới
+    /// hạn, một client SẴN CÓ của thư mục khác đã kết nối xong sẽ khiến hàm
+    /// trả về sớm dù client vừa mở của thư mục này chưa kết nối gì cả.
+    /// </param>
+    public static async Task WaitForAnyClientConnectedAsync(
+        IProgress<string>? progress = null, HashSet<int>? candidatePids = null)
     {
         const int pollInterval = 500;
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         while (sw.ElapsedMilliseconds < ConnectWaitTimeoutMs)
         {
-            foreach (var pid in GetFxgamePids())
+            var pidsToCheck = candidatePids ?? GetFxgamePids();
+            foreach (var pid in pidsToCheck)
             {
                 if (TcpTableHelper.HasEstablishedPublicConnection(pid))
                 {
@@ -460,7 +797,12 @@ public class MultiClientService
     }
 
     // ── Quản lý client đang chạy ─────────────────────────────
-    public static List<RunningClient> GetRunningClients()
+    /// <param name="knownFolders">
+    /// Danh sách thư mục đã cấu hình để gán RunningClient.FolderPath. Truyền
+    /// null/rỗng thì giữ hành vi cũ (không resolve, FolderPath luôn null —
+    /// mọi client rơi vào bucket "không rõ thư mục" khi hiển thị theo nhóm).
+    /// </param>
+    public static List<RunningClient> GetRunningClients(IReadOnlyList<string>? knownFolders = null)
     {
         var result = new List<RunningClient>();
         try
@@ -485,11 +827,20 @@ public class MultiClientService
                     string startTime = "Vừa mở";
                     try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
 
+                    string? folder = null;
+                    if (knownFolders != null && knownFolders.Count > 0)
+                    {
+                        string? exePath = null;
+                        try { exePath = p.MainModule?.FileName; } catch { /* khác kiến trúc/quyền — bỏ qua */ }
+                        if (exePath != null) folder = ResolveOwningFolder(exePath, knownFolders);
+                    }
+
                     result.Add(new RunningClient
                     {
-                        Pid       = p.Id,
-                        StartTime = startTime,
-                        IsVisible = WindowHelper.IsClientVisible(p.Id)
+                        Pid        = p.Id,
+                        StartTime  = startTime,
+                        IsVisible  = WindowHelper.IsClientVisible(p.Id),
+                        FolderPath = folder
                     });
                 }
                 catch
