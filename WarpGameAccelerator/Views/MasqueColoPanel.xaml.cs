@@ -133,12 +133,13 @@ public sealed partial class MasqueColoPanel : UserControl
             index++;
             byName.TryGetValue(proxyName, out var status);
             bool isCurrent = status?.IsCurrentSelection == true;
+            bool isError = status != null && status.Colo == null;
             string detail = status == null
                 ? "Chưa đo — bấm \"Quét colo\" bên trên."
                 : status.Colo != null
-                    ? $"colo {status.Colo}" + (status.LatencyMs is { } ms ? $" · {ms:0} ms" : "")
-                        + (status.VerifiedAtUtc is { } t ? $" · lúc {t.ToLocalTime():HH:mm:ss}" : "")
+                    ? (status.VerifiedAtUtc is { } t ? $"xác thực lúc {t.ToLocalTime():HH:mm:ss}" : "")
                     : "Không đo được" + (status.VerifiedAtUtc is { } t2 ? $" (lúc {t2.ToLocalTime():HH:mm:ss})" : "");
+            string pillText = status == null ? "chưa đo" : status.Colo != null ? $"colo {status.Colo}" : "lỗi";
 
             // KHÔNG còn khoá cứng khi game đang chạy — thay bằng xác nhận 2 lần
             // (xem SelectGamePath_Click). Bấm lần 1 chỉ "vũ trang", bấm lần 2
@@ -153,12 +154,16 @@ public sealed partial class MasqueColoPanel : UserControl
             rows.Add(new MultiCandidateRow
             {
                 ProxyName = proxyName,
-                Title = $"Tunnel {index} — {endpoint}",
+                Title = $"Tunnel {index}",
+                EndpointText = endpoint.ToString(),
                 DetailText = detail,
                 ButtonLabel = isCurrent ? "✓ Đang dùng" : "Chọn",
                 CanSelect = canSelect,
                 ButtonTooltip = tooltip,
-                IsCurrent = isCurrent
+                IsCurrent = isCurrent,
+                LatencyMs = status?.LatencyMs,
+                IsError = isError,
+                PillText = pillText
             });
         }
         // Tunnel đang mang traffic game luôn lên đầu — đỡ phải dò cả danh sách mới biết
@@ -252,23 +257,63 @@ public sealed partial class MasqueColoPanel : UserControl
         catch (Exception ex) { MasqueStatusText.Text = "Không đọc được lịch sử đo: " + ex.Message; }
     }
 
-    private void FilterMasque_TextChanged(object sender, TextChangedEventArgs e) => RefreshMasqueResults();
+    /// <summary>Chip đang bấm chọn để lọc danh sách quét theo colo/lỗi — rỗng nghĩa là "Tất cả".</summary>
+    private readonly HashSet<string> _activeColoFilters = new();
+
+    private sealed record ColoChip(string Key, string Label, bool IsActive);
+
+    private void ColoChip_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string key }) return;
+        if (key == "__all") _activeColoFilters.Clear();
+        else if (!_activeColoFilters.Remove(key)) _activeColoFilters.Add(key);
+        RefreshMasqueResults();
+    }
+
+    private void RebuildColoChips(List<MasqueProbeResult> allRows)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        int errorCount = 0;
+        foreach (var row in allRows)
+        {
+            if (!row.Success) { errorCount++; continue; }
+            foreach (var colo in row.Colos)
+                counts[colo] = counts.GetValueOrDefault(colo) + 1;
+        }
+
+        var chips = new List<ColoChip> { new("__all", $"Tất cả ({allRows.Count})", _activeColoFilters.Count == 0) };
+        foreach (var (colo, count) in counts.OrderByDescending(kv => kv.Value))
+            chips.Add(new ColoChip(colo, $"{colo} ({count})", _activeColoFilters.Contains(colo)));
+        if (errorCount > 0)
+            chips.Add(new ColoChip("__error", $"Lỗi ({errorCount})", _activeColoFilters.Contains("__error")));
+
+        ColoChipsList.ItemsSource = chips;
+    }
+
+    private void ScanExtendedMasque_Click(object sender, RoutedEventArgs e)
+    {
+        MasqueExtendedCheck.IsChecked = true;
+        _ = RunMasqueScanAsync();
+    }
 
     private void SortMasque_Click(object sender, RoutedEventArgs e)
     {
         _httpSortAscending = _httpSortAscending != true;
-        MasqueSortButton.Content = _httpSortAscending == true ? "HTTP ms ↑" : "HTTP ms ↓";
+        MasqueSortButton.Content = _httpSortAscending == true ? "ms ↑" : "ms ↓";
         RefreshMasqueResults();
     }
 
     private void RefreshMasqueResults()
     {
-        if (MasqueResults == null || MasqueColoFilter == null || MasqueCountText == null) return;
+        if (MasqueResults == null || MasqueCountText == null) return;
         if (MasqueResults.SelectedItem is MasqueResultRow prevSelected) _highlightedEndpoint = prevSelected.Endpoint;
-        var filters = MasqueColoFilter.Text.Split(new[] { ',', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        RebuildColoChips(_masqueRows);
+
         IEnumerable<MasqueProbeResult> rows = _masqueRows;
-        if (filters.Length > 0)
-            rows = rows.Where(row => row.Colos.Any(colo => filters.Any(filter => colo.Contains(filter, StringComparison.OrdinalIgnoreCase))));
+        if (_activeColoFilters.Count > 0)
+            rows = rows.Where(row => _activeColoFilters.Contains("__error") && !row.Success
+                || row.Colos.Any(colo => _activeColoFilters.Contains(colo)));
         if (_httpSortAscending is { } ascending)
             rows = rows.OrderBy(row => row.WarmHttpMs == null)
                 .ThenBy(row => ascending ? row.WarmHttpMs : -row.WarmHttpMs);
@@ -301,13 +346,21 @@ public sealed partial class MasqueColoPanel : UserControl
         RefreshRosterStrip(roster);
     }
 
-    /// <summary>Dải hiển thị các endpoint đã ⭐ giữ sống — cùng danh sách MihomoService sẽ
-    /// dùng làm ứng viên GAME-PATH/PROBE-PATH ở lần Boost tiếp theo (xem MasqueCandidateRoster).</summary>
+    private sealed record RosterChipItem(string Label, MasqueEndpoint Endpoint);
+
+    /// <summary>Dải chip xoá-được cho các endpoint đã ⭐ giữ sống — cùng danh sách MihomoService
+    /// sẽ dùng làm ứng viên GAME-PATH/PROBE-PATH ở lần Boost tiếp theo (xem MasqueCandidateRoster).</summary>
     private void RefreshRosterStrip(List<MasqueEndpoint> roster)
     {
-        RosterStripText.Text = roster.Count == 0
-            ? "Chưa chọn tunnel nào để giữ sống (0/4). Bấm ☆ ở danh sách trên."
-            : $"Đang giữ sống ({roster.Count}/4): " + string.Join("  ·  ", roster.Select(e => e.ToString()));
+        RosterEmptyText.Visibility = roster.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RosterList.ItemsSource = roster.Select(e => new RosterChipItem(e.ToString(), e)).ToList();
+    }
+
+    private void RemoveRosterChip_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: MasqueEndpoint endpoint }) return;
+        MasqueCandidateRoster.Toggle(endpoint);
+        RefreshMasqueResults();
     }
 
     private void ToggleRoster_Click(object sender, RoutedEventArgs e)

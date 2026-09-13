@@ -14,6 +14,13 @@
     <UserControl.Resources>
         <conv:CandidateRowBackgroundConverter x:Key="CandidateRowBg"/>
         <conv:CandidateRowBorderThicknessConverter x:Key="CandidateRowBorderThickness"/>
+        <conv:PingColorConverter x:Key="PingColor"/>
+        <conv:PillBackgroundConverter x:Key="PillBg"/>
+        <conv:PillForegroundConverter x:Key="PillFg"/>
+        <conv:ChipActiveBackgroundConverter x:Key="ChipActiveBg"/>
+        <conv:ChipActiveForegroundConverter x:Key="ChipActiveFg"/>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:InverseBoolToVisibilityConverter x:Key="InvBoolToVis"/>
     </UserControl.Resources>
 
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
@@ -90,61 +97,132 @@
                         </Grid>
                         <CheckBox x:Name="MasqueExtendedCheck" Content="Đo mở rộng: thêm port IPv6 và mẫu HTTP/2 TCP"/>
                         <TextBlock Text="Mở rộng thử 76 tổ hợp; không bảo đảm tìm được vùng mới. HTTP/2 có thể giật hơn khi mất gói. HKG = Hong Kong; TPE = Taipei; HAN/SGN = Việt Nam." TextWrapping="Wrap" FontSize="12"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="MasqueScanButton" Content="Đo các endpoint" Click="ScanMasque_Click"/>
-                            <Button x:Name="MasqueCancelButton" Content="Dừng đo" Click="CancelMasque_Click" IsEnabled="False"/>
-                        </StackPanel>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="MasqueScanButton" Content="⚡ Quét nhanh" Click="ScanMasque_Click"
+                                    Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch"/>
+                            <Button x:Name="MasqueExtendedScanButton" Grid.Column="1" Content="🔄 Mở rộng (76)" Click="ScanExtendedMasque_Click"
+                                    HorizontalAlignment="Stretch"/>
+                            <Button x:Name="MasqueCancelButton" Grid.Column="2" Content="Dừng" Click="CancelMasque_Click" IsEnabled="False"/>
+                        </Grid>
                         <TextBlock x:Name="MasqueStatusText" TextWrapping="Wrap" FontSize="12"/>
-                        <TextBox x:Name="MasqueColoFilter" PlaceholderText="Lọc colo: HKG, SIN, TPE…" TextChanged="FilterMasque_TextChanged"/>
+
+                        <!-- Chip lọc theo colo — thay TextBox gõ tay, đếm số dòng theo từng
+                             colo/lỗi để bấm lọc trực tiếp (xem RebuildColoChips trong code-behind). -->
+                        <ItemsControl x:Name="ColoChipsList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="6"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding Label}" Tag="{Binding Key}" Click="ColoChip_Click"
+                                            Padding="9,4" CornerRadius="100" FontSize="11" FontWeight="SemiBold"
+                                            Background="{Binding IsActive, Converter={StaticResource ChipActiveBg}}"
+                                            Foreground="{Binding IsActive, Converter={StaticResource ChipActiveFg}}"
+                                            BorderThickness="0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="MasqueCountText" Text="Hiển thị 0/0 endpoint" VerticalAlignment="Center" FontSize="12"/>
-                            <Button x:Name="MasqueSortButton" Grid.Column="1" Content="HTTP ms ↕" Click="SortMasque_Click"
+                            <Button x:Name="MasqueSortButton" Grid.Column="1" Content="ms ↕" Click="SortMasque_Click"
                                     ToolTipService.ToolTip="Bấm để sắp xếp. Trung bình hai mẫu sau khi kết nối; không phải ping game. Lỗi/thiếu số đo nằm cuối."/>
                         </Grid>
-                        <TextBlock Text="Cột bên phải: HTTP trung bình lần 2–3. Ví dụ 50 và 51 → 50,5 ms. Lần đầu gồm dựng kết nối nên thường lâu hơn. Các số này không phải ping game." TextWrapping="Wrap" FontSize="11"/>
                         <ListView x:Name="MasqueResults" MaxHeight="320" SelectionMode="Single"
                                   ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="0,4"/>
                                 </Style>
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Spacing="3" Padding="0,6">
-                                        <Grid ColumnSpacing="8">
+                                    <Border CornerRadius="8" Padding="9,7" Margin="0,2"
+                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                        <Grid ColumnSpacing="8" RowSpacing="4">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
                                             <!-- ⭐ giữ sống — đưa thẳng endpoint này vào roster ứng viên GAME-PATH/
                                                  PROBE-PATH (xem MasqueCandidateRoster), thay vì phải nhớ lại IP/port
                                                  rồi gõ tay ở đâu khác. -->
-                                            <Button Grid.Column="0" Content="{Binding RosterButtonLabel}"
+                                            <Button Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+                                                    Content="{Binding RosterButtonLabel}"
+                                                    FontSize="15" Foreground="#F6961E"
                                                     VerticalAlignment="Center" Padding="6,4" MinWidth="0"
+                                                    Background="Transparent" BorderThickness="0"
                                                     IsEnabled="{Binding CanToggleRoster}"
                                                     Tag="{Binding}" Click="ToggleRoster_Click"
                                                     ToolTipService.ToolTip="{Binding RosterTooltip}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Endpoint}" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                                <TextBlock Text="HTTP TB" FontSize="10" HorizontalAlignment="Right"/>
-                                                <TextBlock Text="{Binding HttpMsText}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                            </StackPanel>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Endpoint}"
+                                                       FontFamily="Consolas" FontSize="12" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+
+                                            <Border Grid.Row="0" Grid.Column="2" CornerRadius="100" Padding="8,2"
+                                                    Background="{Binding IsError, Converter={StaticResource PillBg}}">
+                                                <TextBlock Text="{Binding PillText}" FontSize="11" FontWeight="Bold"
+                                                           Foreground="{Binding IsError, Converter={StaticResource PillFg}}"/>
+                                            </Border>
+
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                                       Text="{Binding DisplaySummary}" TextWrapping="Wrap" FontSize="11"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                         </Grid>
-                                        <TextBlock Text="{Binding DisplaySummary}" TextWrapping="Wrap" FontSize="12" Margin="34,0,0,0"/>
-                                    </StackPanel>
+                                    </Border>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
 
-                        <TextBlock x:Name="RosterStripText" TextWrapping="Wrap" FontSize="11.5"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   ToolTipService.ToolTip="Đây là danh sách MihomoService sẽ dùng làm tunnel dự phòng ở lần Boost tiếp theo (thay vì tự lấy top-4 ngầm từ lịch sử quét)."/>
+                        <!-- Ứng viên đã ⭐ giữ sống — mỗi dòng xoá được ngay, KHÔNG còn gộp
+                             thành 1 dòng chữ chung chung. -->
+                        <TextBlock Text="Đang giữ sống:" FontSize="11.5" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Name="RosterEmptyText" Text="Chưa chọn tunnel nào — bấm ☆ ở danh sách trên (tối đa 4)."
+                                   FontSize="11.5" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                        <ItemsControl x:Name="RosterList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Spacing="4"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#10FFFFFF" CornerRadius="100" Padding="10,5">
+                                        <Grid ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" FontFamily="Consolas" FontSize="11"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <Button Grid.Column="1" Content="✕" FontSize="10" Padding="4"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Tag="{Binding Endpoint}" Click="RemoveRosterChip_Click"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
                 </Border>
 
@@ -181,24 +259,53 @@
                                 </ListView.ItemContainerStyle>
                                 <ListView.ItemTemplate>
                                     <DataTemplate>
-                                        <Border CornerRadius="6" Padding="10,8" Margin="0,2"
+                                        <Border CornerRadius="8" Padding="10,8" Margin="0,2"
                                                 Background="{Binding IsCurrent, Converter={StaticResource CandidateRowBg}}"
                                                 BorderThickness="{Binding IsCurrent, Converter={StaticResource CandidateRowBorderThickness}}"
                                                 BorderBrush="#3000C864">
-                                            <Grid ColumnSpacing="8">
+                                            <Grid ColumnSpacing="8" RowSpacing="4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0" Spacing="2">
-                                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" FontSize="13"
-                                                               Text="{Binding Title}"/>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <TextBlock Grid.Row="0" Grid.Column="0" FontSize="13" FontWeight="SemiBold">
+                                                    <Run Text="{Binding Title}"/>
+                                                    <Run Text=" — "/>
+                                                    <Run Text="{Binding EndpointText}" FontFamily="Consolas" FontSize="11" FontWeight="Normal"/>
+                                                </TextBlock>
+
+                                                <Border Grid.Row="0" Grid.Column="1" CornerRadius="100" Padding="8,2"
+                                                        Background="{Binding IsError, Converter={StaticResource PillBg}}">
+                                                    <TextBlock Text="{Binding PillText}" FontSize="11" FontWeight="Bold"
+                                                               Foreground="{Binding IsError, Converter={StaticResource PillFg}}"/>
+                                                </Border>
+
+                                                <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock FontSize="12" FontWeight="SemiBold"
+                                                               Text="{Binding LatencyText}"
+                                                               Foreground="{Binding LatencyMs, Converter={StaticResource PingColor}}"/>
                                                     <TextBlock TextWrapping="Wrap" FontSize="12" Text="{Binding DetailText}"
                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                                 </StackPanel>
-                                                <Button Grid.Column="1" Content="{Binding ButtonLabel}"
-                                                        VerticalAlignment="Center"
+
+                                                <!-- Đang dùng → huy hiệu check, KHÔNG còn nút xám vô nghĩa. -->
+                                                <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                                                            Orientation="Horizontal" Spacing="5"
+                                                            VerticalAlignment="Bottom" Margin="0,4,0,0"
+                                                            Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVis}}">
+                                                    <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="#00C864"/>
+                                                    <TextBlock Text="Đang dùng" FontSize="11" FontWeight="SemiBold" Foreground="#00C864"/>
+                                                </StackPanel>
+                                                <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                                                        Content="{Binding ButtonLabel}"
+                                                        VerticalAlignment="Bottom"
                                                         IsEnabled="{Binding CanSelect}"
+                                                        Visibility="{Binding IsCurrent, Converter={StaticResource InvBoolToVis}}"
                                                         Tag="{Binding ProxyName}"
                                                         Click="SelectGamePath_Click"
                                                         ToolTipService.ToolTip="{Binding ButtonTooltip}"/>

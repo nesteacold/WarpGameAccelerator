@@ -143,6 +143,54 @@ public class CountToEmptyVisibilityConverter : IValueConverter
         throw new NotImplementedException();
 }
 
+/// <summary>bool "lỗi/không đo được" → nền pill colo (đỏ nhạt khi lỗi, cam nhạt khi bình thường).</summary>
+public class PillBackgroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(40, 224, 80, 80))
+            : new SolidColorBrush(ColorHelper.FromArgb(40, 246, 150, 30));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>bool "lỗi/không đo được" → chữ pill colo (đỏ khi lỗi, cam khi bình thường).</summary>
+public class PillForegroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(255, 224, 80, 80))
+            : new SolidColorBrush(ColorHelper.FromArgb(255, 246, 150, 30));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>bool IsActive (chip lọc colo) → nền chip.</summary>
+public class ChipActiveBackgroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(40, 246, 150, 30))
+            : new SolidColorBrush(ColorHelper.FromArgb(14, 255, 255, 255));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>bool IsActive (chip lọc colo) → chữ chip.</summary>
+public class ChipActiveForegroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(255, 246, 150, 30))
+            : new SolidColorBrush(ColorHelper.FromArgb(180, 200, 200, 200));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
 /// <summary>bool IsCurrent (tunnel dự phòng) → nền nổi bật cho dòng đang mang traffic game.</summary>
 public class CandidateRowBackgroundConverter : IValueConverter
 {
