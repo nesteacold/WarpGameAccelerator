@@ -104,54 +104,50 @@
                                 <Border Background="#0AFFFFFF" CornerRadius="6" Padding="10">
                                     <StackPanel Spacing="8">
 
-                                        <!-- Hàng chính -->
-                                        <Grid ColumnSpacing="10">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-
+                                        <!-- Dòng 1: chấm token + ĐƯỜNG DẪN — luôn chiếm toàn bộ chiều
+                                             rộng hàng, không bị các Auto-column khác chèn ép về 0 (bug
+                                             cũ: nhồi path + 4 cụm Auto trên cùng 1 Grid làm cột "*" gần
+                                             như biến mất ở cửa sổ hẹp). -->
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
                                             <!-- Chấm trạng thái token RIÊNG của thư mục này (mỗi thư mục
                                                  = 1 tài khoản/phiên đăng nhập độc lập) — xanh = đã có
                                                  token, cam = chưa (lần MỞ GAME kế sẽ đăng nhập lại). -->
-                                            <Ellipse Grid.Column="0" Width="10" Height="10"
+                                            <Ellipse Width="10" Height="10"
                                                      VerticalAlignment="Center"
                                                      Fill="{x:Bind HasToken, Mode=OneWay, Converter={StaticResource TokenDot}}"
                                                      ToolTipService.ToolTip="{x:Bind TokenTooltip, Mode=OneWay}"/>
+                                            <TextBlock Text="{x:Bind ShortPath, Mode=OneWay}"
+                                                       FontSize="12" FontFamily="Consolas"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTipService.ToolTip="{x:Bind Path}"/>
+                                        </StackPanel>
 
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="{x:Bind ShortPath, Mode=OneWay}"
-                                                           FontSize="12" FontFamily="Consolas"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           ToolTipService.ToolTip="{x:Bind Path}"/>
-                                                <TextBlock Text="{x:Bind StatusText, Mode=OneWay}"
-                                                           FontSize="11"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                           TextWrapping="Wrap"
-                                                           Visibility="{x:Bind StatusText, Mode=OneWay, Converter={StaticResource StringToVis}}"/>
-                                            </StackPanel>
+                                        <TextBlock Text="{x:Bind StatusText, Mode=OneWay}"
+                                                   FontSize="11"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Visibility="{x:Bind StatusText, Mode=OneWay, Converter={StaticResource StringToVis}}"/>
 
-                                            <!-- Version badge — best-effort, ẩn hẳn nếu không đọc được -->
-                                            <Border Grid.Column="2"
-                                                    Background="#1A0078D4" CornerRadius="4" Padding="6,3"
-                                                    VerticalAlignment="Center"
-                                                    Visibility="{x:Bind HasVersion, Mode=OneWay}">
-                                                <TextBlock Text="{x:Bind VersionText, Mode=OneWay}" FontSize="11"/>
-                                            </Border>
+                                        <!-- Dòng 2: version/badge/đếm/nút — có thể cuộn ngang riêng
+                                             thay vì chèn ép đường dẫn ở trên. -->
+                                        <ScrollViewer HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Auto"
+                                                      VerticalScrollMode="Disabled">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <!-- Version badge — best-effort, ẩn hẳn nếu không đọc được -->
+                                                <Border Background="#1A0078D4" CornerRadius="4" Padding="6,3"
+                                                        VerticalAlignment="Center"
+                                                        Visibility="{x:Bind HasVersion, Mode=OneWay}">
+                                                    <TextBlock Text="{x:Bind VersionText, Mode=OneWay}" FontSize="11"/>
+                                                </Border>
 
-                                            <!-- Badge số client đang chạy / tổng cấu hình -->
-                                            <Border Grid.Column="3"
-                                                    Background="#1A00C864" CornerRadius="4" Padding="6,3"
-                                                    VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind BadgeText, Mode=OneWay}" FontSize="11"/>
-                                            </Border>
+                                                <!-- Badge số client đang chạy / tổng cấu hình -->
+                                                <Border Background="#1A00C864" CornerRadius="4" Padding="6,3"
+                                                        VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind BadgeText, Mode=OneWay}" FontSize="11"/>
+                                                </Border>
 
-                                            <!-- Đếm số cửa sổ muốn mở -->
-                                            <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                <!-- Đếm số cửa sổ muốn mở -->
                                                 <Button Content="−" Width="28" Height="28" FontSize="12"
                                                         CornerRadius="4" Padding="0"
                                                         Click="DecCount_Click" Tag="{x:Bind}"/>
@@ -166,27 +162,26 @@
                                                 <Button Content="+" Width="28" Height="28" FontSize="12"
                                                         CornerRadius="4" Padding="0"
                                                         Click="IncCount_Click" Tag="{x:Bind}"/>
-                                            </StackPanel>
 
-                                            <!-- MỞ GAME + chevron actions -->
-                                            <SplitButton Grid.Column="5"
-                                                         Content="▶  MỞ GAME"
-                                                         IsEnabled="{x:Bind IsBusy, Mode=OneWay, Converter={StaticResource InverseBool}}"
-                                                         Click="LaunchSplitButton_Click"
-                                                         Tag="{x:Bind}">
-                                                <SplitButton.Flyout>
-                                                    <MenuFlyout Placement="Bottom">
-                                                        <MenuFlyoutItem Text="Ẩn/Hiện tất cả (thư mục này)"
-                                                                        Click="HideAllRow_Click" Tag="{x:Bind}"/>
-                                                        <MenuFlyoutItem Text="Dừng tất cả (thư mục này)"
-                                                                        Click="StopAllRow_Click" Tag="{x:Bind}"/>
-                                                        <MenuFlyoutSeparator/>
-                                                        <MenuFlyoutItem Text="Xoá khỏi danh sách"
-                                                                        Click="RemoveFolderRow_Click" Tag="{x:Bind}"/>
-                                                    </MenuFlyout>
-                                                </SplitButton.Flyout>
-                                            </SplitButton>
-                                        </Grid>
+                                                <!-- MỞ GAME + chevron actions -->
+                                                <SplitButton Content="▶  MỞ GAME"
+                                                             IsEnabled="{x:Bind IsBusy, Mode=OneWay, Converter={StaticResource InverseBool}}"
+                                                             Click="LaunchSplitButton_Click"
+                                                             Tag="{x:Bind}">
+                                                    <SplitButton.Flyout>
+                                                        <MenuFlyout Placement="Bottom">
+                                                            <MenuFlyoutItem Text="Ẩn/Hiện tất cả (thư mục này)"
+                                                                            Click="HideAllRow_Click" Tag="{x:Bind}"/>
+                                                            <MenuFlyoutItem Text="Dừng tất cả (thư mục này)"
+                                                                            Click="StopAllRow_Click" Tag="{x:Bind}"/>
+                                                            <MenuFlyoutSeparator/>
+                                                            <MenuFlyoutItem Text="Xoá khỏi danh sách"
+                                                                            Click="RemoveFolderRow_Click" Tag="{x:Bind}"/>
+                                                        </MenuFlyout>
+                                                    </SplitButton.Flyout>
+                                                </SplitButton>
+                                            </StackPanel>
+                                        </ScrollViewer>
 
                                         <!-- Chevron mở rộng: danh sách client đang chạy của riêng thư mục này -->
                                         <Button Content="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource ExpandChevron}}"
