@@ -1,6 +1,7 @@
 // ============================================================
 // ViewModels/DashboardViewModel.cs — Logic màn hình chính
 // ============================================================
+using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
@@ -58,6 +59,14 @@ public partial class DashboardViewModel : ObservableObject
     // card ROUTE không phải nhồi 1 chuỗi dài vào ô hẹp rồi cắt chữ.
     [ObservableProperty] private string _endpointText = "—";
     [ObservableProperty] private string _endpointModeText = "";
+
+    // Colo (vị trí edge Cloudflare THẬT, vd HKG/SIN/TPE) — đo TRỰC TIẾP bằng
+    // HTTP trace qua chính tunnel ngay sau khi Boost xong, KHÔNG suy ra từ địa
+    // chỉ endpoint (đã kiểm chứng: cùng địa chỉ có thể ra colo khác nhau giữa
+    // các lần dựng tunnel — xem CLAUDE.md mục MASQUE endpoint lab). "—" nghĩa
+    // là không đo được (mode không loại trừ được endpoint khỏi TUN, hoặc HTTP
+    // trace lỗi/timeout) — KHÔNG bao giờ để lại số cũ khi không đo được.
+    [ObservableProperty] private string _coloText = "—";
 
     // Trang thai THAT cua duong toi server game, suy ra tu log dial cua mihomo
     // (MihomoService.LastGameDialFailureUtc). Day la thay the cho o PING cu —
@@ -294,6 +303,38 @@ public partial class DashboardViewModel : ObservableObject
 
         EndpointText = _mihomoService.ActiveEndpointAddress ?? _mihomoService.ActiveEndpointDisplay ?? "—";
         EndpointModeText = _mihomoService.ActiveEndpointMode ?? "";
+
+        // Colo chỉ đáng tin khi endpoint được loại trừ khỏi TUN (cùng điều kiện
+        // với "PING (EDGE WARP)" đo được — xem OnPingUpdated bên dưới). Ở
+        // WarpClientProxy không có endpoint nào bị loại trừ nên HTTP trace này
+        // sẽ tự đi qua TUN thật (đúng đường traffic thật), nhưng ta vẫn không
+        // coi là "đáng tin cho mọi lúc" vì warp-svc có thể chưa kịp lên —
+        // giữ nguyên quy tắc cũ: chỉ đo ở 2 mode Direct.
+        bool coloMeasurable = engineMode is EngineMode.DirectWireGuard or EngineMode.DirectMasqueBeta;
+        ColoText = coloMeasurable ? (await FetchColoAsync() ?? "—") : "—";
+    }
+
+    private static readonly HttpClient _coloHttpClient = new() { Timeout = TimeSpan.FromSeconds(6) };
+
+    /// <summary>
+    /// Đo colo THẬT bằng 1 request HTTP tới https://1.1.1.1/cdn-cgi/trace —
+    /// địa chỉ này đã có rule IP-CIDR sẵn trong config.yaml (áp cho mọi tiến
+    /// trình, không riêng game) nên đi đúng qua tunnel đang Boost. Trả về
+    /// null khi lỗi/timeout — KHÔNG bịa, không trả số cũ.
+    /// </summary>
+    private static async Task<string?> FetchColoAsync()
+    {
+        try
+        {
+            var body = await _coloHttpClient.GetStringAsync("https://1.1.1.1/cdn-cgi/trace");
+            foreach (var line in body.Split('\n'))
+            {
+                if (line.StartsWith("colo=", StringComparison.OrdinalIgnoreCase))
+                    return line["colo=".Length..].Trim();
+            }
+        }
+        catch { /* mất mạng/timeout/DNS — coi như không đo được, không phải "lỗi hiển thị" */ }
+        return null;
     }
 
     /// <summary>
@@ -317,6 +358,9 @@ public partial class DashboardViewModel : ObservableObject
             if (CurrentState != AppState.Connected) return;
             var baseMode = _mihomoService.ActiveEndpointMode ?? "";
             EndpointModeText = baseMode + suffix;
+            // Kết quả sweep là phép đo colo MỚI HƠN (vừa PUT PROBE-PATH + fetch
+            // thật) nên ưu tiên hơn giá trị tĩnh đo 1 lần lúc Boost xong ở trên.
+            if (current.Colo != null) ColoText = current.Colo;
         });
     }
 
@@ -327,6 +371,7 @@ public partial class DashboardViewModel : ObservableObject
         _mihomoService.StopProxy();
         EndpointText = "—";
         EndpointModeText = "";
+        ColoText = "—";
 
         await _networkOptimizer.RestoreAsync();
         await _warpService.ClearSplitTunnelAsync();
