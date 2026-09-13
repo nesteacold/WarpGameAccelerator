@@ -473,15 +473,32 @@ public class MihomoService
                 // luôn có ít nhất 1 candidate kể cả khi chưa từng chạy MasqueEndpointLab.
                 var built = new List<MasqueEndpoint> { new(defIp, defPort, defNetwork) };
 
-                var history = MasqueEndpointLab.LoadResults();
-                if (history != null)
+                // Ưu tiên roster do NGƯỜI DÙNG chủ động chọn (⭐ ở bảng "Đo & chọn endpoint
+                // khác") — họ biết rõ đang chọn endpoint nào thay vì app tự lấy ngầm top-4
+                // kết quả thành công gần nhất trong lịch sử quét. Roster rỗng (chưa từng
+                // chọn) mới rơi về hành vi tự động cũ.
+                var roster = MasqueCandidateRoster.Load();
+                if (roster.Count > 0)
                 {
-                    foreach (var row in history.Results)
+                    foreach (var e in roster)
                     {
                         if (built.Count >= 4) break;
-                        if (!row.Success) continue;
-                        if (built.Any(e => e.Address == row.Endpoint.Address && e.Port == row.Endpoint.Port)) continue;
-                        built.Add(row.Endpoint);
+                        if (built.Any(x => x.Address == e.Address && x.Port == e.Port)) continue;
+                        built.Add(e);
+                    }
+                }
+                else
+                {
+                    var history = MasqueEndpointLab.LoadResults();
+                    if (history != null)
+                    {
+                        foreach (var row in history.Results)
+                        {
+                            if (built.Count >= 4) break;
+                            if (!row.Success) continue;
+                            if (built.Any(e => e.Address == row.Endpoint.Address && e.Port == row.Endpoint.Port)) continue;
+                            built.Add(row.Endpoint);
+                        }
                     }
                 }
 

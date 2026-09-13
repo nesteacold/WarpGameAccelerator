@@ -23,7 +23,21 @@
     <ScrollViewer Padding="16,12,16,16">
         <StackPanel Spacing="12">
 
-            <Border Style="{StaticResource GlassCard}">
+            <!-- 2 card MASQUE bên dưới đứng CẠNH NHAU khi có đủ chỗ ngang (xem
+                 MasqueResponsiveGrid_SizeChanged) — không cố định 1 hay 2 cột, tự
+                 co giãn theo bề rộng cửa sổ thật, không cần cuộn dọc nhiều khi rộng. -->
+            <Grid x:Name="MasqueResponsiveGrid" ColumnSpacing="12" RowSpacing="12"
+                  SizeChanged="MasqueResponsiveGrid_SizeChanged">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="MasqueCol1" Width="*"/>
+                    <ColumnDefinition x:Name="MasqueCol2" Width="0"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+            <Border Grid.Column="0" Grid.Row="0" Style="{StaticResource GlassCard}">
                 <StackPanel Spacing="8">
                     <TextBlock Text="Thử endpoint MASQUE" FontSize="15" FontWeight="SemiBold"/>
 
@@ -86,21 +100,33 @@
                                         <StackPanel Spacing="3" Padding="0,6">
                                             <Grid ColumnSpacing="8">
                                                 <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Endpoint}" TextWrapping="Wrap" FontWeight="SemiBold"/>
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                <!-- ⭐ giữ sống — đưa thẳng endpoint này vào roster ứng viên GAME-PATH/
+                                                     PROBE-PATH (xem MasqueCandidateRoster), thay vì phải nhớ lại IP/port
+                                                     rồi gõ tay ở đâu khác. -->
+                                                <Button Grid.Column="0" Content="{Binding RosterButtonLabel}"
+                                                        VerticalAlignment="Center" Padding="6,4" MinWidth="0"
+                                                        IsEnabled="{Binding CanToggleRoster}"
+                                                        Tag="{Binding}" Click="ToggleRoster_Click"
+                                                        ToolTipService.ToolTip="{Binding RosterTooltip}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Endpoint}" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
                                                     <TextBlock Text="HTTP TB" FontSize="10" HorizontalAlignment="Right"/>
                                                     <TextBlock Text="{Binding HttpMsText}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
                                                 </StackPanel>
                                             </Grid>
-                                            <TextBlock Text="{Binding DisplaySummary}" TextWrapping="Wrap" FontSize="12"/>
+                                            <TextBlock Text="{Binding DisplaySummary}" TextWrapping="Wrap" FontSize="12" Margin="34,0,0,0"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListView.ItemTemplate>
                             </ListView>
 
+                            <TextBlock x:Name="RosterStripText" TextWrapping="Wrap" FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       ToolTipService.ToolTip="Đây là danh sách MihomoService sẽ dùng làm tunnel dự phòng ở lần Boost tiếp theo (thay vì tự lấy top-4 ngầm từ lịch sử quét)."/>
                         </StackPanel>
                     </Expander>
                 </StackPanel>
@@ -110,7 +136,7 @@
                  Tách khỏi card "Thử endpoint MASQUE" ở trên để không phải mở cả
                  danh sách quét endpoint cũ (76 dòng) mới thấy được tính năng này —
                  đây là nguyên nhân chính khiến màn hình trước đây bị đánh giá "rối". -->
-            <Border Style="{StaticResource GlassCard}">
+            <Border x:Name="MasqueCandidateCard" Grid.Column="0" Grid.Row="1" Style="{StaticResource GlassCard}">
                 <StackPanel Spacing="8">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -134,7 +160,7 @@
 
                         <InfoBar x:Name="GameRunningWarning" Severity="Warning" IsOpen="False" IsClosable="False"
                                  Title="Game đang chạy"
-                                 Message="Tắt game trước khi đổi tunnel — nút Chọn bị khoá để không ngắt phiên đang chơi."/>
+                                 Message="Vẫn đổi được, nhưng bấm lần 2 để xác nhận — chưa kiểm chứng an toàn tuyệt đối giữa lúc đang chơi."/>
 
                         <TextBlock x:Name="MultiCandidateStatusText" TextWrapping="Wrap" FontSize="12"/>
 
@@ -177,6 +203,8 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+
+            </Grid>
 
             <!-- ══ Section: Khởi động ════════════════════════════ -->
             <TextBlock Text="{x:Bind Loc.SettSectionStartup, Mode=OneWay}"

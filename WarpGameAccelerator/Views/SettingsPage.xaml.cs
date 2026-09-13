@@ -42,6 +42,20 @@ public sealed partial class SettingsPage : Page
         Unloaded += (_, _) => { _masqueScan?.Cancel(); _multiCandidateSweep?.Cancel(); };
     }
 
+    /// <summary>
+    /// 2 card MASQUE ("Thử endpoint" + "Giữ colo") đứng cạnh nhau khi có đủ chỗ ngang,
+    /// xếp chồng khi không — dựa theo bề rộng THẬT của trang lúc đó (SizeChanged), không
+    /// có con số cố định "độ rộng panel khi mở" nào cả. Ngưỡng 760px là ước lượng đủ chỗ
+    /// cho 2 cột dễ đọc; dưới đó 2 card lại xếp chồng dọc như trước.
+    /// </summary>
+    private void MasqueResponsiveGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        bool wide = e.NewSize.Width >= 760;
+        MasqueCol2.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        Grid.SetColumn(MasqueCandidateCard, wide ? 1 : 0);
+        Grid.SetRow(MasqueCandidateCard, wide ? 0 : 1);
+    }
+
     // ══ Multi-candidate MASQUE (thử nghiệm, mặc định tắt) ═══════════════
 
     private void InitMultiCandidateUi()
@@ -128,11 +142,15 @@ public sealed partial class SettingsPage : Page
                         + (status.VerifiedAtUtc is { } t ? $" · lúc {t.ToLocalTime():HH:mm:ss}" : "")
                     : "Không đo được" + (status.VerifiedAtUtc is { } t2 ? $" (lúc {t2.ToLocalTime():HH:mm:ss})" : "");
 
-            bool canSelect = !isCurrent && !gameRunning;
+            // KHÔNG còn khoá cứng khi game đang chạy — người dùng phản hồi đúng: game
+            // trước sau gì cũng sẽ chạy, khoá cứng chỉ chặn hẳn tính năng thay vì cảnh
+            // báo rủi ro. Thay bằng xác nhận 2 lần (xem SelectGamePath_Click) — bấm lần
+            // 1 chỉ "vũ trang", bấm lần 2 trong 4s mới thực sự đổi.
+            bool canSelect = !isCurrent;
             string tooltip = isCurrent
                 ? "Đang là tunnel mang traffic game."
                 : gameRunning
-                    ? "Đang có tiến trình game chạy — tắt game rồi mới đổi được tunnel (chọn trước khi đăng nhập)."
+                    ? "Đang có tiến trình game chạy — bấm 2 lần để xác nhận (vẫn đổi được, nhưng chưa kiểm chứng an toàn tuyệt đối giữa lúc đang chơi)."
                     : "Chuyển tunnel này thành đường mang traffic game — không cần Boost lại.";
 
             rows.Add(new MultiCandidateRow
@@ -178,14 +196,24 @@ public sealed partial class SettingsPage : Page
         }
     }
 
+    /// <summary>Tên candidate đang "vũ trang" chờ bấm lần 2 (xác nhận đổi khi game đang
+    /// chạy) — bấm lần 1 chỉ vào đây, hết 4s không bấm lại thì tự rút khỏi danh sách.
+    /// Đây là thay thế cho khoá cứng cũ (đã bỏ theo phản hồi người dùng).</summary>
+    private readonly HashSet<string> _armedForConfirm = new();
+
     private async void SelectGamePath_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: string proxyName }) return;
-        if (IsAnyKnownGameProcessRunning())
+        if (sender is not Button { Tag: string proxyName } btn) return;
+
+        if (IsAnyKnownGameProcessRunning() && !_armedForConfirm.Contains(proxyName))
         {
-            MultiCandidateStatusText.Text = "Đang có tiến trình game chạy — tắt game trước khi đổi tunnel (chọn trước khi đăng nhập).";
+            _armedForConfirm.Add(proxyName);
+            btn.Content = "Chắc chắn? Bấm lần nữa";
+            _ = ArmTimeoutAsync(proxyName);
             return;
         }
+        _armedForConfirm.Remove(proxyName);
+
         try
         {
             bool ok = await _mihomoService.SwitchGamePathAsync(proxyName);
@@ -203,6 +231,13 @@ public sealed partial class SettingsPage : Page
         }
         catch (Exception ex) { MultiCandidateStatusText.Text = "Lỗi khi chuyển: " + ex.Message; }
         finally { RefreshMultiCandidatePanel(); }
+    }
+
+    private async Task ArmTimeoutAsync(string proxyName)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(4));
+        if (_armedForConfirm.Remove(proxyName))
+            DispatcherQueue.TryEnqueue(RefreshMultiCandidatePanel);
     }
 
     // Trang dùng NavigationCacheMode.Required nên constructor chỉ chạy 1 lần —
@@ -242,7 +277,7 @@ public sealed partial class SettingsPage : Page
     private void RefreshMasqueResults()
     {
         if (MasqueResults == null || MasqueColoFilter == null || MasqueCountText == null) return;
-        if (MasqueResults.SelectedItem is MasqueProbeResult selected) _highlightedEndpoint = selected.Endpoint;
+        if (MasqueResults.SelectedItem is MasqueResultRow prevSelected) _highlightedEndpoint = prevSelected.Endpoint;
         var filters = MasqueColoFilter.Text.Split(new[] { ',', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         IEnumerable<MasqueProbeResult> rows = _masqueRows;
         if (filters.Length > 0)
@@ -251,8 +286,27 @@ public sealed partial class SettingsPage : Page
             rows = rows.OrderBy(row => row.WarmHttpMs == null)
                 .ThenBy(row => ascending ? row.WarmHttpMs : -row.WarmHttpMs);
         var visible = rows.ToList();
-        MasqueResults.ItemsSource = visible;
-        MasqueResults.SelectedItem = visible.FirstOrDefault(row => row.Endpoint == _highlightedEndpoint);
+
+        var roster = MasqueCandidateRoster.Load();
+        var wrapped = visible.Select(row =>
+        {
+            bool inRoster = roster.Any(e => e.Address == row.Endpoint.Address && e.Port == row.Endpoint.Port);
+            bool canToggle = row.Success && (inRoster || roster.Count < 4);
+            return new MasqueResultRow
+            {
+                Result = row,
+                IsInRoster = inRoster,
+                CanToggleRoster = canToggle,
+                RosterTooltip = inRoster
+                    ? "Bỏ khỏi danh sách giữ sống"
+                    : row.Success
+                        ? (roster.Count < 4 ? "Giữ sống endpoint này làm ứng viên dự phòng (tối đa 4)" : "Đã đủ 4 ứng viên — bỏ bớt 1 cái để thêm cái này")
+                        : "Chỉ giữ sống được endpoint đo thành công"
+            };
+        }).ToList();
+
+        MasqueResults.ItemsSource = wrapped;
+        MasqueResults.SelectedItem = wrapped.FirstOrDefault(row => row.Endpoint == _highlightedEndpoint);
         MasqueCountText.Text = visible.Count == 0 && _masqueRows.Count > 0
             ? $"Không có colo phù hợp · 0/{_masqueRows.Count}"
             : $"Hiển thị {visible.Count}/{_masqueRows.Count} endpoint";
@@ -260,6 +314,26 @@ public sealed partial class SettingsPage : Page
         MasqueExpanderHeader.Text = _masqueRows.Count > 0
             ? $"Đo & chọn endpoint khác ({_masqueRows.Count} kết quả)"
             : "Đo & chọn endpoint khác";
+
+        RefreshRosterStrip(roster);
+    }
+
+    /// <summary>Dải hiển thị các endpoint đã ⭐ giữ sống — cùng danh sách MihomoService sẽ
+    /// dùng làm ứng viên GAME-PATH/PROBE-PATH ở lần Boost tiếp theo (xem MasqueCandidateRoster).</summary>
+    private void RefreshRosterStrip(List<MasqueEndpoint> roster)
+    {
+        RosterStripText.Text = roster.Count == 0
+            ? "Chưa chọn tunnel nào để giữ sống (0/4). Bấm ☆ ở danh sách trên."
+            : $"Đang giữ sống ({roster.Count}/4): " + string.Join("  ·  ", roster.Select(e => e.ToString()));
+    }
+
+    private void ToggleRoster_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: MasqueResultRow row }) return;
+        if (!row.CanToggleRoster && !row.IsInRoster) return;
+        MasqueCandidateRoster.Toggle(row.Endpoint);
+        _highlightedEndpoint = row.Endpoint;
+        RefreshMasqueResults();
     }
 
     // Một dòng trạng thái duy nhất khi "đã lưu" khớp "đang chạy" (trường hợp bình
@@ -324,7 +398,7 @@ public sealed partial class SettingsPage : Page
 
     private async void RetestMasque_Click(object sender, RoutedEventArgs e)
     {
-        if (MasqueResults.SelectedItem is not MasqueProbeResult row)
+        if (MasqueResults.SelectedItem is not MasqueResultRow row)
         {
             MasqueStatusText.Text = "Chọn endpoint cần kiểm tra lại.";
             return;
@@ -367,7 +441,7 @@ public sealed partial class SettingsPage : Page
 
     private void ApplyMasque_Click(object sender, RoutedEventArgs e)
     {
-        if (MasqueResults.SelectedItem is not MasqueProbeResult { Success: true } result)
+        if (MasqueResults.SelectedItem is not MasqueResultRow { Result.Success: true } result)
         {
             MasqueStatusText.Text = "Hãy chọn một endpoint đo thành công.";
             return;
