@@ -16,195 +16,49 @@
         <conv:DetectedToBrushConverter x:Key="DetectedToBrush"/>
         <conv:DetectedToTextConverter x:Key="DetectedToText"/>
         <conv:StringToVisibilityConverter x:Key="StringToVis"/>
-        <conv:CandidateRowBackgroundConverter x:Key="CandidateRowBg"/>
-        <conv:CandidateRowBorderThicknessConverter x:Key="CandidateRowBorderThickness"/>
     </Page.Resources>
 
     <ScrollViewer Padding="16,12,16,16">
         <StackPanel Spacing="12">
 
-            <!-- 2 card MASQUE bên dưới đứng CẠNH NHAU khi có đủ chỗ ngang (xem
-                 MasqueResponsiveGrid_SizeChanged) — không cố định 1 hay 2 cột, tự
-                 co giãn theo bề rộng cửa sổ thật, không cần cuộn dọc nhiều khi rộng. -->
-            <Grid x:Name="MasqueResponsiveGrid" ColumnSpacing="12" RowSpacing="12"
-                  SizeChanged="MasqueResponsiveGrid_SizeChanged">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="MasqueCol1" Width="*"/>
-                    <ColumnDefinition x:Name="MasqueCol2" Width="0"/>
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+            <!-- Dòng mở panel phụ "Tìm & giữ colo" — nội dung THẬT (quét endpoint,
+                 giữ nhiều tunnel dự phòng) sống trong MasqueColoPanel, mở bằng cách
+                 resize cửa sổ rộng thêm (giống Developer Panel có sẵn), KHÔNG nhồi
+                 vào cột Settings hẹp nữa. Xem MainWindow.ShowMasqueColoPanel. -->
+            <Border Style="{StaticResource GlassCard}" Padding="0">
+                <Grid Padding="14,12" Tapped="OpenMasquePanel_Tapped"
+                      Background="Transparent">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Grid.Row="0" Style="{StaticResource GlassCard}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Thử endpoint MASQUE" FontSize="15" FontWeight="SemiBold"/>
-
-                    <!-- Dòng trạng thái luôn hiện: 1 dòng khi khớp, cảnh báo khi lệch.
-                         MasqueSelectionText/MasqueActiveText giữ lại (Collapsed) không dùng nữa;
-                         xem UpdateMasqueSelection() trong code-behind. -->
-                    <Border x:Name="MasqueStatusStrip" CornerRadius="6" Padding="10,8" Background="#0AFFFFFF">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Border x:Name="MasqueStatusDot" Width="8" Height="8" CornerRadius="4" Margin="2,3,0,0" VerticalAlignment="Top"/>
-                            <TextBlock x:Name="MasqueSummaryText" TextWrapping="Wrap" FontWeight="SemiBold" FontSize="13"
-                                       ToolTipService.ToolTip="Đang chạy = đọc trực tiếp từ MihomoService lúc ghi config.yaml. Đã lưu = ý định người dùng chọn ở bảng bên dưới. Hai giá trị có thể lệch nếu chưa Boost lại sau khi đổi endpoint."/>
-                        </StackPanel>
+                    <Border Grid.Column="0" Width="34" Height="34" CornerRadius="8"
+                            Background="#1AF6961E" Margin="0,0,10,0">
+                        <FontIcon Glyph="&#xE909;" FontSize="15" Foreground="#F6961E"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <TextBlock x:Name="MasqueSelectionText" Visibility="Collapsed"/>
-                    <TextBlock x:Name="MasqueActiveText" Visibility="Collapsed"/>
 
-                    <Expander x:Name="MasqueAdvancedExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
-                        <Expander.Header>
-                            <TextBlock x:Name="MasqueExpanderHeader" Text="Đo &amp; chọn endpoint khác" FontSize="13"/>
-                        </Expander.Header>
-                        <StackPanel Spacing="8" Padding="0,8,0,0">
-                            <TextBlock Text="Tắt Boost trước khi đo. Colo là vị trí phục vụ HTTP quan sát được (HKG/SIN…), không phải vùng có thể ép chọn hay vị trí ingress đã xác nhận." TextWrapping="Wrap" FontSize="12"/>
-                            <Button x:Name="MasqueApplyButton" Content="Dùng endpoint đã chọn" Click="ApplyMasque_Click"
-                                    Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch"/>
-                            <Grid ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Button x:Name="MasqueRetestButton" Content="Đo lại đã chọn" Click="RetestMasque_Click" HorizontalAlignment="Stretch"/>
-                                <Button x:Name="MasqueResetButton" Grid.Column="1" Content="Khôi phục mặc định" Click="ResetMasque_Click" HorizontalAlignment="Stretch"/>
-                            </Grid>
-                            <CheckBox x:Name="MasqueExtendedCheck" Content="Đo mở rộng: thêm port IPv6 và mẫu HTTP/2 TCP"/>
-                            <TextBlock Text="Mở rộng thử 76 tổ hợp; không bảo đảm tìm được vùng mới. HTTP/2 có thể giật hơn khi mất gói. HKG = Hong Kong; TPE = Taipei; HAN/SGN = Việt Nam." TextWrapping="Wrap" FontSize="12"/>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="MasqueScanButton" Content="Đo các endpoint" Click="ScanMasque_Click"/>
-                                <Button x:Name="MasqueCancelButton" Content="Dừng đo" Click="CancelMasque_Click" IsEnabled="False"/>
-                            </StackPanel>
-                            <TextBlock x:Name="MasqueStatusText" TextWrapping="Wrap" FontSize="12"/>
-                            <TextBox x:Name="MasqueColoFilter" PlaceholderText="Lọc colo: HKG, SIN, TPE…" TextChanged="FilterMasque_TextChanged"/>
-                            <Grid ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="MasqueCountText" Text="Hiển thị 0/0 endpoint" VerticalAlignment="Center" FontSize="12"/>
-                                <Button x:Name="MasqueSortButton" Grid.Column="1" Content="HTTP ms ↕" Click="SortMasque_Click"
-                                        ToolTipService.ToolTip="Bấm để sắp xếp. Trung bình hai mẫu sau khi kết nối; không phải ping game. Lỗi/thiếu số đo nằm cuối."/>
-                            </Grid>
-                            <TextBlock Text="Cột bên phải: HTTP trung bình lần 2–3. Ví dụ 50 và 51 → 50,5 ms. Lần đầu gồm dựng kết nối nên thường lâu hơn. Các số này không phải ping game." TextWrapping="Wrap" FontSize="11"/>
-                            <ListView x:Name="MasqueResults" MaxHeight="320" SelectionMode="Single"
-                                      ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListView.ItemContainerStyle>
-                                    <Style TargetType="ListViewItem">
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    </Style>
-                                </ListView.ItemContainerStyle>
-                                <ListView.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Spacing="3" Padding="0,6">
-                                            <Grid ColumnSpacing="8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <!-- ⭐ giữ sống — đưa thẳng endpoint này vào roster ứng viên GAME-PATH/
-                                                     PROBE-PATH (xem MasqueCandidateRoster), thay vì phải nhớ lại IP/port
-                                                     rồi gõ tay ở đâu khác. -->
-                                                <Button Grid.Column="0" Content="{Binding RosterButtonLabel}"
-                                                        VerticalAlignment="Center" Padding="6,4" MinWidth="0"
-                                                        IsEnabled="{Binding CanToggleRoster}"
-                                                        Tag="{Binding}" Click="ToggleRoster_Click"
-                                                        ToolTipService.ToolTip="{Binding RosterTooltip}"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding Endpoint}" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                                    <TextBlock Text="HTTP TB" FontSize="10" HorizontalAlignment="Right"/>
-                                                    <TextBlock Text="{Binding HttpMsText}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                                                </StackPanel>
-                                            </Grid>
-                                            <TextBlock Text="{Binding DisplaySummary}" TextWrapping="Wrap" FontSize="12" Margin="34,0,0,0"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-
-                            <TextBlock x:Name="RosterStripText" TextWrapping="Wrap" FontSize="11.5"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       ToolTipService.ToolTip="Đây là danh sách MihomoService sẽ dùng làm tunnel dự phòng ở lần Boost tiếp theo (thay vì tự lấy top-4 ngầm từ lịch sử quét)."/>
-                        </StackPanel>
-                    </Expander>
-                </StackPanel>
-            </Border>
-
-            <!-- ══ Card riêng: giữ nhiều tunnel dự phòng (thử nghiệm) ══════════
-                 Tách khỏi card "Thử endpoint MASQUE" ở trên để không phải mở cả
-                 danh sách quét endpoint cũ (76 dòng) mới thấy được tính năng này —
-                 đây là nguyên nhân chính khiến màn hình trước đây bị đánh giá "rối". -->
-            <Border x:Name="MasqueCandidateCard" Grid.Column="0" Grid.Row="1" Style="{StaticResource GlassCard}">
-                <StackPanel Spacing="8">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Spacing="2">
-                            <TextBlock Text="Giữ colo — nhiều tunnel dự phòng (thử nghiệm)" FontSize="15" FontWeight="SemiBold"/>
-                            <TextBlock TextWrapping="Wrap" FontSize="12"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       Text="Dựng tối đa 4 tunnel MASQUE cùng lúc, đổi tunnel mang traffic game KHÔNG cần Boost lại (không quay số colo lần nữa). Chỉ chọn trước khi đăng nhập game."/>
-                        </StackPanel>
-                        <ToggleSwitch x:Name="MultiCandidateToggle" Grid.Column="1" VerticalAlignment="Top"
-                                      OnContent="" OffContent="" Margin="8,0,0,0"
-                                      Toggled="MultiCandidateToggle_Toggled"/>
-                    </Grid>
-
-                    <StackPanel x:Name="MultiCandidatePanel" Spacing="8" Visibility="Collapsed">
-                        <Button x:Name="MultiCandidateSweepButton" Content="🔄  Quét colo các tunnel dự phòng"
-                                Click="SweepMultiCandidate_Click" HorizontalAlignment="Stretch"/>
-
-                        <InfoBar x:Name="GameRunningWarning" Severity="Warning" IsOpen="False" IsClosable="False"
-                                 Title="Game đang chạy"
-                                 Message="Vẫn đổi được, nhưng bấm lần 2 để xác nhận — chưa kiểm chứng an toàn tuyệt đối giữa lúc đang chơi."/>
-
-                        <TextBlock x:Name="MultiCandidateStatusText" TextWrapping="Wrap" FontSize="12"/>
-
-                        <ListView x:Name="MultiCandidateResults" SelectionMode="None"
-                                  ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListView.ItemContainerStyle>
-                                <Style TargetType="ListViewItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="Padding" Value="0"/>
-                                </Style>
-                            </ListView.ItemContainerStyle>
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Border CornerRadius="6" Padding="10,8" Margin="0,2"
-                                            Background="{Binding IsCurrent, Converter={StaticResource CandidateRowBg}}"
-                                            BorderThickness="{Binding IsCurrent, Converter={StaticResource CandidateRowBorderThickness}}"
-                                            BorderBrush="#3000C864">
-                                        <Grid ColumnSpacing="8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Spacing="2">
-                                                <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" FontSize="13"
-                                                           Text="{Binding Title}"/>
-                                                <TextBlock TextWrapping="Wrap" FontSize="12" Text="{Binding DetailText}"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="{Binding ButtonLabel}"
-                                                    VerticalAlignment="Center"
-                                                    IsEnabled="{Binding CanSelect}"
-                                                    Tag="{Binding ProxyName}"
-                                                    Click="SelectGamePath_Click"
-                                                    ToolTipService.ToolTip="{Binding ButtonTooltip}"/>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
+                    <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                        <TextBlock Text="Tìm &amp; giữ colo" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock Text="Quét endpoint MASQUE, giữ tunnel dự phòng sống song song"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                     </StackPanel>
-                </StackPanel>
-            </Border>
 
-            </Grid>
+                    <Border Grid.Column="2" x:Name="MasqueQuickColoBadge"
+                            Background="#1A00C864" CornerRadius="100" Padding="8,3"
+                            VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed">
+                        <TextBlock x:Name="MasqueQuickColoText" FontSize="11" FontWeight="Bold" Foreground="#00C864"/>
+                    </Border>
+
+                    <FontIcon Grid.Column="3" Glyph="&#xE76C;" FontSize="12"
+                              Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                              VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
 
             <!-- ══ Section: Khởi động ════════════════════════════ -->
             <TextBlock Text="{x:Bind Loc.SettSectionStartup, Mode=OneWay}"

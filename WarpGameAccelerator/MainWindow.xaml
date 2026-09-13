@@ -70,6 +70,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition x:Name="DevPanelColumn" Width="0"/>
+                <ColumnDefinition x:Name="ColoPanelColumn" Width="0"/>
             </Grid.ColumnDefinitions>
 
             <NavigationView
@@ -323,6 +324,16 @@
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
+            </Border>
+
+            <!-- ══ MASQUE COLO PANEL (docked, cùng cơ chế resize AppWindow như Dev
+                 Panel ở trên) — mở từ SettingsPage, xem MainWindow.ShowMasqueColoPanel. ══ -->
+            <Border Grid.Column="2"
+                    x:Name="ColoPanelRoot"
+                    Visibility="Collapsed"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1,0,0,0">
+                <views:MasqueColoPanel x:Name="MasqueColoPanelControl"/>
             </Border>
         </Grid>
     </Grid>

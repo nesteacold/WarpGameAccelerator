@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
         ConfigureTrayIcon();
         ConfigureDevPanelHotkey();
         WireDevPanelEvents();
+        MasqueColoPanelControl.CloseRequested += (_, _) => CloseMasqueColoPanel();
         SubscribeDashboardEvents();
 
         // Subscribe language change để update nav items
@@ -412,7 +413,7 @@ public sealed partial class MainWindow : Window
     {
         DevPanelColumn.Width = new GridLength(DevPanelWidth);
         DevPanelRoot.Visibility = Visibility.Visible;
-        ResizeAndRecenter(MainWindowWidth + DevPanelWidth, MainWindowHeight);
+        ResizeAndRecenter(ComputeWindowWidth(), MainWindowHeight);
         LoadPersonalVpnState();
         _ = LoadExcludedTunnelOptionsAsync();
 
@@ -427,10 +428,40 @@ public sealed partial class MainWindow : Window
     {
         DevPanelRoot.Visibility = Visibility.Collapsed;
         DevPanelColumn.Width = new GridLength(0);
-        ResizeAndRecenter(MainWindowWidth, MainWindowHeight);
+        ResizeAndRecenter(ComputeWindowWidth(), MainWindowHeight);
     }
 
     private void CloseDevPanelBtn_Click(object sender, RoutedEventArgs e) => CloseDeveloperPanel();
+
+    // ══ Masque Colo Panel — "Tìm & giữ colo" (mở từ SettingsPage) ══════════
+    // CÙNG cơ chế resize AppWindow như Dev Panel ở trên — panel phụ được mở
+    // bằng cách làm cửa sổ THẬT rộng ra để lộ thêm 1 cột, không phải resize
+    // ảo/overlay trong 1 Page. Đây là đúng thiết kế đã duyệt qua prototype
+    // (người dùng yêu cầu bám sát, không tự ý đổi sang layout responsive
+    // trong-trang).
+    private const int ColoPanelWidth = 460;
+
+    public void ShowMasqueColoPanel()
+    {
+        ColoPanelColumn.Width = new GridLength(ColoPanelWidth);
+        ColoPanelRoot.Visibility = Visibility.Visible;
+        ResizeAndRecenter(ComputeWindowWidth(), MainWindowHeight);
+        MasqueColoPanelControl.RefreshOnOpen();
+    }
+
+    private void CloseMasqueColoPanel()
+    {
+        ColoPanelRoot.Visibility = Visibility.Collapsed;
+        ColoPanelColumn.Width = new GridLength(0);
+        ResizeAndRecenter(ComputeWindowWidth(), MainWindowHeight);
+    }
+
+    /// <summary>Tổng bề rộng cửa sổ = cột nội dung chính + mọi panel phụ ĐANG mở — tính lại
+    /// mỗi lần mở/đóng 1 panel để không panel nào ghi đè mất phần rộng của panel kia nếu cả
+    /// hai cùng mở (Dev Panel + Masque Colo Panel là độc lập với nhau).</summary>
+    private int ComputeWindowWidth() => MainWindowWidth
+        + (DevPanelRoot.Visibility == Visibility.Visible ? DevPanelWidth : 0)
+        + (ColoPanelRoot.Visibility == Visibility.Visible ? ColoPanelWidth : 0);
 
     private void ResizeAndRecenter(int width, int height)
     {
