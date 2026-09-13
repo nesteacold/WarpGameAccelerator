@@ -21,6 +21,17 @@ public partial class DashboardViewModel : ObservableObject
     private readonly NetworkOptimizerService _networkOptimizer;
     private readonly MasqueTunnelSweepService? _tunnelSweep;
 
+    // Đo lại colo định kỳ trong lúc Connected — KHÔNG chỉ đo 1 lần lúc Boost
+    // xong. Lý do: "colo cố định trong 1 session" chỉ đúng ở tầng QUIC/MASQUE
+    // connection, còn mihomo có thể tự redial ngầm khi mất gói/NAT rebind mà
+    // KHÔNG đổi PID tiến trình — lúc đó colo có thể đã đổi trong khi ColoText
+    // vẫn hiện số đo cũ từ lúc Connect. Đo lại mỗi vài phút để tránh hiện số
+    // "đúng lúc đo nhưng sai lúc xem".
+    private readonly Microsoft.UI.Xaml.DispatcherTimer _coloRecheckTimer = new()
+    {
+        Interval = TimeSpan.FromMinutes(3)
+    };
+
     // ── Observable Properties ────────────────────────────────
 
     [ObservableProperty]
@@ -147,6 +158,7 @@ public partial class DashboardViewModel : ObservableObject
 
         _pingMonitor.PingUpdated += OnPingUpdated;
         if (_tunnelSweep != null) _tunnelSweep.SweepUpdated += OnTunnelSweepUpdated;
+        _coloRecheckTimer.Tick += async (_, __) => await RecheckColoAsync();
 
         // Khi ngôn ngữ thay đổi, cập nhật toàn bộ display strings
         _loc.PropertyChanged += (_, __) =>
@@ -264,6 +276,7 @@ public partial class DashboardViewModel : ObservableObject
         await _networkOptimizer.OptimizeAsync();
         SaveBoostState();
         _ = UpdateRouteTierAsync(engineMode);
+        _coloRecheckTimer.Start();
         BoostStarted?.Invoke();
     }
 
@@ -364,11 +377,24 @@ public partial class DashboardViewModel : ObservableObject
         });
     }
 
+    /// <summary>Đo lại colo hiện tại — gọi định kỳ bởi _coloRecheckTimer trong lúc Connected.</summary>
+    private async Task RecheckColoAsync()
+    {
+        if (CurrentState != AppState.Connected) return;
+        var mode = SettingsViewModel.LoadEngineMode();
+        bool coloMeasurable = mode is Models.EngineMode.DirectWireGuard or Models.EngineMode.DirectMasqueBeta;
+        if (!coloMeasurable) return;
+
+        var colo = await FetchColoAsync();
+        if (CurrentState == AppState.Connected) ColoText = colo ?? "—";
+    }
+
     private async Task StopBoostAsync()
     {
         CurrentState = AppState.Disconnecting;
         _pingMonitor.Stop();
         _mihomoService.StopProxy();
+        _coloRecheckTimer.Stop();
         EndpointText = "—";
         EndpointModeText = "";
         ColoText = "—";
