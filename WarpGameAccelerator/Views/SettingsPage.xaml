@@ -16,6 +16,8 @@
         <conv:DetectedToBrushConverter x:Key="DetectedToBrush"/>
         <conv:DetectedToTextConverter x:Key="DetectedToText"/>
         <conv:StringToVisibilityConverter x:Key="StringToVis"/>
+        <conv:CandidateRowBackgroundConverter x:Key="CandidateRowBg"/>
+        <conv:CandidateRowBorderThicknessConverter x:Key="CandidateRowBorderThickness"/>
     </Page.Resources>
 
     <ScrollViewer Padding="16,12,16,16">
@@ -99,62 +101,80 @@
                                 </ListView.ItemTemplate>
                             </ListView>
 
-                            <MenuFlyoutSeparator Margin="-12,4,-12,4"/>
-
-                            <!-- THỬ NGHIỆM, mặc định TẮT — xem MultiCandidateSettings/CLAUDE.md.
-                                 Giữ nhiều tunnel MASQUE dự phòng sống cùng lúc, chuyển tunnel mang
-                                 traffic game bằng REST API của mihomo thay vì rebuild+restart —
-                                 CHƯA kiểm chứng end-to-end với traffic game thật. -->
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap"
-                                           Text="Bật nhiều tunnel dự phòng (thử nghiệm)"
-                                           FontWeight="SemiBold" FontSize="13"/>
-                                <ToggleSwitch x:Name="MultiCandidateToggle" Grid.Column="1" VerticalAlignment="Center"
-                                              OnContent="" OffContent="" Margin="0"
-                                              Toggled="MultiCandidateToggle_Toggled"/>
-                            </Grid>
-                            <TextBlock TextWrapping="Wrap" FontSize="11"
-                                       Text="Dựng tối đa 4 tunnel MASQUE cùng lúc từ lịch sử đo ở trên, cho phép đổi tunnel đang mang traffic game mà KHÔNG cần Boost lại (không quay số colo lần nữa). Chưa kiểm chứng ổn định với traffic game thật — chỉ chọn trước khi đăng nhập game, đừng đổi giữa lúc đang chơi."/>
-
-                            <StackPanel x:Name="MultiCandidatePanel" Spacing="8" Visibility="Collapsed">
-                                <Button x:Name="MultiCandidateSweepButton" Content="Quét colo các ứng viên"
-                                        Click="SweepMultiCandidate_Click" HorizontalAlignment="Stretch"/>
-                                <TextBlock x:Name="MultiCandidateStatusText" TextWrapping="Wrap" FontSize="12"/>
-                                <ListView x:Name="MultiCandidateResults" SelectionMode="None"
-                                          ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                    <ListView.ItemContainerStyle>
-                                        <Style TargetType="ListViewItem">
-                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        </Style>
-                                    </ListView.ItemContainerStyle>
-                                    <ListView.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Spacing="3" Padding="0,6">
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" TextWrapping="Wrap" FontWeight="SemiBold"
-                                                               Text="{Binding Title}"/>
-                                                    <Button Grid.Column="1" Content="{Binding ButtonLabel}"
-                                                            IsEnabled="{Binding CanSelect}"
-                                                            Tag="{Binding ProxyName}"
-                                                            Click="SelectGamePath_Click"
-                                                            ToolTipService.ToolTip="{Binding ButtonTooltip}"/>
-                                                </Grid>
-                                                <TextBlock TextWrapping="Wrap" FontSize="12" Text="{Binding DetailText}"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ListView.ItemTemplate>
-                                </ListView>
-                            </StackPanel>
                         </StackPanel>
                     </Expander>
+                </StackPanel>
+            </Border>
+
+            <!-- ══ Card riêng: giữ nhiều tunnel dự phòng (thử nghiệm) ══════════
+                 Tách khỏi card "Thử endpoint MASQUE" ở trên để không phải mở cả
+                 danh sách quét endpoint cũ (76 dòng) mới thấy được tính năng này —
+                 đây là nguyên nhân chính khiến màn hình trước đây bị đánh giá "rối". -->
+            <Border Style="{StaticResource GlassCard}">
+                <StackPanel Spacing="8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="Giữ colo — nhiều tunnel dự phòng (thử nghiệm)" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Text="Dựng tối đa 4 tunnel MASQUE cùng lúc, đổi tunnel mang traffic game KHÔNG cần Boost lại (không quay số colo lần nữa). Chỉ chọn trước khi đăng nhập game."/>
+                        </StackPanel>
+                        <ToggleSwitch x:Name="MultiCandidateToggle" Grid.Column="1" VerticalAlignment="Top"
+                                      OnContent="" OffContent="" Margin="8,0,0,0"
+                                      Toggled="MultiCandidateToggle_Toggled"/>
+                    </Grid>
+
+                    <StackPanel x:Name="MultiCandidatePanel" Spacing="8" Visibility="Collapsed">
+                        <Button x:Name="MultiCandidateSweepButton" Content="🔄  Quét colo các tunnel dự phòng"
+                                Click="SweepMultiCandidate_Click" HorizontalAlignment="Stretch"/>
+
+                        <InfoBar x:Name="GameRunningWarning" Severity="Warning" IsOpen="False" IsClosable="False"
+                                 Title="Game đang chạy"
+                                 Message="Tắt game trước khi đổi tunnel — nút Chọn bị khoá để không ngắt phiên đang chơi."/>
+
+                        <TextBlock x:Name="MultiCandidateStatusText" TextWrapping="Wrap" FontSize="12"/>
+
+                        <ListView x:Name="MultiCandidateResults" SelectionMode="None"
+                                  ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="6" Padding="10,8" Margin="0,2"
+                                            Background="{Binding IsCurrent, Converter={StaticResource CandidateRowBg}}"
+                                            BorderThickness="{Binding IsCurrent, Converter={StaticResource CandidateRowBorderThickness}}"
+                                            BorderBrush="#3000C864">
+                                        <Grid ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Spacing="2">
+                                                <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" FontSize="13"
+                                                           Text="{Binding Title}"/>
+                                                <TextBlock TextWrapping="Wrap" FontSize="12" Text="{Binding DetailText}"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="{Binding ButtonLabel}"
+                                                    VerticalAlignment="Center"
+                                                    IsEnabled="{Binding CanSelect}"
+                                                    Tag="{Binding ProxyName}"
+                                                    Click="SelectGamePath_Click"
+                                                    ToolTipService.ToolTip="{Binding ButtonTooltip}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

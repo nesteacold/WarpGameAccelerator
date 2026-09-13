@@ -143,6 +143,28 @@ public class CountToEmptyVisibilityConverter : IValueConverter
         throw new NotImplementedException();
 }
 
+/// <summary>bool IsCurrent (tunnel dự phòng) → nền nổi bật cho dòng đang mang traffic game.</summary>
+public class CandidateRowBackgroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(255 / 8, 0, 200, 100))
+            : new SolidColorBrush(ColorHelper.FromArgb(10, 255, 255, 255));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+/// <summary>bool IsCurrent → độ dày viền (khung nổi bật dòng đang dùng).</summary>
+public class CandidateRowBorderThicknessConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true ? new Microsoft.UI.Xaml.Thickness(1) : new Microsoft.UI.Xaml.Thickness(0);
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
 /// <summary>int count > 0 → Visible, ngược lại Collapsed.</summary>
 public class CountToVisibilityConverter : IValueConverter
 {

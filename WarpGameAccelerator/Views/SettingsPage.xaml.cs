@@ -107,40 +107,48 @@ public sealed partial class SettingsPage : Page
     private void RenderMultiCandidateRows(IReadOnlyList<CandidateColoStatus> statuses)
     {
         var session = _mihomoService.ActiveMasqueControl;
-        if (session == null) { MultiCandidateResults.ItemsSource = null; return; }
+        if (session == null) { MultiCandidateResults.ItemsSource = null; GameRunningWarning.IsOpen = false; return; }
 
         bool gameRunning = IsAnyKnownGameProcessRunning();
+        // Cảnh báo NGAY khi vào trang, không chỉ sau khi bấm "Chọn" rồi mới biết vì
+        // sao nút bị khoá — đây là điều dễ gây cảm giác "nút không hoạt động".
+        GameRunningWarning.IsOpen = gameRunning;
         var byName = statuses.ToDictionary(s => s.ProxyName);
         var rows = new List<MultiCandidateRow>();
+        int index = 0;
         foreach (var (proxyName, endpoint) in session.Candidates)
         {
+            index++;
             byName.TryGetValue(proxyName, out var status);
             bool isCurrent = status?.IsCurrentSelection == true;
             string detail = status == null
-                ? "chưa đo"
+                ? "Chưa đo — bấm \"Quét colo\" bên trên."
                 : status.Colo != null
                     ? $"colo {status.Colo}" + (status.LatencyMs is { } ms ? $" · {ms:0} ms" : "")
-                        + (status.VerifiedAtUtc is { } t ? $" · xác thực lúc {t.ToLocalTime():HH:mm:ss}" : "")
-                    : "không đo được" + (status.VerifiedAtUtc is { } t2 ? $" (lúc {t2.ToLocalTime():HH:mm:ss})" : "");
+                        + (status.VerifiedAtUtc is { } t ? $" · lúc {t.ToLocalTime():HH:mm:ss}" : "")
+                    : "Không đo được" + (status.VerifiedAtUtc is { } t2 ? $" (lúc {t2.ToLocalTime():HH:mm:ss})" : "");
 
             bool canSelect = !isCurrent && !gameRunning;
             string tooltip = isCurrent
-                ? "Đang là tunnel game hiện tại."
+                ? "Đang là tunnel mang traffic game."
                 : gameRunning
-                    ? "Chọn trước khi đăng nhập game — đang có tiến trình game chạy, tắt game trước khi đổi tunnel."
-                    : "Chuyển tunnel này thành đường mang traffic game (không cần Boost lại).";
+                    ? "Đang có tiến trình game chạy — tắt game rồi mới đổi được tunnel (chọn trước khi đăng nhập)."
+                    : "Chuyển tunnel này thành đường mang traffic game — không cần Boost lại.";
 
             rows.Add(new MultiCandidateRow
             {
                 ProxyName = proxyName,
-                Title = $"{proxyName} — {endpoint}" + (isCurrent ? " (đang dùng)" : ""),
+                Title = $"Tunnel {index} — {endpoint}",
                 DetailText = detail,
-                ButtonLabel = isCurrent ? "Đang dùng" : "Chọn",
+                ButtonLabel = isCurrent ? "✓ Đang dùng" : "Chọn",
                 CanSelect = canSelect,
-                ButtonTooltip = tooltip
+                ButtonTooltip = tooltip,
+                IsCurrent = isCurrent
             });
         }
-        MultiCandidateResults.ItemsSource = rows;
+        // Tunnel đang mang traffic game luôn lên đầu — đỡ phải dò cả danh sách mới biết
+        // colo hiện tại là gì (đây chính là điều người dùng đã bị nhầm/bỏ sót).
+        MultiCandidateResults.ItemsSource = rows.OrderByDescending(r => r.IsCurrent).ToList();
     }
 
     private async void SweepMultiCandidate_Click(object sender, RoutedEventArgs e)
@@ -181,9 +189,17 @@ public sealed partial class SettingsPage : Page
         try
         {
             bool ok = await _mihomoService.SwitchGamePathAsync(proxyName);
-            MultiCandidateStatusText.Text = ok
-                ? $"Đã chuyển GAME-PATH sang {proxyName}. Đăng nhập game để dùng tunnel mới."
-                : $"Không chuyển được sang {proxyName} — kiểm tra Boost còn đang chạy không.";
+            if (ok)
+            {
+                // Cập nhật NGAY cờ "đang dùng" trong cache — không chờ sweep kế tiếp mới
+                // thấy danh sách đổi (đây là lý do nút "Chọn" trông như không phản hồi).
+                _tunnelSweep.MarkSelected(proxyName);
+                MultiCandidateStatusText.Text = "Đã chuyển tunnel. Đăng nhập game để dùng tunnel mới.";
+            }
+            else
+            {
+                MultiCandidateStatusText.Text = "Không chuyển được — kiểm tra Boost còn đang chạy không.";
+            }
         }
         catch (Exception ex) { MultiCandidateStatusText.Text = "Lỗi khi chuyển: " + ex.Message; }
         finally { RefreshMultiCandidatePanel(); }

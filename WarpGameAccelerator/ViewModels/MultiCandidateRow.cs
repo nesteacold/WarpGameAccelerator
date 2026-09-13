@@ -13,4 +13,7 @@ public sealed class MultiCandidateRow
     public required string ButtonLabel { get; init; }
     public required bool CanSelect { get; init; }
     public required string ButtonTooltip { get; init; }
+
+    /// <summary>Đang là tunnel mang traffic game — dùng để đẩy dòng này lên đầu và tô nổi bật.</summary>
+    public required bool IsCurrent { get; init; }
 }

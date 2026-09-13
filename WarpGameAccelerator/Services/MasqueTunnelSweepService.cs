@@ -195,6 +195,30 @@ public sealed class MasqueTunnelSweepService
         _reverifyCts = null;
     }
 
+    /// <summary>
+    /// Cập nhật NGAY cờ IsCurrentSelection sau khi SwitchGamePathAsync thành công, KHÔNG
+    /// chờ lần ProbeOneAsync/sweep kế tiếp — thiếu bước này thì UI vẫn hiện tunnel CŨ là
+    /// "đang dùng" ngay sau khi bấm "Chọn" (đổi thật ở mihomo nhưng danh sách hiển thị vẫn
+    /// là snapshot trước đó), trông như nút không phản hồi. Không tự đo lại colo ở đây —
+    /// chỉ cờ "đang dùng" đổi ngay; số đo colo của candidate mới vẫn giữ nguyên từ lần
+    /// sweep gần nhất (hoặc "chưa đo" nếu chưa từng), không bịa số mới.
+    /// </summary>
+    public void MarkSelected(string proxyName)
+    {
+        lock (_lock)
+        {
+            var keys = _latest.Keys.ToList();
+            foreach (var key in keys)
+            {
+                var s = _latest[key];
+                bool shouldBeCurrent = key == proxyName;
+                if (s.IsCurrentSelection != shouldBeCurrent)
+                    _latest[key] = s with { IsCurrentSelection = shouldBeCurrent };
+            }
+        }
+        SweepUpdated?.Invoke(this, LatestSnapshot());
+    }
+
     private static int NextSrcPort()
     {
         int rangeSize = MihomoService.ProbeSrcPortRangeEnd - MihomoService.ProbeSrcPortRangeStart + 1;
