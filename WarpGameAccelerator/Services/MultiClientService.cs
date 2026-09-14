@@ -621,34 +621,58 @@ public class MultiClientService
     public static int CountRunningClients() => CountRunningFxgame();
 
     /// <summary>
-    /// Số cửa sổ game đang chạy CỦA RIÊNG một thư mục — dựa vào
-    /// Process.MainModule.FileName của từng fxgame.exe. Tiến trình không đọc
-    /// được MainModule (khác kiến trúc/quyền) bị bỏ qua khỏi phép đếm này;
-    /// đây là best-effort, không có cách nào đáng tin cậy hơn để quy tiến
-    /// trình về thư mục khi không attribute được module path.
+    /// Đường dẫn exe của mọi fxgame.exe đang chạy, theo PID — đọc qua WMI
+    /// (Win32_Process.ExecutablePath), KHÔNG dùng Process.MainModule.FileName.
+    ///
+    /// LÝ DO: fxgame.exe là tiến trình 32-bit, còn app build win-x64 (64-bit).
+    /// .NET không đọc được MainModule của tiến trình KHÁC kiến trúc bit — ném
+    /// Win32Exception, bị nuốt bởi try/catch ở nơi gọi, nên luôn coi như
+    /// "không xác định được thư mục". Hệ quả thực tế: CountRunningFxgameInFolder
+    /// luôn đếm ra 0 dù client đã đăng nhập xong, app tưởng "chưa có client
+    /// nào của thư mục này" và tự mở thêm một cửa sổ nữa — bấm mở 1 cửa sổ
+    /// nhưng ra 2. WMI không bị giới hạn theo bitness (đã dùng thành công ở
+    /// DetectTokenAsync để đọc CommandLine) nên dùng lại đúng kỹ thuật đó.
+    /// </summary>
+    private static Dictionary<int, string> GetFxgameExecutablePathsViaWmi()
+    {
+        var result = new Dictionary<int, string>();
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT ProcessId, ExecutablePath FROM Win32_Process WHERE Name = 'fxgame.exe'");
+            using var collection = searcher.Get();
+            foreach (ManagementObject obj in collection)
+            {
+                using (obj)
+                {
+                    try
+                    {
+                        var pid = obj["ProcessId"];
+                        var path = obj["ExecutablePath"]?.ToString();
+                        if (pid != null && !string.IsNullOrEmpty(path))
+                            result[Convert.ToInt32(pid)] = path;
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"GetFxgameExecutablePathsViaWmi EXCEPTION: {ex.Message}");
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Số cửa sổ game đang chạy CỦA RIÊNG một thư mục — xem
+    /// <see cref="GetFxgameExecutablePathsViaWmi"/> vì sao dùng WMI thay vì
+    /// Process.MainModule.
     /// </summary>
     public static int CountRunningFxgameInFolder(string folder)
     {
-        var procs = Process.GetProcessesByName("fxgame");
-        try
-        {
-            int count = 0;
-            var folders = new[] { folder };
-            foreach (var p in procs)
-            {
-                try
-                {
-                    var exePath = p.MainModule?.FileName;
-                    if (exePath != null && ResolveOwningFolder(exePath, folders) != null) count++;
-                }
-                catch { }
-            }
-            return count;
-        }
-        finally
-        {
-            foreach (var p in procs) { try { p.Dispose(); } catch { } }
-        }
+        var folders = new[] { folder };
+        var paths = GetFxgameExecutablePathsViaWmi();
+        return paths.Values.Count(p => ResolveOwningFolder(p, folders) != null);
     }
 
     /// <summary>
@@ -802,6 +826,11 @@ public class MultiClientService
     public static List<RunningClient> GetRunningClients(IReadOnlyList<string>? knownFolders = null)
     {
         var result = new List<RunningClient>();
+        // Đọc trước qua WMI (không bị giới hạn bitness — xem
+        // GetFxgameExecutablePathsViaWmi) thay vì p.MainModule?.FileName.
+        var exePaths = (knownFolders != null && knownFolders.Count > 0)
+            ? GetFxgameExecutablePathsViaWmi()
+            : new Dictionary<int, string>();
         try
         {
             var processes = Process.GetProcessesByName("fxgame");
@@ -825,11 +854,9 @@ public class MultiClientService
                     try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
 
                     string? folder = null;
-                    if (knownFolders != null && knownFolders.Count > 0)
+                    if (knownFolders != null && knownFolders.Count > 0 && exePaths.TryGetValue(p.Id, out var exePath))
                     {
-                        string? exePath = null;
-                        try { exePath = p.MainModule?.FileName; } catch { /* khác kiến trúc/quyền — bỏ qua */ }
-                        if (exePath != null) folder = ResolveOwningFolder(exePath, knownFolders);
+                        folder = ResolveOwningFolder(exePath, knownFolders);
                     }
 
                     result.Add(new RunningClient
