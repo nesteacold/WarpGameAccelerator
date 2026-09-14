@@ -335,6 +335,26 @@ public class MihomoService
     private string _gameProcessName = "";
     private EngineMode _gameEngineMode = EngineMode.DirectWireGuard;
 
+    /// <summary>Có tiến trình mihomo.exe nào đang sống hay không — dùng để phát hiện
+    /// tunnel còn sót lại từ phiên trước (app bị kill/crash rồi mở lại), TRƯỚC khi
+    /// quyết định có nên tự Boost lại hay không.</summary>
+    public bool IsMihomoAlreadyRunning() => Process.GetProcessesByName("mihomo").Length > 0;
+
+    /// <summary>Nhận lại một tunnel đã sống sẵn (mihomo.exe còn chạy từ phiên trước) mà
+    /// KHÔNG kill/dựng lại gì cả — chỉ đồng bộ trạng thái nội bộ để "Stop Boost" sau
+    /// này hoạt động đúng. Dùng khi app mở lại và phát hiện tunnel cũ còn đang phục vụ
+    /// game: dựng lại (StartProxyAsync) sẽ luôn KillMihomoProcess() trước (xem
+    /// ApplyChannelsAsync), tức chính là hành vi "mở lại app thì kill + start tunnel
+    /// mới" mà người dùng yêu cầu bỏ hẳn.</summary>
+    public void AdoptRunningTunnel(string processName, EngineMode mode)
+    {
+        _gameProcessName = processName;
+        _gameEngineMode = mode;
+        IsGameChannelActive = true;
+        ActiveEndpointMode = "Tunnel phiên trước (giữ nguyên, chưa đo lại)";
+        ActiveEndpointDisplay = ActiveEndpointMode;
+    }
+
     public async Task StartProxyAsync(string processName, EngineMode mode = EngineMode.DirectWireGuard)
     {
         _gameProcessName = processName;

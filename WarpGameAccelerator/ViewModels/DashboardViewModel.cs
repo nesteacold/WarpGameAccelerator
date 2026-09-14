@@ -190,6 +190,35 @@ public partial class DashboardViewModel : ObservableObject
             SetSelectedProcess(state.ProcessName);
         }
 
+        // Nếu mihomo từ phiên trước VẪN CÒN SỐNG (app bị kill/crash rồi mở lại,
+        // không phải máy vừa khởi động lại), tuyệt đối KHÔNG gọi ToggleBoostCommand
+        // ở đây: StartBoostAsync → MihomoService.StartProxyAsync → ApplyChannelsAsync
+        // luôn KillMihomoProcess() trước khi dựng lại tunnel mới (đúng hành vi cần
+        // thiết cho việc người dùng chủ động bấm Start Boost, nhưng SAI ở đây —
+        // đây chính là nguyên nhân "mở lại app là kill + start tunnel mới" mà
+        // người dùng yêu cầu bỏ hẳn). Chỉ đồng bộ lại trạng thái UI/nội bộ để nhận
+        // nuôi tunnel đang chạy; nếu mihomo KHÔNG còn sống (ví dụ máy vừa reboot)
+        // thì vẫn tự Boost lại như cũ.
+        if (_mihomoService.IsMihomoAlreadyRunning())
+        {
+            var engineMode = SettingsViewModel.LoadEngineMode();
+            var exesToBoost = _selectedProfile?.ExecutablesJoined ?? SelectedProcessName;
+            if (string.IsNullOrWhiteSpace(exesToBoost)) exesToBoost = state.ProcessName;
+
+            _mihomoService.AdoptRunningTunnel(exesToBoost, engineMode);
+            CurrentState = AppState.Connected;
+            EndpointModeText = _mihomoService.ActiveEndpointMode ?? "";
+            EndpointText = _mihomoService.ActiveEndpointDisplay ?? "—";
+
+            _pingMonitor.SetTarget(engineMode == EngineMode.DirectMasqueBeta
+                ? "162.159.198.2"
+                : "162.159.192.1");
+            _pingMonitor.SetTargetProcess(exesToBoost);
+            await _pingMonitor.StartAsync(recordBaseline: false);
+            _coloRecheckTimer.Start();
+            return;
+        }
+
         await ToggleBoostCommand.ExecuteAsync(null);
     }
 
