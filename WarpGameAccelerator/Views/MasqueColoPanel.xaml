@@ -76,11 +76,15 @@
                              MasqueSelectionText/MasqueActiveText giữ lại (Collapsed) không dùng nữa;
                              xem UpdateMasqueSelection() trong code-behind. -->
                         <Border x:Name="MasqueStatusStrip" CornerRadius="6" Padding="10,8" Background="#0AFFFFFF">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Border x:Name="MasqueStatusDot" Width="8" Height="8" CornerRadius="4" Margin="2,3,0,0" VerticalAlignment="Top"/>
-                                <TextBlock x:Name="MasqueSummaryText" TextWrapping="Wrap" FontWeight="SemiBold" FontSize="13"
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" x:Name="MasqueStatusDot" Width="8" Height="8" CornerRadius="4" Margin="2,3,0,0" VerticalAlignment="Top"/>
+                                <TextBlock Grid.Column="1" x:Name="MasqueSummaryText" TextWrapping="Wrap" FontWeight="SemiBold" FontSize="13"
                                            ToolTipService.ToolTip="Đang chạy = đọc trực tiếp từ MihomoService lúc ghi config.yaml. Đã lưu = ý định người dùng chọn ở bảng bên dưới. Hai giá trị có thể lệch nếu chưa Boost lại sau khi đổi endpoint."/>
-                            </StackPanel>
+                            </Grid>
                         </Border>
                         <TextBlock x:Name="MasqueSelectionText" Visibility="Collapsed"/>
                         <TextBlock x:Name="MasqueActiveText" Visibility="Collapsed"/>
