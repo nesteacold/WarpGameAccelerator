@@ -191,6 +191,20 @@ public class ChipActiveForegroundConverter : IValueConverter
         throw new NotImplementedException();
 }
 
+/// <summary>bool IsSelected (dòng endpoint trong danh sách quét) → nền cam nhạt nổi bật, để
+/// biết đang bấm chọn endpoint nào — khác màu xanh của CandidateRowBackgroundConverter (đó là
+/// "đang mang traffic game thật", còn đây chỉ là "đang chọn để xem/thao tác").</summary>
+public class SelectedRowBackgroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true
+            ? new SolidColorBrush(ColorHelper.FromArgb(40, 246, 150, 30))
+            : new SolidColorBrush(ColorHelper.FromArgb(10, 255, 255, 255));
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
 /// <summary>bool IsCurrent (tunnel dự phòng) → nền nổi bật cho dòng đang mang traffic game.</summary>
 public class CandidateRowBackgroundConverter : IValueConverter
 {

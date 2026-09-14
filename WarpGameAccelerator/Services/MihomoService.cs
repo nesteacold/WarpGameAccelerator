@@ -279,8 +279,6 @@ public class MihomoService
 
     private void ExtractCoreResources()
     {
-        StopProxy();
-
         if (!Directory.Exists(_coreDir))
             Directory.CreateDirectory(_coreDir);
 
@@ -290,12 +288,24 @@ public class MihomoService
 
         // Bỏ qua re-extract nếu version không đổi và mihomo.exe đã tồn tại —
         // tránh ghi lại ~50MB ra đĩa mỗi lần app khởi động.
+        //
+        // QUAN TRỌNG: trước đây gọi StopProxy() VÔ ĐIỀU KIỆN ở đây, trước cả
+        // check version — nghĩa là MỖI LẦN mở app (kể cả sau khi app bị kill/
+        // crash, không phải Stop Boost chủ động) đều giết tunnel mihomo đang
+        // sống, dù nó vẫn đang phục vụ game bình thường. Theo yêu cầu người
+        // dùng: tunnel sống sót qua crash là CHỦ Ý (xem mục "Process lifecycle"
+        // CLAUDE.md) — mở lại app không được coi đó là tín hiệu "dừng tunnel".
+        // Người dùng tự bấm Stop Boost nếu muốn ngắt. Chỉ khi THỰC SỰ cần ghi
+        // đè file (version đổi) mới cần dừng — vì Windows khoá file .exe đang
+        // chạy, không ghi đè được nếu không dừng trước.
         if (File.Exists(versionFilePath) && File.Exists(_exePath))
         {
             string savedVersion = "";
             try { savedVersion = File.ReadAllText(versionFilePath).Trim(); } catch { }
             if (savedVersion == currentVersion) return;
         }
+
+        StopProxy();
 
         // EmbeddedResource namespace pattern: ProjectName.FolderName.FileName
         var resourcesToExtract = new[] {

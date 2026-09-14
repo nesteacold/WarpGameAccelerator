@@ -14,6 +14,7 @@
     <UserControl.Resources>
         <conv:CandidateRowBackgroundConverter x:Key="CandidateRowBg"/>
         <conv:CandidateRowBorderThicknessConverter x:Key="CandidateRowBorderThickness"/>
+        <conv:SelectedRowBackgroundConverter x:Key="SelectedRowBg"/>
         <conv:PingColorConverter x:Key="PingColor"/>
         <conv:PillBackgroundConverter x:Key="PillBg"/>
         <conv:PillForegroundConverter x:Key="PillFg"/>
@@ -140,6 +141,7 @@
                                     ToolTipService.ToolTip="Bấm để sắp xếp. Trung bình hai mẫu sau khi kết nối; không phải ping game. Lỗi/thiếu số đo nằm cuối."/>
                         </Grid>
                         <ListView x:Name="MasqueResults" MaxHeight="320" SelectionMode="Single"
+                                  SelectionChanged="MasqueResults_SelectionChanged"
                                   ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
@@ -149,9 +151,13 @@
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate>
+                                    <!-- Border của mỗi dòng vẽ ĐÈ lên highlight mặc định của ListView
+                                         (đó là lý do trước đây bấm chọn không thấy gì đổi) — tô nổi bật
+                                         thủ công theo IsSelected thay vì dựa vào ListViewItem. -->
                                     <Border CornerRadius="8" Padding="9,7" Margin="0,2"
-                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                            Background="{Binding IsSelected, Converter={StaticResource SelectedRowBg}}"
+                                            BorderBrush="#F6961E"
+                                            BorderThickness="{Binding IsSelected, Converter={StaticResource CandidateRowBorderThickness}}">
                                         <Grid ColumnSpacing="8" RowSpacing="4">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>

@@ -23,4 +23,8 @@ public sealed class MasqueResultRow
     public required bool CanToggleRoster { get; init; }
     public string RosterButtonLabel => IsInRoster ? "★" : "☆";
     public required string RosterTooltip { get; init; }
+
+    /// <summary>Đang là dòng người dùng vừa bấm chọn trong danh sách (Đo lại/Dùng endpoint
+    /// đã chọn nhắm vào dòng này) — tô nổi bật để không phải đoán đang chọn dòng nào.</summary>
+    public required bool IsSelected { get; init; }
 }

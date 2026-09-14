@@ -257,6 +257,17 @@ public sealed partial class MasqueColoPanel : UserControl
         catch (Exception ex) { MasqueStatusText.Text = "Không đọc được lịch sử đo: " + ex.Message; }
     }
 
+    /// <summary>Tô nổi bật NGAY dòng vừa bấm chọn trong danh sách quét — trước đây bấm chọn
+    /// không có phản hồi thị giác nào (Border của mỗi dòng vẽ đè lên highlight mặc định của
+    /// ListView), khiến không biết đang "chọn" endpoint nào để bấm Đo lại/Dùng endpoint.</summary>
+    private void MasqueResults_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (MasqueResults.SelectedItem is not MasqueResultRow selected) return;
+        if (_highlightedEndpoint == selected.Endpoint) return;
+        _highlightedEndpoint = selected.Endpoint;
+        RefreshMasqueResults();
+    }
+
     /// <summary>Chip đang bấm chọn để lọc danh sách quét theo colo/lỗi — rỗng nghĩa là "Tất cả".</summary>
     private readonly HashSet<string> _activeColoFilters = new();
 
@@ -333,7 +344,8 @@ public sealed partial class MasqueColoPanel : UserControl
                     ? "Bỏ khỏi danh sách giữ sống"
                     : row.Success
                         ? (roster.Count < 4 ? "Giữ sống endpoint này làm ứng viên dự phòng (tối đa 4)" : "Đã đủ 4 ứng viên — bỏ bớt 1 cái để thêm cái này")
-                        : "Chỉ giữ sống được endpoint đo thành công"
+                        : "Chỉ giữ sống được endpoint đo thành công",
+                IsSelected = row.Endpoint == _highlightedEndpoint
             };
         }).ToList();
 
