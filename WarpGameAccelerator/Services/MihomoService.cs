@@ -283,7 +283,6 @@ public class MihomoService
             Directory.CreateDirectory(_coreDir);
 
         var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-        var versionFilePath = Path.Combine(_coreDir, ".extracted_version");
 
         // EmbeddedResource namespace pattern: ProjectName.FolderName.FileName
         var resourcesToExtract = new[] {
@@ -295,59 +294,36 @@ public class MihomoService
 
         var allResourceNames = assembly.GetManifestResourceNames();
 
-        // Bỏ qua re-extract nếu nội dung mihomo.exe EMBEDDED không đổi và file
-        // trên đĩa đã tồn tại — tránh ghi lại ~50MB ra đĩa mỗi lần app khởi động.
-        //
-        // QUAN TRỌNG: so sánh bằng HASH NỘI DUNG của mihomo.exe, KHÔNG phải version
-        // của app (assembly). Hai thứ đó độc lập nhau — release app tăng version
-        // (sửa UI, sửa C#...) rất thường xuyên nhưng KHÔNG kèm theo mihomo.exe mới.
-        // Từng dùng app version làm khoá so sánh: mỗi lần bump version app (dù
-        // mihomo.exe y hệt) đều bị coi là "cần re-extract" → StopProxy() → giết
-        // tunnel đang sống ngay lần mở app đầu tiên sau khi cập nhật — tái hiện
-        // đúng lỗi "mở lại app bị kill tunnel" mà bản vá trước đó tưởng đã hết,
-        // vì bản vá trước chỉ xử lý case "app bị kill/crash rồi mở lại", không
-        // xử lý case "app vừa update lên version mới". Theo yêu cầu người dùng:
-        // tunnel sống sót qua các lần mở app là CHỦ Ý (xem mục "Process lifecycle"
-        // CLAUDE.md) — chỉ khi mihomo.exe THỰC SỰ đổi (binary mới) mới cần dừng,
-        // vì Windows khoá file .exe đang chạy, không ghi đè được nếu không dừng trước.
-        var mihomoResName = allResourceNames.FirstOrDefault(r => r.EndsWith(".mihomo.exe", StringComparison.OrdinalIgnoreCase));
-        string currentHash = "";
-        if (mihomoResName != null)
-        {
-            using var hashStream = assembly.GetManifestResourceStream(mihomoResName);
-            if (hashStream != null)
-                currentHash = System.Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(hashStream));
-        }
-
-        if (File.Exists(versionFilePath) && File.Exists(_exePath) && !string.IsNullOrEmpty(currentHash))
-        {
-            string savedHash = "";
-            try { savedHash = File.ReadAllText(versionFilePath).Trim(); } catch { }
-            if (savedHash == currentHash) return;
-        }
-
-        StopProxy();
-
+        // KHÔNG bao giờ tự StopProxy()/kill tunnel ở đây, theo yêu cầu người dùng:
+        // tunnel sống sót qua mọi lần mở app — kể cả sau khi app tự update lên
+        // version mới — là CHỦ Ý (xem mục "Process lifecycle" CLAUDE.md). Từng thử
+        // so sánh version app, rồi so sánh hash mihomo.exe, để quyết định "có cần
+        // StopProxy() để ghi đè không" — cả hai đều vẫn có nghĩa "app tự quyết định
+        // giết tunnel trong một số trường hợp". Người dùng chỉ ra: KHÔNG có trường
+        // hợp nào app tự làm việc đó là hợp lý — nếu bản mihomo mới không tương
+        // thích với tunnel cũ, người dùng tự bấm Stop Boost để dừng, rồi Boost lại
+        // để dùng bản mới. Vậy thay vì quyết định trước, chỉ CỐ GẮNG ghi đè: nếu
+        // mihomo.exe đang bị khoá (tunnel đang chạy) thì bỏ qua file đó, giữ
+        // nguyên bản cũ trên đĩa, KHÔNG đụng gì tới tiến trình đang sống.
         foreach (var file in resourcesToExtract)
         {
             var resName = allResourceNames.FirstOrDefault(r => r.EndsWith("." + file, StringComparison.OrdinalIgnoreCase));
-            if (resName != null)
+            if (resName == null) continue;
+
+            var destPath = Path.Combine(_coreDir, file);
+            try
             {
-                var destPath = Path.Combine(_coreDir, file);
                 using var stream = assembly.GetManifestResourceStream(resName);
-                if (stream != null)
-                {
-                    using var fileStream = File.Create(destPath);
-                    stream.CopyTo(fileStream);
-                }
+                if (stream == null) continue;
+                using var fileStream = File.Create(destPath);
+                stream.CopyTo(fileStream);
+            }
+            catch (IOException)
+            {
+                // File đang bị khoá (mihomo.exe của tunnel đang sống) — giữ
+                // nguyên bản cũ, không dừng tiến trình chỉ để ghi đè được.
             }
         }
-
-        try
-        {
-            File.WriteAllText(versionFilePath, currentHash);
-        }
-        catch { }
     }
 
     public Task StartProxyAsync(string processName, bool isDirectWireGuard) =>
