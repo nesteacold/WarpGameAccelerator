@@ -621,17 +621,21 @@ public class MultiClientService
     public static int CountRunningClients() => CountRunningFxgame();
 
     /// <summary>
-    /// Đường dẫn exe của mọi fxgame.exe đang chạy, theo PID — đọc qua WMI
-    /// (Win32_Process.ExecutablePath), KHÔNG dùng Process.MainModule.FileName.
+    /// Đường dẫn exe của mọi fxgame.exe đang chạy, theo PID — đọc qua WMI, KHÔNG
+    /// dùng Process.MainModule.FileName.
     ///
-    /// LÝ DO: fxgame.exe là tiến trình 32-bit, còn app build win-x64 (64-bit).
-    /// .NET không đọc được MainModule của tiến trình KHÁC kiến trúc bit — ném
-    /// Win32Exception, bị nuốt bởi try/catch ở nơi gọi, nên luôn coi như
-    /// "không xác định được thư mục". Hệ quả thực tế: CountRunningFxgameInFolder
-    /// luôn đếm ra 0 dù client đã đăng nhập xong, app tưởng "chưa có client
-    /// nào của thư mục này" và tự mở thêm một cửa sổ nữa — bấm mở 1 cửa sổ
-    /// nhưng ra 2. WMI không bị giới hạn theo bitness (đã dùng thành công ở
-    /// DetectTokenAsync để đọc CommandLine) nên dùng lại đúng kỹ thuật đó.
+    /// Từng thử Win32_Process.ExecutablePath trước — VẪN đếm sai (thiếu client
+    /// vừa mở), vì WMI chưa kịp populate field này ngay lúc tiến trình mới
+    /// khởi động (đúng lúc code vừa lấy được token và gọi hàm đếm này). Đổi
+    /// sang trích đường dẫn từ CommandLine — field này LUÔN có sẵn ngay từ lúc
+    /// tạo tiến trình (đã dùng thành công ở DetectTokenAsync để đọc token,
+    /// cũng nằm trong CommandLine), không bị lag như ExecutablePath.
+    ///
+    /// Ghi chú lịch sử: bản vá đầu tiên đổ lỗi cho việc fxgame.exe khác kiến
+    /// trúc bit (32/64-bit) với app — chưa kiểm chứng, và không phải nguyên
+    /// nhân duy nhất; ExecutablePath lag mới là lý do khiến bản vá đó VẪN đếm
+    /// sai trong thực tế (báo lại "mở 1 ra 2" sau khi đã đổi từ MainModule
+    /// sang WMI ExecutablePath).
     /// </summary>
     private static Dictionary<int, string> GetFxgameExecutablePathsViaWmi()
     {
@@ -639,7 +643,7 @@ public class MultiClientService
         try
         {
             using var searcher = new ManagementObjectSearcher(
-                "SELECT ProcessId, ExecutablePath FROM Win32_Process WHERE Name = 'fxgame.exe'");
+                "SELECT ProcessId, CommandLine, ExecutablePath FROM Win32_Process WHERE Name = 'fxgame.exe'");
             using var collection = searcher.Get();
             foreach (ManagementObject obj in collection)
             {
@@ -647,10 +651,22 @@ public class MultiClientService
                 {
                     try
                     {
-                        var pid = obj["ProcessId"];
+                        var pidRaw = obj["ProcessId"];
+                        if (pidRaw == null) continue;
+                        var pid = Convert.ToInt32(pidRaw);
+
+                        // Ưu tiên ExecutablePath (sạch, không cần parse) khi có;
+                        // fallback CommandLine (luôn có ngay từ lúc tạo tiến trình).
                         var path = obj["ExecutablePath"]?.ToString();
-                        if (pid != null && !string.IsNullOrEmpty(path))
-                            result[Convert.ToInt32(pid)] = path;
+                        if (string.IsNullOrEmpty(path))
+                        {
+                            var cmdLine = obj["CommandLine"]?.ToString();
+                            if (!string.IsNullOrEmpty(cmdLine))
+                                path = ParseExePathFromCommandLine(cmdLine);
+                        }
+
+                        if (!string.IsNullOrEmpty(path))
+                            result[pid] = path;
                     }
                     catch { }
                 }
@@ -661,6 +677,21 @@ public class MultiClientService
             DiagnosticLogService.Trace($"GetFxgameExecutablePathsViaWmi EXCEPTION: {ex.Message}");
         }
         return result;
+    }
+
+    /// <summary>Lấy phần đường dẫn exe (trước tham số đầu tiên) từ CommandLine của WMI —
+    /// cùng dạng chuỗi <c>"C:\Path\fxgame.exe" TOKEN</c> như ParseTokenFromCommandLine xử lý.</summary>
+    private static string ParseExePathFromCommandLine(string cmdLine)
+    {
+        cmdLine = cmdLine.Trim();
+        if (cmdLine.StartsWith("\""))
+        {
+            int closing = cmdLine.IndexOf('"', 1);
+            return closing > 0 ? cmdLine[1..closing] : string.Empty;
+        }
+
+        int space = cmdLine.IndexOf(' ');
+        return space > 0 ? cmdLine[..space] : cmdLine;
     }
 
     /// <summary>
