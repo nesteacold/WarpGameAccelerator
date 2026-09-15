@@ -547,9 +547,23 @@ public class MultiClientService
         try
         {
             string token = existingToken;
-            int runningInFolder = CountRunningFxgameInFolder(gameFolder);
 
-            if (runningInFolder == 0 || string.IsNullOrEmpty(token))
+            // Chỉ mở fxlaunch.exe khi THẬT SỰ cần lấy token (thư mục chưa từng
+            // đăng nhập). Nhánh này tồn tại DUY NHẤT để lấy token — đã có token
+            // thì client đầu tiên mở thẳng bằng helper y như client thứ 2..N.
+            //
+            // TRƯỚC ĐÂY điều kiện là `runningInFolder == 0 || token rỗng`, nên
+            // thư mục ĐÃ có token mà chưa chạy client nào vẫn rơi vào nhánh này:
+            // fxlaunch.exe sinh ra client #1, rồi LaunchClientsToTotalAsync bên
+            // dưới đếm lại và mở thêm client #2 bằng helper → bấm mở 1 cửa sổ
+            // nhưng ra 2 (một lần bấm đi qua HAI đường launch độc lập, đường sau
+            // không biết đường trước đã sinh ra client nào).
+            //
+            // Đã chẩn đoán sai 2 lần trước đó là "đếm client sai" (đổi
+            // MainModule → WMI ExecutablePath → WMI CommandLine). Phép đếm vốn
+            // KHÔNG sai — ảnh người dùng gửi hiện badge "2/1 cửa sổ" và liệt kê
+            // đúng cả 2 PID thuộc thư mục, tức đếm đúng nhưng đã mở dư.
+            if (string.IsNullOrEmpty(token))
             {
                 progress?.Report("Đang mở launcher, hãy đăng nhập vào game...");
                 var pidsBefore = GetFxgamePids();
@@ -557,15 +571,12 @@ public class MultiClientService
                 var (launcherOk, launcherMsg) = await LaunchFirstClientAsync(gameFolder);
                 if (!launcherOk) return (0, launcherMsg, token);
 
+                token = await WaitForTokenInternalAsync(progress);
                 if (string.IsNullOrEmpty(token))
                 {
-                    token = await WaitForTokenInternalAsync(progress);
-                    if (string.IsNullOrEmpty(token))
-                    {
-                        return (0,
-                            "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.",
-                            token);
-                    }
+                    return (0,
+                        "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.",
+                        token);
                 }
 
                 // Chờ đúng client MỚI vừa mở kết nối xong trước khi mở tiếp —
