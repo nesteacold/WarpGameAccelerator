@@ -865,14 +865,21 @@ public class MultiClientService
     /// null/rỗng thì giữ hành vi cũ (không resolve, FolderPath luôn null —
     /// mọi client rơi vào bucket "không rõ thư mục" khi hiển thị theo nhóm).
     /// </param>
+    /// <remarks>
+    /// CỐ Ý dùng Process.MainModule (KHÔNG dùng WMI) ở đây, khác với đường
+    /// launch: hàm này bị DispatcherTimer gọi mỗi 2 GIÂY TRÊN UI THREAD
+    /// (MultiClientViewModel.RefreshRunning). ManagementObjectSearcher là lời
+    /// gọi ĐỒNG BỘ tốn hàng trăm ms tới vài giây, và có thể treo lâu khi dịch
+    /// vụ WMI trục trặc — đặt nó vào vòng lặp UI làm app ĐÓNG BĂNG (đã xảy ra:
+    /// bấm vào multi-launcher thì app freeze, dù nút Boost vẫn hiện vì đã vẽ
+    /// sẵn từ trước). MainModule tuy có thể thất bại với vài tiến trình (rơi
+    /// vào bucket "không rõ thư mục") nhưng KHÔNG BAO GIỜ treo — đánh đổi đúng
+    /// cho một hàm chỉ phục vụ hiển thị. Đường launch (CountRunningFxgameInFolder)
+    /// vẫn dùng WMI vì ở đó cần chính xác và vốn đã chạy nền.
+    /// </remarks>
     public static List<RunningClient> GetRunningClients(IReadOnlyList<string>? knownFolders = null)
     {
         var result = new List<RunningClient>();
-        // Đọc trước qua WMI (không bị giới hạn bitness — xem
-        // GetFxgameExecutablePathsViaWmi) thay vì p.MainModule?.FileName.
-        var exePaths = (knownFolders != null && knownFolders.Count > 0)
-            ? GetFxgameExecutablePathsViaWmi()
-            : new Dictionary<int, string>();
         try
         {
             var processes = Process.GetProcessesByName("fxgame");
@@ -896,9 +903,11 @@ public class MultiClientService
                     try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
 
                     string? folder = null;
-                    if (knownFolders != null && knownFolders.Count > 0 && exePaths.TryGetValue(p.Id, out var exePath))
+                    if (knownFolders != null && knownFolders.Count > 0)
                     {
-                        folder = ResolveOwningFolder(exePath, knownFolders);
+                        string? exePath = null;
+                        try { exePath = p.MainModule?.FileName; } catch { /* không đọc được — bucket "không rõ thư mục" */ }
+                        if (exePath != null) folder = ResolveOwningFolder(exePath, knownFolders);
                     }
 
                     result.Add(new RunningClient
