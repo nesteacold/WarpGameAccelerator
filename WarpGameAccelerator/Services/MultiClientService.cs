@@ -80,6 +80,19 @@ public class MultiClientService
     private const int ConnectWaitTimeoutMs = 60000;
 
     /// <summary>
+    /// Ngưỡng chờ kết nối cho client ĐẦU TIÊN của một thư mục khi mở THẲNG
+    /// bằng token đã lưu (không qua fxlaunch — xem EnsureClientsRunningAsync).
+    /// Dài hơn hẳn ConnectWaitTimeoutMs (60s dùng cho client thứ 2..N, lúc đó
+    /// đã CHẮC CHẮN có 1 phiên đăng nhập thành công làm chuẩn) vì ở đây còn
+    /// một khả năng khác: token đã lưu HẾT HẠN (vd game vừa update) — khi đó
+    /// client mở lên nhưng không bao giờ kết nối được, và 60s là quá ngắn để
+    /// phân biệt "token hết hạn" với "mạng/server đang chậm". Hết ngưỡng này
+    /// mà vẫn chưa kết nối thì coi là token hỏng, quay lại mở fxlaunch để
+    /// đăng nhập lấy token mới — xem yêu cầu người dùng 2026-09-16.
+    /// </summary>
+    private const int TokenStaleTimeoutMs = 5 * 60 * 1000;
+
+    /// <summary>
     /// Token giờ là PER-FOLDER (mỗi thư mục = 1 tài khoản/phiên riêng — xem
     /// ghi chú tại GameFolderEntry.Token), nên rủi ro "hai thư mục cùng xác
     /// thực chung 1 token" không còn. Vẫn giữ khoá TOÀN BỘ luồng mở-client
@@ -583,8 +596,10 @@ public class MultiClientService
             string token = existingToken;
 
             // Chỉ mở fxlaunch.exe khi THẬT SỰ cần lấy token (thư mục chưa từng
-            // đăng nhập). Nhánh này tồn tại DUY NHẤT để lấy token — đã có token
-            // thì client đầu tiên mở thẳng bằng helper y như client thứ 2..N.
+            // đăng nhập, hoặc token đã lưu hoá ra không dùng được nữa — xem
+            // nhánh else bên dưới). Nhánh này tồn tại DUY NHẤT để lấy token —
+            // có token DÙNG ĐƯỢC thì client đầu tiên mở thẳng bằng helper y
+            // như client thứ 2..N.
             //
             // TRƯỚC ĐÂY điều kiện là `runningInFolder == 0 || token rỗng`, nên
             // thư mục ĐÃ có token mà chưa chạy client nào vẫn rơi vào nhánh này:
@@ -599,30 +614,46 @@ public class MultiClientService
             // đúng cả 2 PID thuộc thư mục, tức đếm đúng nhưng đã mở dư.
             if (string.IsNullOrEmpty(token))
             {
-                progress?.Report("Đang mở launcher, hãy đăng nhập vào game...");
+                var (loginOk, newToken, loginMsg) = await LoginViaFxlaunchAndWaitAsync(gameFolder, targetTotal, progress);
+                if (!loginOk) return (0, loginMsg, token);
+                token = newToken;
+            }
+            else if (CountRunningFxgameInFolder(gameFolder) == 0)
+            {
+                // Mở THẲNG bằng token đã lưu (không qua fxlaunch — đúng UX đã
+                // chốt ở v1.15.8), NHƯNG phải xác nhận nó còn đăng nhập được.
+                // Token có thể đã HẾT HẠN (vd game vừa update) — khi đó
+                // fxgame.exe vẫn mở lên bình thường nhưng không bao giờ kết
+                // nối được tới server. Chờ TokenStaleTimeoutMs (5 phút, dài
+                // hơn hẳn ngưỡng 60s dùng cho client 2..N vì ở đây cần phân
+                // biệt "token hỏng" với "mạng/server đang chậm") — hết hạn mà
+                // vẫn chưa kết nối thì coi token đã hỏng, dọn tiến trình lỗi
+                // rồi quay lại mở fxlaunch để đăng nhập lấy token mới. Theo
+                // yêu cầu người dùng 2026-09-16.
+                var gamePath = FindGameExe(gameFolder, "fxgame.exe");
+                if (gamePath == null) return (0, "Không tìm thấy fxgame.exe.", token);
+
+                progress?.Report("Đang mở game bằng token đã lưu...");
                 var pidsBefore = GetFxgamePids();
+                LauncherHelper.LaunchGameViaHelper(gamePath, token);
+                DiagnosticLogService.Trace($"[token đã lưu] đã gọi helper cho {gameFolder}, chờ tiến trình xuất hiện...");
 
-                var (launcherOk, launcherMsg) = await LaunchFirstClientAsync(gameFolder);
-                if (!launcherOk) return (0, launcherMsg, token);
+                int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
+                bool connected = newPid > 0 && await WaitForClientConnectedWithResultAsync(
+                    newPid, TokenStaleTimeoutMs, "Đang chờ client kết nối vào server", progress);
 
-                token = await WaitForTokenInternalAsync(progress);
-                if (string.IsNullOrEmpty(token))
+                if (!connected)
                 {
-                    return (0,
-                        "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.",
-                        token);
-                }
+                    DiagnosticLogService.Trace(
+                        $"[token đã lưu] {gameFolder} — không kết nối được sau {TokenStaleTimeoutMs}ms, " +
+                        "coi như token đã hết hạn, mở fxlaunch để đăng nhập lại");
 
-                // Chờ đúng client MỚI vừa mở kết nối xong trước khi mở tiếp —
-                // giới hạn theo PID mới để không bị "ăn ké" trạng thái đã kết
-                // nối sẵn của một thư mục KHÁC đang chạy song song.
-                if (targetTotal > CountRunningFxgameInFolder(gameFolder))
-                {
-                    int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
-                    if (newPid > 0)
-                        await WaitForClientConnectedAsync(newPid, 1, targetTotal, progress);
-                    else
-                        await WaitForAnyClientConnectedAsync(progress);
+                    if (newPid > 0) KillClient(newPid); // dọn tiến trình đăng nhập lỗi, tránh sống vật vờ không kết nối được
+
+                    progress?.Report("Token cũ có vẻ đã hết hạn — mở lại để đăng nhập...");
+                    var (loginOk, newToken, loginMsg) = await LoginViaFxlaunchAndWaitAsync(gameFolder, targetTotal, progress);
+                    if (!loginOk) return (0, loginMsg, token);
+                    token = newToken;
                 }
             }
 
@@ -633,6 +664,44 @@ public class MultiClientService
         {
             LaunchGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Mở fxlaunch.exe của CHÍNH thư mục này, chờ người dùng đăng nhập, đọc
+    /// token từ fxgame.exe vừa chạy lên, rồi chờ nó kết nối server xong (nếu
+    /// mục tiêu cần hơn 1 cửa sổ). Tách riêng khỏi EnsureClientsRunningAsync
+    /// vì được dùng ở CẢ HAI nơi: thư mục chưa từng đăng nhập, VÀ thư mục có
+    /// token đã lưu nhưng hoá ra đã hết hạn.
+    /// </summary>
+    private static async Task<(bool Ok, string Token, string Message)> LoginViaFxlaunchAndWaitAsync(
+        string gameFolder, int targetTotal, IProgress<string>? progress)
+    {
+        progress?.Report("Đang mở launcher, hãy đăng nhập vào game...");
+        var pidsBefore = GetFxgamePids();
+
+        var (launcherOk, launcherMsg) = await LaunchFirstClientAsync(gameFolder);
+        if (!launcherOk) return (false, string.Empty, launcherMsg);
+
+        var token = await WaitForTokenInternalAsync(progress);
+        if (string.IsNullOrEmpty(token))
+        {
+            return (false, string.Empty,
+                "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.");
+        }
+
+        // Chờ đúng client MỚI vừa mở kết nối xong trước khi mở tiếp — giới
+        // hạn theo PID mới để không bị "ăn ké" trạng thái đã kết nối sẵn của
+        // một thư mục KHÁC đang chạy song song.
+        if (targetTotal > CountRunningFxgameInFolder(gameFolder))
+        {
+            int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
+            if (newPid > 0)
+                await WaitForClientConnectedAsync(newPid, 1, targetTotal, progress);
+            else
+                await WaitForAnyClientConnectedAsync(progress);
+        }
+
+        return (true, token, "Đăng nhập thành công.");
     }
 
     /// <summary>
@@ -873,34 +942,49 @@ public class MultiClientService
 
     /// <summary>
     /// Chờ tới khi client (PID cho trước) thật sự thiết lập được kết nối TCP
-    /// tới server game. Đây là tín hiệu chính xác cho biết nó đã xác thực
-    /// xong, thay vì đoán mò bằng số giây cố định.
+    /// tới server game, hoặc hết <paramref name="timeoutMs"/>. Đây là tín hiệu
+    /// chính xác cho biết nó đã xác thực xong, thay vì đoán mò bằng số giây
+    /// cố định. Trả về true/false để caller BIẾT được có kết nối hay không
+    /// (khác <see cref="WaitForClientConnectedAsync"/> — hàm đó chỉ log rồi
+    /// vẫn mở tiếp, không cần biết kết quả).
     /// </summary>
-    private static async Task WaitForClientConnectedAsync(
-        int pid, int openedSoFar, int targetTotal, IProgress<string>? progress)
+    private static async Task<bool> WaitForClientConnectedWithResultAsync(
+        int pid, int timeoutMs, string waitingMessagePrefix, IProgress<string>? progress)
     {
         const int pollInterval = 500;
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        while (sw.ElapsedMilliseconds < ConnectWaitTimeoutMs)
+        while (sw.ElapsedMilliseconds < timeoutMs)
         {
             if (TcpTableHelper.HasEstablishedPublicConnection(pid))
             {
                 var remote = TcpTableHelper.GetFirstRemoteAddress(pid);
                 DiagnosticLogService.Trace(
                     $"  PID={pid} đã kết nối server ({remote}) sau {sw.ElapsedMilliseconds}ms");
-                return;
+                return true;
             }
 
-            progress?.Report(
-                $"Đã mở {openedSoFar}/{targetTotal} cửa sổ — " +
-                $"chờ client vừa mở kết nối vào server ({sw.ElapsedMilliseconds / 1000}s)...");
-
+            progress?.Report($"{waitingMessagePrefix} ({sw.ElapsedMilliseconds / 1000}s)...");
             await Task.Delay(pollInterval);
         }
 
         DiagnosticLogService.Trace(
-            $"  PID={pid} chưa thấy kết nối server sau {ConnectWaitTimeoutMs}ms — vẫn mở tiếp");
+            $"  PID={pid} chưa thấy kết nối server sau {timeoutMs}ms");
+        return false;
+    }
+
+    /// <summary>
+    /// Chờ tới khi client (PID cho trước) thật sự thiết lập được kết nối TCP
+    /// tới server game. Đây là tín hiệu chính xác cho biết nó đã xác thực
+    /// xong, thay vì đoán mò bằng số giây cố định.
+    /// </summary>
+    private static async Task WaitForClientConnectedAsync(
+        int pid, int openedSoFar, int targetTotal, IProgress<string>? progress)
+    {
+        await WaitForClientConnectedWithResultAsync(
+            pid, ConnectWaitTimeoutMs,
+            $"Đã mở {openedSoFar}/{targetTotal} cửa sổ — chờ client vừa mở kết nối vào server",
+            progress);
     }
 
     // ── Quản lý client đang chạy ─────────────────────────────
