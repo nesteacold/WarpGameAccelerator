@@ -109,6 +109,10 @@ public partial class LocalizationService : ObservableObject
     // ── Settings ─────────────────────────────────────────────
     public string SettSectionStartup     => VI("KHỞI ĐỘNG",                 "STARTUP");
     public string SettAutoStartTitle     => VI("Tự động khởi động cùng Windows", "Auto-start with Windows");
+    public string SettExitPromptTitle    => VI("Hộp thoại xác nhận thoát",  "Exit confirmation dialog");
+    public string SettExitPromptDesc     => VI("Bạn đã chọn \"Không hỏi lại\" cho hộp thoại khi bấm X. Bấm nút này để được hỏi lại từ lần sau.",
+                                               "You chose \"Don't ask again\" for the close-button dialog. Click this to be asked again next time.");
+    public string SettBtnResetExitPrompt => VI("Hỏi lại từ đầu",            "Ask again");
     public string SettSectionPing        => VI("PING MONITOR",              "PING MONITOR");
     public string SettPingServerTitle    => VI("Server đo Ping",            "Ping Server");
     public string SettPingServerSubtitle => VI("Chọn IP server để theo dõi độ trễ", "Select IP server to monitor latency");
@@ -172,6 +176,8 @@ public partial class LocalizationService : ObservableObject
     public string ExitBtnExit            => VI("Thoát",                     "Exit");
     public string ExitBtnMinimize        => VI("Thu nhỏ",                   "Minimize");
     public string ExitBtnCancel          => VI("Hủy",                       "Cancel");
+    public string ExitDontAskAgain       => VI("Không hỏi lại — luôn thực hiện lựa chọn này khi bấm X",
+                                               "Don't ask again — always do this when I click X");
     public string TrayMinimizedMsg       => VI("Ứng dụng vẫn đang chạy trong khay hệ thống.", "App is still running in the system tray.");
 
     // ── Error Messages ───────────────────────────────────────

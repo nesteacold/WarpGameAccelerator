@@ -99,12 +99,26 @@ public partial class SettingsViewModel : ObservableObject
     public string AutoStartToggleLabel =>
         AutoStartEnabled ? "Tự khởi động cùng Windows (BẬT)" : "Tự khởi động cùng Windows (TẮT)";
 
+    /// <summary>Có lựa chọn "Không hỏi lại" đã ghi nhớ cho hộp thoại xác nhận
+    /// thoát hay không — chỉ hiện nút "Hỏi lại từ đầu" khi có, tránh một nút
+    /// vô nghĩa khi chưa từng tick "Không hỏi lại".</summary>
+    [ObservableProperty]
+    private bool _hasRememberedExitChoice;
+
+    [RelayCommand]
+    private void ResetExitPrompt()
+    {
+        ExitBehaviorSettings.ResetToAlwaysAsk();
+        HasRememberedExitChoice = false;
+    }
+
     public SettingsViewModel(PingMonitorService pingMonitor, LocalizationService loc)
     {
         _pingMonitor = pingMonitor;
         _loc         = loc;
         _updateService = new UpdateService();
         _autoStartEnabled = StartupHelper.IsAutoStartEnabled();
+        _hasRememberedExitChoice = ExitBehaviorSettings.GetRememberedAction() != null;
         LoadPingTargets();
         _selectedPingTarget = PingTargets.FirstOrDefault() ?? PingTarget.Defaults[0];
         _selectedBugReportCategory = BugReportCategories[0];

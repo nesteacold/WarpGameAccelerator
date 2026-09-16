@@ -151,12 +151,35 @@ public sealed partial class MainWindow : Window
 
     private async Task PromptExitAsync()
     {
+        // Đã ghi nhớ lựa chọn từ lần trước (tick "Không hỏi lại") — thực hiện
+        // luôn, không hiện hộp thoại. Có thể phục hồi hộp thoại này từ Settings
+        // (ExitBehaviorSettings.ResetToAlwaysAsk, xem SettingsPage) nếu người
+        // dùng đổi ý.
+        var remembered = ExitBehaviorSettings.GetRememberedAction();
+        if (remembered == RememberedExitAction.Exit)
+        {
+            _isActuallyExiting = true;
+            ExitApp();
+            return;
+        }
+        if (remembered == RememberedExitAction.Minimize)
+        {
+            AppWindow.Hide();
+            _trayIcon?.ShowBalloon("WARP Game Accelerator", _loc.TrayMinimizedMsg);
+            return;
+        }
+
+        var dontAskCheckbox = new CheckBox { Content = _loc.ExitDontAskAgain, Margin = new Thickness(0, 12, 0, 0) };
+        var content = new StackPanel();
+        content.Children.Add(new TextBlock { Text = _loc.ExitMessage, TextWrapping = TextWrapping.Wrap });
+        content.Children.Add(dontAskCheckbox);
+
         var dialog = new ContentDialog
         {
             XamlRoot            = Content.XamlRoot,
             Style               = Application.Current.Resources["DefaultContentDialogStyle"] as Style,
             Title               = _loc.ExitTitle,
-            Content             = _loc.ExitMessage,
+            Content             = content,
             PrimaryButtonText   = _loc.ExitBtnExit,
             SecondaryButtonText = _loc.ExitBtnMinimize,
             CloseButtonText     = _loc.ExitBtnCancel,
@@ -165,13 +188,21 @@ public sealed partial class MainWindow : Window
 
         var result = await dialog.ShowAsync();
 
+        // "Hủy" (CloseButton) KHÔNG được ghi nhớ — đó là "để tôi cân nhắc tiếp",
+        // không phải một lựa chọn dứt khoát. Chỉ Thoát/Thu nhỏ mới đáng nhớ lại.
         if (result == ContentDialogResult.Primary)
         {
+            if (dontAskCheckbox.IsChecked == true)
+                ExitBehaviorSettings.Remember(RememberedExitAction.Exit);
+
             _isActuallyExiting = true;
             ExitApp();
         }
         else if (result == ContentDialogResult.Secondary)
         {
+            if (dontAskCheckbox.IsChecked == true)
+                ExitBehaviorSettings.Remember(RememberedExitAction.Minimize);
+
             AppWindow.Hide();
             _trayIcon?.ShowBalloon(
                 "WARP Game Accelerator",

@@ -98,6 +98,30 @@
                                 Command="{x:Bind ViewModel.CheckUpdateCommand}"
                                 Style="{StaticResource AccentButtonStyle}"/>
                     </Grid>
+
+                    <MenuFlyoutSeparator Margin="-12,0,-12,0"/>
+
+                    <!-- Phục hồi hộp thoại "Xác nhận thoát" nếu người dùng từng
+                         tick "Không hỏi lại" và giờ muốn được hỏi lại mỗi lần
+                         bấm X. Chỉ hiện nút khi thực sự có lựa chọn đã ghi nhớ
+                         (xem SettingsViewModel.HasRememberedExitChoice). -->
+                    <Grid Visibility="{x:Bind ViewModel.HasRememberedExitChoice, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                            <TextBlock Text="{x:Bind Loc.SettExitPromptTitle, Mode=OneWay}"
+                                       FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
+                            <TextBlock Text="{x:Bind Loc.SettExitPromptDesc, Mode=OneWay}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" VerticalAlignment="Center"
+                                Content="{x:Bind Loc.SettBtnResetExitPrompt, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.ResetExitPromptCommand}"/>
+                    </Grid>
                 </StackPanel>
             </Border>
 
