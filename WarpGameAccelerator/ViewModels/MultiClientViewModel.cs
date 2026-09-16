@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WarpGameAccelerator.Services;
 
@@ -59,7 +60,25 @@ public partial class GameFolderRowViewModel : ObservableObject
         ClientCount = clientCount <= 0 ? 1 : clientCount;
         AddedAt = addedAt;
         Token = token;
-        TryLoadVersion();
+
+        // Đọc version ở LUỒNG NỀN, không chặn UI: TryLoadVersion gọi
+        // FindGameExe, hàm này từng quét ĐỆ QUY TOÀN BỘ cây thư mục
+        // (Directory.GetFiles với AllDirectories — nay đã giới hạn 2 cấp).
+        // Với một thư mục trong danh sách mà không chứa fxlaunch.exe ở
+        // gốc/bin64 (vd "D:\Games" bị lượt tự quét thêm vào), nhánh đó quét
+        // cạn cả ổ đĩa — hàng trăm nghìn file, mất nhiều giây. Constructor này
+        // chạy trong LoadState() TRÊN UI THREAD lúc mở trang multi-launcher, và
+        // bị gọi 2 lần cho MỖI thư mục (fxlaunch rồi fxgame), nên app đóng băng
+        // ngay khi bấm vào multi-launcher. Version chỉ là nhãn hiển thị phụ,
+        // không cần có ngay — đọc xong mới marshal về UI thread để gán.
+        var dispatcher = DispatcherQueue.GetForCurrentThread();
+        _ = Task.Run(() =>
+        {
+            var version = ReadVersionOrEmpty();
+            if (string.IsNullOrEmpty(version)) return;
+            if (dispatcher != null) dispatcher.TryEnqueue(() => VersionText = version);
+            else VersionText = version;
+        });
     }
 
     partial void OnVersionTextChanged(string value) => OnPropertyChanged(nameof(HasVersion));
@@ -77,23 +96,24 @@ public partial class GameFolderRowViewModel : ObservableObject
 
     /// <summary>
     /// Best-effort: đọc FileVersion của fxlaunch/fxgame trong thư mục. KHÔNG
-    /// bịa số nếu đọc lỗi/rỗng — để trống hoàn toàn (xem CLAUDE.md mục "Chỉ
-    /// số hiển thị: KHÔNG được bịa").
+    /// bịa số nếu đọc lỗi/rỗng — trả chuỗi rỗng (xem CLAUDE.md mục "Chỉ số
+    /// hiển thị: KHÔNG được bịa"). Chỉ ĐỌC, không gán property — caller chạy
+    /// hàm này ở luồng nền rồi mới marshal kết quả về UI thread.
     /// </summary>
-    private void TryLoadVersion()
+    private string ReadVersionOrEmpty()
     {
         try
         {
             var exe = MultiClientService.FindGameExe(Path, "fxlaunch.exe")
                       ?? MultiClientService.FindGameExe(Path, "fxgame.exe");
-            if (exe == null) { VersionText = string.Empty; return; }
+            if (exe == null) return string.Empty;
 
             var info = FileVersionInfo.GetVersionInfo(exe);
-            VersionText = string.IsNullOrWhiteSpace(info.FileVersion) ? string.Empty : info.FileVersion!;
+            return string.IsNullOrWhiteSpace(info.FileVersion) ? string.Empty : info.FileVersion!;
         }
         catch
         {
-            VersionText = string.Empty;
+            return string.Empty;
         }
     }
 }

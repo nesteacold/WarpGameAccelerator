@@ -125,11 +125,33 @@ public class MultiClientService
             }
         }
 
-        // 2. Nếu không thấy, quét đệ quy subfolder
+        // 2. Nếu không thấy, quét thêm nhưng CHỈ 2 CẤP con — KHÔNG dùng
+        // SearchOption.AllDirectories như trước.
+        //
+        // Quét cạn cả cây thư mục khiến hàm này mất nhiều giây với một thư mục
+        // KHÔNG phải thư mục game (vd "D:\Games" lọt vào danh sách qua lượt tự
+        // quét): nó phải đi hết hàng trăm nghìn file mới kết luận được "không
+        // có". Hàm bị gọi nhiều lần trên cả đường hiển thị lẫn đường launch,
+        // nên đó là một nguồn treo app. Bản cài game luôn đặt exe ở gốc hoặc
+        // bin64/bin (đã xử ở bước 1), nên 2 cấp là quá đủ; sâu hơn thế thì thà
+        // trả null để người dùng chỉ đúng thư mục còn hơn treo cả app.
         try
         {
-            var files = Directory.GetFiles(folder, exeName, SearchOption.AllDirectories);
-            if (files.Length > 0) return files[0];
+            foreach (var dir in Directory.EnumerateDirectories(folder))
+            {
+                var direct = Path.Combine(dir, exeName);
+                if (File.Exists(direct)) return direct;
+
+                try
+                {
+                    foreach (var sub in Directory.EnumerateDirectories(dir))
+                    {
+                        var deeper = Path.Combine(sub, exeName);
+                        if (File.Exists(deeper)) return deeper;
+                    }
+                }
+                catch { /* nhánh không đọc được — bỏ qua, không chặn cả lượt tìm */ }
+            }
         }
         catch { }
 
