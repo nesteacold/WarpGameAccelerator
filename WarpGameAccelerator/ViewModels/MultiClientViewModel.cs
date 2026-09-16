@@ -280,8 +280,19 @@ public partial class MultiClientViewModel : ObservableObject
             row.StatusText = "Đang xử lý...";
 
             var progress = new Progress<string>(t => row.StatusText = t);
-            var (_, msg, token) = await MultiClientService.EnsureClientsRunningAsync(
-                row.Path, row.Token, row.ClientCount, progress);
+
+            // BẮT BUỘC Task.Run: method async chạy ĐỒNG BỘ trên thread của
+            // caller cho tới await đầu tiên thực sự nhường quyền.
+            // EnsureClientsRunningAsync mở màn bằng LaunchGate.WaitAsync()
+            // (hoàn tất đồng bộ khi gate rảnh) rồi gọi ngay
+            // CountRunningFxgameInFolder — truy vấn WMI đồng bộ tốn hàng trăm
+            // ms tới nhiều giây (vô hạn nếu dịch vụ WMI treo). Không có
+            // Task.Run thì toàn bộ đoạn đó chạy TRÊN UI THREAD ngay khi bấm
+            // MỞ GAME → app đóng băng (đã xảy ra thật, nhiều lần). Progress<T>
+            // tạo ở trên (UI thread) nên các report từ thread pool vẫn tự
+            // marshal về UI đúng cách.
+            var (_, msg, token) = await Task.Run(() => MultiClientService.EnsureClientsRunningAsync(
+                row.Path, row.Token, row.ClientCount, progress));
 
             if (!string.IsNullOrEmpty(token) && token != row.Token)
                 row.Token = token;
