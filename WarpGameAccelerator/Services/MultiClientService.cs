@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Management;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace WarpGameAccelerator.Services;
@@ -370,12 +371,23 @@ public class MultiClientService
     // ── Bước 2: Detect token từ fxgame.exe đang chạy ────────
     public static async Task<(bool Success, string Token, string Message)> DetectTokenAsync()
     {
+        // Token nằm trong CommandLine, không có cách nào lấy nó bằng P/Invoke
+        // đơn giản như đường dẫn exe (xem GetFxgameExecutablePaths) nên vẫn
+        // phải dùng WMI ở đây. NHƯNG trace.log thực tế cho thấy WMI trên máy
+        // người dùng có thể treo hàng chục phút trước khi trả lỗi — đặt
+        // Timeout cho chính searcher (bán đồng bộ, .NET tự huỷ enumeration khi
+        // quá hạn) làm giảm rủi ro nhưng KHÔNG đảm bảo tuyệt đối, nên còn bọc
+        // thêm timeout cứng ở tầng gọi (WaitForTokenInternalAsync) qua
+        // Task.WhenAny — một vòng lặp bị WMI treo chỉ mất tối đa vài giây của
+        // MỘT lượt thử, không chặn cả 60s chờ đăng nhập.
         return await Task.Run(() =>
         {
             try
             {
                 using var searcher = new ManagementObjectSearcher(
-                    "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'fxgame.exe'");
+                    new ManagementScope("root\\cimv2"),
+                    new ObjectQuery("SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'fxgame.exe'"),
+                    new System.Management.EnumerationOptions { Timeout = TimeSpan.FromSeconds(5) });
                 using var collection = searcher.Get();
 
                 foreach (ManagementObject obj in collection)
@@ -636,7 +648,22 @@ public class MultiClientService
         {
             await Task.Delay(2000);
 
-            var (ok, token, _) = await DetectTokenAsync();
+            // Timeout cứng thêm ở NGOÀI, độc lập với EnumerationOptions.Timeout
+            // bên trong DetectTokenAsync — WMI trên máy người dùng từng treo
+            // hàng chục phút bất kể timeout khai báo (xem trace.log), nên
+            // không tin tưởng tuyệt đối vào timeout nội bộ của searcher. Một
+            // lượt bị treo chỉ mất tối đa 8s ở đây rồi vòng lặp tự thử lại,
+            // KHÔNG để nó chặn cả 60s chờ đăng nhập.
+            var detectTask = DetectTokenAsync();
+            var winner = await Task.WhenAny(detectTask, Task.Delay(8000));
+            if (winner != detectTask)
+            {
+                DiagnosticLogService.Trace($"  DetectTokenAsync treo quá 8s ở lượt {i + 1}, bỏ qua thử lại");
+                progress?.Report($"Đang chờ bạn đăng nhập... ({(i + 1) * 2}s)");
+                continue;
+            }
+
+            var (ok, token, _) = await detectTask;
             if (ok && !string.IsNullOrEmpty(token))
             {
                 DiagnosticLogService.Trace($"  lấy được token sau {(i + 1) * 2}s");
@@ -653,89 +680,84 @@ public class MultiClientService
     /// <summary>Số cửa sổ game (fxgame.exe) đang chạy, toàn hệ thống.</summary>
     public static int CountRunningClients() => CountRunningFxgame();
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool QueryFullProcessImageName(IntPtr hProcess, uint dwFlags, System.Text.StringBuilder lpExeName, ref uint lpdwSize);
+
+    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
     /// <summary>
-    /// Đường dẫn exe của mọi fxgame.exe đang chạy, theo PID — đọc qua WMI, KHÔNG
-    /// dùng Process.MainModule.FileName.
+    /// Đường dẫn exe của mọi fxgame.exe đang chạy, theo PID — đọc bằng
+    /// QueryFullProcessImageName (P/Invoke), KHÔNG dùng WMI và KHÔNG dùng
+    /// Process.MainModule.FileName.
     ///
-    /// Từng thử Win32_Process.ExecutablePath trước — VẪN đếm sai (thiếu client
-    /// vừa mở), vì WMI chưa kịp populate field này ngay lúc tiến trình mới
-    /// khởi động (đúng lúc code vừa lấy được token và gọi hàm đếm này). Đổi
-    /// sang trích đường dẫn từ CommandLine — field này LUÔN có sẵn ngay từ lúc
-    /// tạo tiến trình (đã dùng thành công ở DetectTokenAsync để đọc token,
-    /// cũng nằm trong CommandLine), không bị lag như ExecutablePath.
+    /// LỊCH SỬ (3 lần sửa sai trước khi tới đây):
+    /// 1. MainModule — ném exception khi tiến trình khác kiến trúc bit/quyền,
+    ///    bị nuốt bởi try/catch → đếm thiếu.
+    /// 2. WMI Win32_Process.ExecutablePath — field này CHƯA kịp populate ngay
+    ///    lúc tiến trình vừa khởi động (đúng lúc code vừa lấy token và gọi
+    ///    hàm đếm) → vẫn đếm thiếu.
+    /// 3. WMI Win32_Process.CommandLine (fallback khi ExecutablePath rỗng) —
+    ///    tưởng đã ổn, nhưng log trace.log thực tế trên máy người dùng cho
+    ///    thấy WMI có thể TREO HÀNG CHỤC PHÚT trước khi trả lỗi ("Call
+    ///    cancelled", "Out of memory") — không liên quan gì tới việc đứng
+    ///    trên UI thread hay nền, bản thân que ManagementObjectSearcher.Get()
+    ///    có thể chặn rất lâu trên máy này (nghi WMI repository/service
+    ///    không khoẻ). Đây là nguyên nhân "Đang xử lý..." treo lâu dù đã bọc
+    ///    Task.Run() ở tầng ViewModel.
     ///
-    /// Ghi chú lịch sử: bản vá đầu tiên đổ lỗi cho việc fxgame.exe khác kiến
-    /// trúc bit (32/64-bit) với app — chưa kiểm chứng, và không phải nguyên
-    /// nhân duy nhất; ExecutablePath lag mới là lý do khiến bản vá đó VẪN đếm
-    /// sai trong thực tế (báo lại "mở 1 ra 2" sau khi đã đổi từ MainModule
-    /// sang WMI ExecutablePath).
+    /// QueryFullProcessImageName là API cấp thấp, không qua dịch vụ WMI, trả
+    /// về ngay lập tức (hoặc lỗi ngay lập tức), hoạt động được cả khi tiến
+    /// trình khác kiến trúc bit với app gọi (không như MainModule).
     /// </summary>
-    private static Dictionary<int, string> GetFxgameExecutablePathsViaWmi()
+    private static Dictionary<int, string> GetFxgameExecutablePaths()
     {
         var result = new Dictionary<int, string>();
+        var procs = Process.GetProcessesByName("fxgame");
         try
         {
-            using var searcher = new ManagementObjectSearcher(
-                "SELECT ProcessId, CommandLine, ExecutablePath FROM Win32_Process WHERE Name = 'fxgame.exe'");
-            using var collection = searcher.Get();
-            foreach (ManagementObject obj in collection)
+            foreach (var p in procs)
             {
-                using (obj)
+                IntPtr handle = IntPtr.Zero;
+                try
                 {
-                    try
-                    {
-                        var pidRaw = obj["ProcessId"];
-                        if (pidRaw == null) continue;
-                        var pid = Convert.ToInt32(pidRaw);
+                    handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, p.Id);
+                    if (handle == IntPtr.Zero) continue;
 
-                        // Ưu tiên ExecutablePath (sạch, không cần parse) khi có;
-                        // fallback CommandLine (luôn có ngay từ lúc tạo tiến trình).
-                        var path = obj["ExecutablePath"]?.ToString();
-                        if (string.IsNullOrEmpty(path))
-                        {
-                            var cmdLine = obj["CommandLine"]?.ToString();
-                            if (!string.IsNullOrEmpty(cmdLine))
-                                path = ParseExePathFromCommandLine(cmdLine);
-                        }
-
-                        if (!string.IsNullOrEmpty(path))
-                            result[pid] = path;
-                    }
-                    catch { }
+                    var sb = new System.Text.StringBuilder(1024);
+                    uint size = (uint)sb.Capacity;
+                    if (QueryFullProcessImageName(handle, 0, sb, ref size) && size > 0)
+                        result[p.Id] = sb.ToString(0, (int)size);
+                }
+                catch { }
+                finally
+                {
+                    if (handle != IntPtr.Zero) CloseHandle(handle);
                 }
             }
         }
-        catch (Exception ex)
+        finally
         {
-            DiagnosticLogService.Trace($"GetFxgameExecutablePathsViaWmi EXCEPTION: {ex.Message}");
+            foreach (var p in procs) { try { p.Dispose(); } catch { } }
         }
         return result;
     }
 
-    /// <summary>Lấy phần đường dẫn exe (trước tham số đầu tiên) từ CommandLine của WMI —
-    /// cùng dạng chuỗi <c>"C:\Path\fxgame.exe" TOKEN</c> như ParseTokenFromCommandLine xử lý.</summary>
-    private static string ParseExePathFromCommandLine(string cmdLine)
-    {
-        cmdLine = cmdLine.Trim();
-        if (cmdLine.StartsWith("\""))
-        {
-            int closing = cmdLine.IndexOf('"', 1);
-            return closing > 0 ? cmdLine[1..closing] : string.Empty;
-        }
-
-        int space = cmdLine.IndexOf(' ');
-        return space > 0 ? cmdLine[..space] : cmdLine;
-    }
-
     /// <summary>
     /// Số cửa sổ game đang chạy CỦA RIÊNG một thư mục — xem
-    /// <see cref="GetFxgameExecutablePathsViaWmi"/> vì sao dùng WMI thay vì
-    /// Process.MainModule.
+    /// <see cref="GetFxgameExecutablePaths"/> vì sao dùng QueryFullProcessImageName
+    /// thay vì WMI hay Process.MainModule.
     /// </summary>
     public static int CountRunningFxgameInFolder(string folder)
     {
         var folders = new[] { folder };
-        var paths = GetFxgameExecutablePathsViaWmi();
+        var paths = GetFxgameExecutablePaths();
         return paths.Values.Count(p => ResolveOwningFolder(p, folders) != null);
     }
 
@@ -888,20 +910,22 @@ public class MultiClientService
     /// mọi client rơi vào bucket "không rõ thư mục" khi hiển thị theo nhóm).
     /// </param>
     /// <remarks>
-    /// CỐ Ý dùng Process.MainModule (KHÔNG dùng WMI) ở đây, khác với đường
-    /// launch: hàm này bị DispatcherTimer gọi mỗi 2 GIÂY TRÊN UI THREAD
-    /// (MultiClientViewModel.RefreshRunning). ManagementObjectSearcher là lời
-    /// gọi ĐỒNG BỘ tốn hàng trăm ms tới vài giây, và có thể treo lâu khi dịch
-    /// vụ WMI trục trặc — đặt nó vào vòng lặp UI làm app ĐÓNG BĂNG (đã xảy ra:
-    /// bấm vào multi-launcher thì app freeze, dù nút Boost vẫn hiện vì đã vẽ
-    /// sẵn từ trước). MainModule tuy có thể thất bại với vài tiến trình (rơi
-    /// vào bucket "không rõ thư mục") nhưng KHÔNG BAO GIỜ treo — đánh đổi đúng
-    /// cho một hàm chỉ phục vụ hiển thị. Đường launch (CountRunningFxgameInFolder)
-    /// vẫn dùng WMI vì ở đó cần chính xác và vốn đã chạy nền.
+    /// Dùng QueryFullProcessImageName (P/Invoke, xem GetFxgameExecutablePaths)
+    /// để lấy đường dẫn — KHÔNG dùng WMI. Hàm này bị DispatcherTimer gọi mỗi 2
+    /// GIÂY TRÊN UI THREAD (MultiClientViewModel.RefreshRunning); WMI
+    /// (ManagementObjectSearcher) từng được thử ở đây rồi bị gỡ vì có thể treo
+    /// hàng chục phút trên máy người dùng thực tế (xem trace.log: nhiều dòng
+    /// "Call cancelled"/"Out of memory" — không phải giả thuyết). Cũng KHÔNG
+    /// dùng Process.MainModule vì nó ném exception với một số tiến trình
+    /// (khác kiến trúc bit/quyền) — QueryFullProcessImageName không có cả 2
+    /// vấn đề: nhanh, tất định, không treo, hoạt động cross-bitness.
     /// </remarks>
     public static List<RunningClient> GetRunningClients(IReadOnlyList<string>? knownFolders = null)
     {
         var result = new List<RunningClient>();
+        var exePaths = (knownFolders != null && knownFolders.Count > 0)
+            ? GetFxgameExecutablePaths()
+            : new Dictionary<int, string>();
         try
         {
             var processes = Process.GetProcessesByName("fxgame");
@@ -925,11 +949,9 @@ public class MultiClientService
                     try { startTime = p.StartTime.ToString("HH:mm:ss"); } catch { }
 
                     string? folder = null;
-                    if (knownFolders != null && knownFolders.Count > 0)
+                    if (knownFolders != null && knownFolders.Count > 0 && exePaths.TryGetValue(p.Id, out var exePath))
                     {
-                        string? exePath = null;
-                        try { exePath = p.MainModule?.FileName; } catch { /* không đọc được — bucket "không rõ thư mục" */ }
-                        if (exePath != null) folder = ResolveOwningFolder(exePath, knownFolders);
+                        folder = ResolveOwningFolder(exePath, knownFolders);
                     }
 
                     result.Add(new RunningClient
