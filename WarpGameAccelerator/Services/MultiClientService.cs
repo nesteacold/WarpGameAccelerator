@@ -80,17 +80,15 @@ public class MultiClientService
     private const int ConnectWaitTimeoutMs = 60000;
 
     /// <summary>
-    /// Ngưỡng chờ kết nối cho client ĐẦU TIÊN của một thư mục khi mở THẲNG
-    /// bằng token đã lưu (không qua fxlaunch — xem EnsureClientsRunningAsync).
-    /// Dài hơn hẳn ConnectWaitTimeoutMs (60s dùng cho client thứ 2..N, lúc đó
-    /// đã CHẮC CHẮN có 1 phiên đăng nhập thành công làm chuẩn) vì ở đây còn
-    /// một khả năng khác: token đã lưu HẾT HẠN (vd game vừa update) — khi đó
-    /// client mở lên nhưng không bao giờ kết nối được, và 60s là quá ngắn để
-    /// phân biệt "token hết hạn" với "mạng/server đang chậm". Hết ngưỡng này
-    /// mà vẫn chưa kết nối thì coi là token hỏng, quay lại mở fxlaunch để
-    /// đăng nhập lấy token mới — xem yêu cầu người dùng 2026-09-16.
+    /// Khoảng chờ để phát hiện token đã lưu HẾT HẠN khi mở client đầu tiên
+    /// của một thư mục THẲNG bằng token (không qua fxlaunch — xem
+    /// EnsureClientsRunningAsync). KHÔNG cần biết client đã kết nối server
+    /// thật hay chưa (đơn giản hoá theo yêu cầu người dùng 2026-09-16) — chỉ
+    /// cần tiến trình fxgame.exe còn SỐNG sau khoảng này là coi như ổn. Token
+    /// hỏng (vd game vừa update) khiến client tự thoát gần như ngay lập tức
+    /// thay vì đứng yên, nên khoảng chờ ngắn là đủ phân biệt 2 trường hợp.
     /// </summary>
-    private const int TokenStaleTimeoutMs = 5 * 60 * 1000;
+    private const int TokenStaleGraceMs = 8000;
 
     /// <summary>
     /// Token giờ là PER-FOLDER (mỗi thư mục = 1 tài khoản/phiên riêng — xem
@@ -621,15 +619,14 @@ public class MultiClientService
             else if (CountRunningFxgameInFolder(gameFolder) == 0)
             {
                 // Mở THẲNG bằng token đã lưu (không qua fxlaunch — đúng UX đã
-                // chốt ở v1.15.8), NHƯNG phải xác nhận nó còn đăng nhập được.
+                // chốt ở v1.15.8), NHƯNG phải xác nhận nó còn dùng được.
                 // Token có thể đã HẾT HẠN (vd game vừa update) — khi đó
-                // fxgame.exe vẫn mở lên bình thường nhưng không bao giờ kết
-                // nối được tới server. Chờ TokenStaleTimeoutMs (5 phút, dài
-                // hơn hẳn ngưỡng 60s dùng cho client 2..N vì ở đây cần phân
-                // biệt "token hỏng" với "mạng/server đang chậm") — hết hạn mà
-                // vẫn chưa kết nối thì coi token đã hỏng, dọn tiến trình lỗi
-                // rồi quay lại mở fxlaunch để đăng nhập lấy token mới. Theo
-                // yêu cầu người dùng 2026-09-16.
+                // fxgame.exe tự thoát gần như ngay lập tức thay vì đứng yên.
+                // KHÔNG cần chờ kết nối TCP thật sự (đơn giản hoá theo yêu cầu
+                // người dùng 2026-09-16) — chỉ cần tiến trình còn SỐNG sau một
+                // khoảng chờ ngắn là coi như ổn, không cần biết nó đã vào được
+                // server hay chưa. Không sống nổi thì coi token đã hỏng, quay
+                // lại mở fxlaunch để đăng nhập lấy token mới.
                 var gamePath = FindGameExe(gameFolder, "fxgame.exe");
                 if (gamePath == null) return (0, "Không tìm thấy fxgame.exe.", token);
 
@@ -639,16 +636,13 @@ public class MultiClientService
                 DiagnosticLogService.Trace($"[token đã lưu] đã gọi helper cho {gameFolder}, chờ tiến trình xuất hiện...");
 
                 int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
-                bool connected = newPid > 0 && await WaitForClientConnectedWithResultAsync(
-                    newPid, TokenStaleTimeoutMs, "Đang chờ client kết nối vào server", progress);
+                bool alive = newPid > 0 && await WaitForProcessStillAliveAsync(newPid, TokenStaleGraceMs);
 
-                if (!connected)
+                if (!alive)
                 {
                     DiagnosticLogService.Trace(
-                        $"[token đã lưu] {gameFolder} — không kết nối được sau {TokenStaleTimeoutMs}ms, " +
+                        $"[token đã lưu] {gameFolder} — client không sống nổi sau {TokenStaleGraceMs}ms, " +
                         "coi như token đã hết hạn, mở fxlaunch để đăng nhập lại");
-
-                    if (newPid > 0) KillClient(newPid); // dọn tiến trình đăng nhập lỗi, tránh sống vật vờ không kết nối được
 
                     progress?.Report("Token cũ có vẻ đã hết hạn — mở lại để đăng nhập...");
                     var (loginOk, newToken, loginMsg) = await LoginViaFxlaunchAndWaitAsync(gameFolder, targetTotal, progress);
@@ -938,6 +932,43 @@ public class MultiClientService
 
         DiagnosticLogService.Trace($"  TIMEOUT {timeoutMs}ms — chưa thấy client mới, vẫn tiếp tục");
         return 0;
+    }
+
+    /// <summary>
+    /// Chờ <paramref name="graceMs"/> rồi báo tiến trình (PID cho trước) có
+    /// CÒN SỐNG hay không — KHÔNG kiểm tra kết nối TCP/đăng nhập, chỉ cần
+    /// tiến trình chưa tự thoát. Dùng để phát hiện token đã lưu hết hạn (client
+    /// tự thoát gần như ngay lập tức) mà không cần biết nó có vào được server
+    /// hay chưa — xem TokenStaleGraceMs.
+    /// </summary>
+    private static async Task<bool> WaitForProcessStillAliveAsync(int pid, int graceMs)
+    {
+        const int pollInterval = 500;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        while (sw.ElapsedMilliseconds < graceMs)
+        {
+            try
+            {
+                using var p = Process.GetProcessById(pid);
+                if (p.HasExited)
+                {
+                    DiagnosticLogService.Trace($"  PID={pid} đã tự thoát sau {sw.ElapsedMilliseconds}ms");
+                    return false;
+                }
+            }
+            catch (ArgumentException)
+            {
+                // Không tìm thấy process theo PID này nữa — đã thoát.
+                DiagnosticLogService.Trace($"  PID={pid} không còn tồn tại sau {sw.ElapsedMilliseconds}ms");
+                return false;
+            }
+
+            await Task.Delay(pollInterval);
+        }
+
+        DiagnosticLogService.Trace($"  PID={pid} vẫn sống sau {graceMs}ms — coi như ổn");
+        return true;
     }
 
     /// <summary>
