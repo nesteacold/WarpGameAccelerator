@@ -12,5 +12,11 @@ test_exit.cs
 # Agent orchestration scratch (not project source)
 .agents/
 
+# Qoder skill junction points at .claude/skills (committed there)
+.qoder/
+
+# Downloaded experiment binaries (wireproxy, usque) — re-downloadable via scripts
+experiments/**/bin/
+
 # Logs
 *.log
