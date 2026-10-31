@@ -22,7 +22,7 @@
 - ⚡ **Split Tunneling (Tăng tốc chọn lọc)**: Chỉ định tuyến duy nhất Game/Process bạn chọn qua tuyến đường ưu tiên Cloudflare WARP+. Toàn bộ các ứng dụng khác như *Discord, YouTube, Web Browser* vẫn giữ nguyên mạng gốc, không gây ảnh hưởng đến gián đoạn cuộc gọi thoại hay giật lag video.
 - 🔌 **Direct Mode (WireGuard trực tiếp)**: Kết nối thẳng vào hạ tầng WireGuard của Cloudflare WARP, không cần chạy song song client WARP chính thức. Tài khoản WARP được **tự động đăng ký hoàn toàn** ngay từ lần Boost đầu tiên — không cần đăng nhập, không cần thao tác gì thêm.
 - 📥 **Import Account thủ công**: Người dùng nâng cao có thể import tài khoản WARP có sẵn (tạo bằng [wgcf](https://github.com/ViRb3/wgcf)) qua Settings → WARP+ Account, thay cho tài khoản tự đăng ký.
-- 🕹️ **Multi-Client cho Age of Wushu**: Mở nhiều client game cùng lúc chỉ với vài cú click — tự động detect token đăng nhập từ tiến trình đang chạy, tự thêm delay an toàn giữa các lần mở để tránh bị anticheat chặn.
+- 🕹️ **Multi-Client cho Age of Wushu**: Mở nhiều client game cùng lúc chỉ với vài cú click — tự động detect token đăng nhập từ tiến trình đang chạy, tự giãn cách giữa các lần mở theo khuyến nghị của server để giữ an toàn cho tài khoản.
 - 🛡️ **Tự động khôi phục sau khi crash**: App ghi nhớ profile/process đang Boost — nếu bị tắt bất ngờ, lần mở lại sau sẽ tự động Boost lại đúng game đang chơi.
 - 📊 **Ping Monitor Thực Thời**: Theo dõi chỉ số Ping (độ trễ ms) của máy chủ Game trước và sau khi Boost theo thời gian thực. Hỗ trợ thêm bớt máy chủ tùy chỉnh (Google, Cloudflare, Custom IP...).
 - 🎮 **Hỗ trợ nhiều Game**: Có sẵn profile cho Age of Wushu, League of Legends, Valorant, Counter-Strike 2 — hoặc tự thêm process bất kỳ.
