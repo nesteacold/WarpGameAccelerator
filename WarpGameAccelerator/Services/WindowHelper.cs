@@ -8,8 +8,17 @@
 // Luôn hỏi thẳng Windows (IsWindowVisible) thay vì tự lưu cờ "đang ẩn" nội
 // bộ — tránh lệch trạng thái nếu app bị tắt/mở lại giữa chừng trong lúc
 // client đang ẩn.
+//
+// ShowWindow là lệnh cross-process và CHẶN cho tới khi thread của cửa sổ
+// đích xử lý xong message. Game treo/bận => caller treo theo. Đã đo trong
+// experiments/hang-lab: cửa sổ khoẻ 7ms, cửa sổ không pump message >12s
+// không trả; SetWindowPos(SWP_HIDEWINDOW) cũng chặn y hệt. Vì vậy MỌI lời gọi
+// ShowWindow ở file này phải chạy ngoài UI thread — đi qua RequestHide /
+// RequestUnhide, đừng gọi thẳng HideClient/UnhideClient từ event handler hay
+// DispatcherTimer.
 // ============================================================
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace WarpGameAccelerator.Services;
 
@@ -52,6 +61,55 @@ public static class WindowHelper
     // đóng cửa sổ cũ và mở cửa sổ mới với cùng PID (hiếm nhưng có thể).
     private static readonly Dictionary<int, IntPtr> _hwndCache = new();
 
+    // Bảo vệ _hwndCache / _hiddenByUs / _inFlight: các worker thread show/hide
+    // và UI thread (lúc poll trạng thái) cùng chạm vào chúng.
+    private static readonly object _gate = new();
+
+    // PID đang có một lượt show/hide dở. Không được xếp hàng thêm lượt thứ hai
+    // cho cùng PID: nếu client treo, mỗi tick 2s sẽ spawn thêm một thread chết
+    // đuối vô ích.
+    private static readonly HashSet<int> _inFlight = new();
+
+    /// <summary>
+    /// Ẩn client trên một thread nền riêng — UI thread không bao giờ chờ
+    /// WinAPI. Trả về false nếu lượt trước của PID này chưa xong (bỏ qua, tick
+    /// sau sẽ re-assert lại).
+    /// </summary>
+    public static bool RequestHide(int pid) => Request(pid, hide: true);
+
+    public static bool RequestUnhide(int pid) => Request(pid, hide: false);
+
+    private static bool Request(int pid, bool hide)
+    {
+        lock (_gate)
+        {
+            if (!_inFlight.Add(pid)) return false;
+        }
+
+        // Dấu vết cho HangWatchdog: đây là họ thao tác từng làm treo cả app (ShowWindow chặn
+        // caller). Nếu UI kẹt ngay sau đó, hồ sơ sẽ ghi đúng "hide/unhide pid=… @ WindowHelper.cs:…".
+        HangWatchdog.Mark($"show/hide client pid={pid} hide={hide}");
+
+        var worker = new Thread(() =>
+        {
+            try
+            {
+                if (hide) HideClient(pid);
+                else UnhideClient(pid);
+            }
+            finally
+            {
+                lock (_gate) _inFlight.Remove(pid);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = $"WindowHelper.{(hide ? "hide" : "unhide")}-{pid}"
+        };
+        worker.Start();
+        return true;
+    }
+
     /// <summary>
     /// Tìm main window thật của 1 PID. fxgame.exe có thể có nhiều top-level
     /// window cùng lúc (ví dụ hộp thoại "lua error" song song với cửa sổ
@@ -63,8 +121,11 @@ public static class WindowHelper
     /// </summary>
     public static IntPtr FindMainWindowByPid(int pid)
     {
-        if (_hwndCache.TryGetValue(pid, out var cached) && IsWindow(cached))
-            return cached;
+        lock (_gate)
+        {
+            if (_hwndCache.TryGetValue(pid, out var cached) && IsWindow(cached))
+                return cached;
+        }
 
         IntPtr best = IntPtr.Zero;
         long bestArea = 0;
@@ -89,7 +150,9 @@ public static class WindowHelper
         }, IntPtr.Zero);
 
         if (best != IntPtr.Zero)
-            _hwndCache[pid] = best;
+        {
+            lock (_gate) _hwndCache[pid] = best;
+        }
 
         return best;
     }
@@ -135,14 +198,17 @@ public static class WindowHelper
     /// </summary>
     public static bool HideClient(int pid)
     {
-        var set = _hiddenByUs.TryGetValue(pid, out var existing) ? existing : (_hiddenByUs[pid] = new HashSet<IntPtr>());
-
         bool any = false;
         foreach (var hWnd in FindAllWindowsForPid(pid))
         {
             if (!IsWindowVisible(hWnd)) continue; // đã ẩn sẵn (do mình hoặc do chính game) — bỏ qua
             any |= ShowWindow(hWnd, SW_HIDE);
-            set.Add(hWnd);
+            lock (_gate)
+            {
+                if (!_hiddenByUs.TryGetValue(pid, out var set))
+                    _hiddenByUs[pid] = set = new HashSet<IntPtr>();
+                set.Add(hWnd);
+            }
         }
         return any;
     }
@@ -153,7 +219,13 @@ public static class WindowHelper
     /// </summary>
     public static bool UnhideClient(int pid)
     {
-        if (!_hiddenByUs.TryGetValue(pid, out var set)) return false;
+        List<IntPtr> set;
+        lock (_gate)
+        {
+            if (!_hiddenByUs.TryGetValue(pid, out var existing) || existing.Count == 0) return false;
+            set = existing.ToList();
+            _hiddenByUs.Remove(pid);
+        }
 
         bool any = false;
         foreach (var hWnd in set)
@@ -161,14 +233,16 @@ public static class WindowHelper
             if (!IsWindow(hWnd)) continue; // cửa sổ đã bị đóng từ khi ẩn tới giờ
             any |= ShowWindow(hWnd, SW_SHOWNA);
         }
-        _hiddenByUs.Remove(pid);
         return any;
     }
 
     /// <summary>Dọn state nội bộ khi client đã đóng hẳn (tránh leak dần).</summary>
     public static void ForgetPid(int pid)
     {
-        _hiddenByUs.Remove(pid);
-        _hwndCache.Remove(pid);
+        lock (_gate)
+        {
+            _hiddenByUs.Remove(pid);
+            _hwndCache.Remove(pid);
+        }
     }
 }

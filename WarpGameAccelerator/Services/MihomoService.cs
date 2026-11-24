@@ -63,7 +63,7 @@ public class MihomoService
     /// <see cref="ActiveMasqueControl"/> khác null.
     /// </summary>
     public const int ProbeSrcPortRangeStart = 31337;
-    public const int ProbeSrcPortRangeEnd = 31347;
+    public const int ProbeSrcPortRangeEnd = 31536;
 
     /// <summary>
     /// IP được cố ý loại khỏi route TUN để làm **đường đối chứng** khi chẩn đoán
@@ -188,12 +188,20 @@ public class MihomoService
     // (WARP Client Proxy). Ban truoc chi match "dial WARP-Direct" nen o che do
     // Tuong Thich thi bo sot 100% loi dial.
     private const string WarpDialFailureMarker = "dial WARP";
+    private const string GamePathDialFailureMarker = "dial GAME-PATH";
     private const int DialFailureLogThreshold = 20;
     private static readonly TimeSpan DialFailureWindow = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan DialFailureLogCooldown = TimeSpan.FromMinutes(5);
     private readonly Queue<DateTime> _recentDialFailures = new();
     private DateTime _lastDialFailureLogUtc = DateTime.MinValue;
     private readonly object _interfaceChangeLock = new();
+    private long _gameDialFailureCount;
+
+    /// <summary>Số lần mihomo báo dial thất bại tới đích server game trong phiên hiện tại.</summary>
+    public long GameDialFailureCount => Interlocked.Read(ref _gameDialFailureCount);
+
+    /// <summary>Phát mỗi khi mihomo ghi nhận 1 dial thất bại tới đích server game (dùng bởi Hot-Standby Failover).</summary>
+    public event Action<string>? GameDialFailureDetected;
 
     // ── Tín hiệu "đường tới server game có đang lỗi không" ──
     //
@@ -454,6 +462,7 @@ public class MihomoService
         // "external-controller"/"secret" (top-level YAML) + rule SRC-PORT cho PROBE-PATH.
         string controlApiConfig = "";
         string probeSrcPortRule = "";
+        string proxyGroupsConfig = "";
 
         if (!IsGameChannelActive)
         {
@@ -485,45 +494,31 @@ public class MihomoService
             {
                 masqueAccPrefetch = await WarpAccountService.GetOrCreateMasqueAccountAsync();
                 var (defIp, defPort, defNetwork) = await ResolveMasqueDefaultEndpointAsync(masqueAccPrefetch);
+                bool hasNativeIpv6 = await Ipv6ProbeService.HasNativeIpv6Async(1500, token);
 
-                // Candidate 0 LUÔN là endpoint mặc định/đã chọn tay hiện tại — đảm bảo
-                // luôn có ít nhất 1 candidate kể cả khi chưa từng chạy MasqueEndpointLab.
-                var built = new List<MasqueEndpoint> { new(defIp, defPort, defNetwork) };
-
-                // Ưu tiên roster do NGƯỜI DÙNG chủ động chọn (⭐ ở bảng "Đo & chọn endpoint
-                // khác") — họ biết rõ đang chọn endpoint nào thay vì app tự lấy ngầm top-4
-                // kết quả thành công gần nhất trong lịch sử quét. Roster rỗng (chưa từng
-                // chọn) mới rơi về hành vi tự động cũ.
                 var roster = MasqueCandidateRoster.Load();
-                if (roster.Count > 0)
-                {
-                    foreach (var e in roster)
-                    {
-                        if (built.Count >= 4) break;
-                        if (built.Any(x => x.Address == e.Address && x.Port == e.Port)) continue;
-                        built.Add(e);
-                    }
-                }
-                else
-                {
-                    var history = MasqueEndpointLab.LoadResults();
-                    if (history != null)
-                    {
-                        foreach (var row in history.Results)
-                        {
-                            if (built.Count >= 4) break;
-                            if (!row.Success) continue;
-                            if (built.Any(e => e.Address == row.Endpoint.Address && e.Port == row.Endpoint.Port)) continue;
-                            built.Add(row.Endpoint);
-                        }
-                    }
-                }
+                var history = MasqueEndpointLab.LoadResults();
+                var historyEndpoints = history?.Results
+                    .Where(r => r.Success)
+                    .Select(r => r.Endpoint)
+                    .ToList();
+
+                // Bước 1: khi máy có IPv6 native → tự dựng 6 slot MASQUE-IPv6 (tỷ lệ trúng HKG
+                // ~54,5%/slot ⇒ >98,4% có ≥1 HKG) + 1 dự phòng IPv4 ở cuối. Máy chỉ có IPv4 rơi
+                // về đúng pool IPv4 an toàn.
+                var built = MasqueCandidatePoolBuilder.Build(
+                    new MasqueEndpoint(defIp, defPort, defNetwork),
+                    hasNativeIpv6,
+                    roster,
+                    historyEndpoints);
 
                 if (built.Count > 0)
                 {
                     for (int i = 0; i < built.Count; i++)
                         masqueCandidates.Add(($"WARP-Masque-C{i}", built[i]));
                     useCandidateGroups = true;
+                    DiagnosticLogService.Trace(
+                        $"[MihomoService] MASQUE multi-candidate pool: ipv6={hasNativeIpv6}, slots={masqueCandidates.Count}");
                 }
             }
             catch
@@ -763,16 +758,36 @@ public class MihomoService
                 }
             }
 
+            // Bước 4 (tùy chọn): nếu người dùng đã deploy Cloudflare Worker relay (Data\worker_relay.json)
+            // thì nạp thêm outbound CF-Worker-HKG (VLESS/WS qua Preferred IP 108.162.198.1:443 ~29ms HKG)
+            // làm ứng viên bổ sung trong GAME-PATH / PROBE-PATH.
+            var workerRelay = WorkerRelaySettings.LoadActive();
+            if (workerRelay != null)
+            {
+                proxiesSb.Append(WorkerRelaySettings.BuildMihomoOutboundYaml(workerRelay));
+                candidateNames.Add(WorkerRelaySettings.ProxyName);
+                masqueCandidates.Add((WorkerRelaySettings.ProxyName,
+                    new MasqueEndpoint(workerRelay.PreferredIp, workerRelay.Port, "ws")));
+                if (System.Net.IPAddress.TryParse(workerRelay.PreferredIp, out var wAddr)
+                    && wAddr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    excludeIps.Add($"{workerRelay.PreferredIp}/32");
+                }
+                DiagnosticLogService.Trace(
+                    $"[MihomoService] Đã nạp ứng viên Worker Relay {WorkerRelaySettings.ProxyName} ({workerRelay.PreferredIp}:{workerRelay.Port})");
+            }
+
             string proxiesListYaml = string.Join(", ", candidateNames);
-            proxiesSb.Append($@"
+            proxyConfig = proxiesSb.ToString();
+            proxyGroupsConfig = $@"
 proxy-groups:
   - name: GAME-PATH
     type: select
     proxies: [{proxiesListYaml}]
   - name: PROBE-PATH
     type: select
-    proxies: [{proxiesListYaml}]");
-            proxyConfig = proxiesSb.ToString();
+    proxies: [{proxiesListYaml}]
+";
 
             // Candidate 0 (mặc định/đã chọn tay) là active ban đầu của GAME-PATH —
             // mihomo chọn phần tử ĐẦU trong "proxies:" của 1 group select làm mặc định.
@@ -888,8 +903,12 @@ secret: ""{controllerSecret}""";
         // mà dial của mihomo không có) và RTT tới server game đo được thật.
         if (IsWorldServerDirect()) excludeIps.Add(GameWorldServerCidr);
         excludeIps.AddRange(DiagnosticBypassIps);
-        string excludeRoute = excludeIps.Count > 0
-            ? "\n  inet4-route-exclude-address:" + string.Concat(excludeIps.Select(ip => $"\n    - {ip}"))
+        // Dedupe ở đây (thay vì ở 5 chỗ Add) vì hai endpoint khác cổng có thể cho CÙNG một IP —
+        // config thật ngày 29/10 có `162.159.199.1/32` hai lần. Distinct giữ nguyên thứ tự xuất hiện
+        // lần đầu, nên khối route không đổi tính ưu tiên.
+        var excludeUnique = excludeIps.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        string excludeRoute = excludeUnique.Count > 0
+            ? "\n  inet4-route-exclude-address:" + string.Concat(excludeUnique.Select(ip => $"\n    - {ip}"))
             : "";
 
         string dnsAndTunConfig = $@"
@@ -972,7 +991,7 @@ find-process-mode: always{controlApiConfig}
 
 proxies:
 {proxyConfig}{personalProxyConfig}
-
+{proxyGroupsConfig}
 rules:
 {probeSrcPortRule}{cloudflareApiRules}{gameServerIpRules}  # PROCESS-NAME phải đứng TRƯỚC các rule DIRECT theo dải IP riêng bên dưới —
   # mihomo match rule theo thứ tự, dòng nào khớp trước thắng. Kênh VPN cá
@@ -1000,10 +1019,16 @@ rules:
         if (token.IsCancellationRequested) return;
 
         var runtimeLogPath = Path.Combine(_coreDir, "mihomo_runtime.log");
+        // Phiên cũ được đổi tên vào kho có dấu thời gian TRƯỚC khi mở file trắng cho phiên mới —
+        // trước đây dòng WriteText này xoá sạch log của phiên trước (294 phiên = 294 lần mất dữ liệu,
+        // ứng viên #3). Đường dẫn mà BugReportService đọc vẫn giữ nguyên tên.
+        try { SessionLogArchive.ArchiveAndPrune(runtimeLogPath, Path.Combine(_coreDir, "sessions")); } catch { }
         try { File.WriteAllText(runtimeLogPath, string.Empty); } catch { }
 
         // Phiên mihomo mới — xoá sạch lịch sử dial-failure của phiên cũ.
         lock (_interfaceChangeLock) { _recentDialFailures.Clear(); }
+        Interlocked.Exchange(ref _gameDialFailureCount, 0);
+        Interlocked.Exchange(ref _lastGameDialFailureTicks, 0);
 
         try
         {
@@ -1150,6 +1175,10 @@ rules:
 
     public void StopProxy()
     {
+        // Dấu vết cho HangWatchdog: đây là lời gọi chặn lâu nhất trong luồng tắt tunnel (tới 5–6
+        // giây nếu mihomo cứng đầu). Nếu UI kẹt vì lý do khác ĐÚNG LÚC này, hồ sơ sẽ chỉ ra cả hai.
+        HangWatchdog.Mark("dừng tunnel mihomo (StopProxy)");
+
         IsGameChannelActive = false;
 
         if (PersonalVpnService.IsChannelActive())
@@ -1187,7 +1216,21 @@ rules:
     {
         var session = ActiveMasqueControl;
         if (session == null) return false;
-        return await session.Client.SelectAsync("GAME-PATH", proxyName);
+        bool ok = await session.Client.SelectAsync("GAME-PATH", proxyName);
+        if (ok) UpdateActiveCandidateDisplay(proxyName);
+        return ok;
+    }
+
+    /// <summary>Cập nhật nhãn endpoint hiển thị trên Dashboard sau khi đổi candidate trong GAME-PATH.</summary>
+    public void UpdateActiveCandidateDisplay(string proxyName, string? colo = null)
+    {
+        var session = ActiveMasqueControl;
+        if (session == null || !session.Candidates.TryGetValue(proxyName, out var ep)) return;
+
+        ActiveEndpointAddress = ep.ToString();
+        string coloTag = string.IsNullOrEmpty(colo) ? "" : $" [{colo}]";
+        ActiveEndpointMode = $"MASQUE multi-candidate ({session.Candidates.Count} tunnel, GAME-PATH → {proxyName}{coloTag})";
+        ActiveEndpointDisplay = $"{ActiveEndpointAddress} ({ActiveEndpointMode})";
     }
 
     /// <summary>
@@ -1244,10 +1287,16 @@ rules:
     /// </summary>
     private void OnMihomoLogLine(string line)
     {
-        if (!line.Contains(WarpDialFailureMarker, StringComparison.Ordinal)) return;
+        if (!line.Contains(WarpDialFailureMarker, StringComparison.Ordinal)
+            && !line.Contains(GamePathDialFailureMarker, StringComparison.Ordinal))
+            return;
 
         if (IsGameServerFailure(line))
+        {
             Interlocked.Exchange(ref _lastGameDialFailureTicks, DateTime.UtcNow.Ticks);
+            Interlocked.Increment(ref _gameDialFailureCount);
+            try { GameDialFailureDetected?.Invoke(line); } catch { }
+        }
 
         lock (_interfaceChangeLock)
         {

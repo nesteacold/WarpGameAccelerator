@@ -239,6 +239,11 @@ public sealed partial class ProcessPickerPage : Page
 
     private void OnBrowseRequested()
     {
+        // Hộp thoại CHUNG của Win32: modal ngay trên UI thread và thời gian chờ là DO NGƯỜI DÙNG
+        // quyết định (có thể hàng phút). Đã đo (experiments/hang-lab/wdui, batch 48): vong message
+        // loop cua no VAN bom DispatcherQueue (14/14 probe, maxGap 514 ms) => watchdog khong phat
+        // oan; dau Mark o day de ho so treo biet UI dang cho nguoi dung chon file.
+        Services.HangWatchdog.Mark("mở hộp thoại chọn file game (GetOpenFileName, modal trên UI thread)");
         try
         {
             var ofn = new OpenFileName();

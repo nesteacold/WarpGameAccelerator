@@ -185,6 +185,7 @@ public partial class SettingsViewModel : ObservableObject
 
     private void LoadPingTargets()
     {
+        HangWatchdog.Mark("đọc danh sách ping target");
         if (System.IO.File.Exists(_settingsFilePath))
         {
             try
@@ -206,6 +207,7 @@ public partial class SettingsViewModel : ObservableObject
 
     private void SavePingTargets()
     {
+        HangWatchdog.Mark("ghi danh sách ping target");
         try
         {
             var dir = System.IO.Path.GetDirectoryName(_settingsFilePath)!;
@@ -265,6 +267,7 @@ public partial class SettingsViewModel : ObservableObject
 
     private static void SaveEngineMode(WarpGameAccelerator.Models.EngineMode mode)
     {
+        HangWatchdog.Mark($"chọn engine = {mode}");
         try
         {
             var dir = System.IO.Path.GetDirectoryName(_engineModeFilePath)!;
@@ -356,13 +359,19 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private static void OpenCloudflareWarp()
+    private static async Task OpenCloudflareWarp()
     {
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        HangWatchdog.Mark("mở trang 1.1.1.1 qua shell");
+        // FR-16: `UseShellExecute = true` là lời gọi shell THỰC THỤ (Windows phải phân giải
+        // association và khởi động trình duyệt nguội — chưa đo được trần). AsyncRelayCommand chạy
+        // ĐỒNG BỘ tới await đầu tiên, nên để nó trên UI thread là giữ người dùng chờ trong lúc
+        // watchdog chỉ cho phép 4 giây. Tên hàm không đổi ⇒ `OpenCloudflareWarpCommand` binding
+        // trong SettingsPage.xaml vẫn đúng.
+        await System.Threading.Tasks.Task.Run(() => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
             FileName        = "https://1.1.1.1",
             UseShellExecute = true
-        });
+        }));
     }
 
     [RelayCommand]

@@ -263,11 +263,25 @@ public class NetworkOptimizerService
 
             process.Start();
 
-            // Đọc stdout TRƯỚC rồi mới WaitForExit — đọc trong sự kiện Exited
-            // có thể deadlock khi buffer đầy.
-            var readTask = process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            return await readTask;
+            // "Đọc stdout TRƯỚC rồi WaitForExit" (comment cũ) chỉ tránh được một nửa: pipe stderr
+            // đã mở redirect mà KHÔNG BAO GIỜ đọc vẫn deadlock khi con tre ghi ≥8 KB — ngưỡng đo
+            // được bằng experiments/redirect-deadlock (sync và async đều kẹt 4/6 lượt). Phải rút cả
+            // hai luồng, và phải có trần: không trần thì một lần netsh kẹt = thao tác mất tích im lặng.
+            var outT = process.StandardOutput.ReadToEndAsync();
+            var errT = process.StandardError.ReadToEndAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                await process.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                DiagnosticLogService.Trace($"netsh '{arguments}' quá 30s không trả lời → đã dừng (stderr chưa rút = nghi deadlock)");
+                return string.Empty;
+            }
+            _ = await errT;
+            return await outT;
         }
         catch (Exception ex)
         {

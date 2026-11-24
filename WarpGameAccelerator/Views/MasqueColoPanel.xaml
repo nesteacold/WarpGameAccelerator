@@ -59,7 +59,7 @@
 
                 <TextBlock TextWrapping="Wrap" FontSize="11.5"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Text="Dựng tối đa 4 tunnel MASQUE cùng lúc, đổi tunnel mang traffic game KHÔNG cần Boost lại (không quay số colo lần nữa). Chỉ chọn trước khi đăng nhập game."/>
+                           Text="Tự động dựng 6 tunnel MASQUE-IPv6 + 1 dự phòng IPv4 (khi máy có IPv6), tự săn &amp; chọn tuyến HKG/TPE nhanh nhất lúc bấm BOOST NOW và tự chuyển dự phòng khi lỗi — không cần quét hay chọn tay."/>
 
                 <!-- ══ Bước 1: Quét endpoint ══════════════════════════ -->
                 <Border Style="{StaticResource GlassCard}">
@@ -139,9 +139,13 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="MasqueCountText" Text="Hiển thị 0/0 endpoint" VerticalAlignment="Center" FontSize="12"/>
-                            <Button x:Name="MasqueSortButton" Grid.Column="1" Content="ms ↕" Click="SortMasque_Click"
+                            <Button x:Name="PruneFailedMasqueButton" Grid.Column="1" Content="🧹 Dọn lỗi" Click="PruneFailedMasque_Click"
+                                    Visibility="Collapsed"
+                                    ToolTipService.ToolTip="Xoá vĩnh viễn các endpoint đo lỗi khỏi lịch sử để màn hình gọn sạch."/>
+                            <Button x:Name="MasqueSortButton" Grid.Column="2" Content="ms ↕" Click="SortMasque_Click"
                                     ToolTipService.ToolTip="Bấm để sắp xếp. Trung bình hai mẫu sau khi kết nối; không phải ping game. Lỗi/thiếu số đo nằm cuối."/>
                         </Grid>
                         <ListView x:Name="MasqueResults" MaxHeight="320" SelectionMode="Single"
@@ -208,7 +212,7 @@
                              thành 1 dòng chữ chung chung. -->
                         <TextBlock Text="Đang giữ sống:" FontSize="11.5" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        <TextBlock x:Name="RosterEmptyText" Text="Chưa chọn tunnel nào — bấm ☆ ở danh sách trên (tối đa 4)."
+                        <TextBlock x:Name="RosterEmptyText" Text="Đang dùng chế độ Tự động (6 slot IPv6 săn HKG + 1 dự phòng IPv4). Không cần chọn tay — chỉ bấm ☆ nếu muốn ghim thêm endpoint riêng."
                                    FontSize="11.5" TextWrapping="Wrap"
                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                         <ItemsControl x:Name="RosterList">
@@ -246,7 +250,7 @@
                             </Border>
                             <TextBlock Text="Giữ sống &amp; chuyển" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <TextBlock Text="Chọn ⭐ ở Bước 1 để đưa vào đây (tối đa 4)." TextWrapping="Wrap" FontSize="11.5"
+                        <TextBlock Text="Tự động săn HKG/TPE và đổi dự phòng khi bật Boost. Bạn vẫn có thể bấm Chọn để đổi tay bất cứ lúc nào." TextWrapping="Wrap" FontSize="11.5"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
                         <StackPanel x:Name="MultiCandidatePanel" Spacing="8" Visibility="Collapsed">

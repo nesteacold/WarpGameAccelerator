@@ -35,13 +35,60 @@ public static class MultiCandidateSettings
         return false;
     }
 
+    /// <summary>
+    /// Tự động săn và chọn tuyến HKG/TPE tốt nhất ngay khi bật Boost (mặc định BẬT khi multi-candidate bật).
+    /// </summary>
+    public static bool IsAutoHuntHkgEnabled()
+    {
+        if (!IsEnabled()) return false;
+        try
+        {
+            if (!File.Exists(FilePath)) return true;
+            using var doc = JsonDocument.Parse(File.ReadAllText(FilePath));
+            if (doc.RootElement.TryGetProperty("autoHuntHkg", out var el))
+                return el.GetBoolean();
+        }
+        catch { }
+        return true;
+    }
+
+    /// <summary>
+    /// Tự động chuyển sang tuyến HKG dự phòng (Hot-Standby Failover) khi tuyến chính gặp lỗi dial
+    /// hoặc mất HKG mà không restart Mihomo (mặc định BẬT khi multi-candidate bật).
+    /// </summary>
+    public static bool IsAutoFailoverEnabled()
+    {
+        if (!IsEnabled()) return false;
+        try
+        {
+            if (!File.Exists(FilePath)) return true;
+            using var doc = JsonDocument.Parse(File.ReadAllText(FilePath));
+            if (doc.RootElement.TryGetProperty("autoFailover", out var el))
+                return el.GetBoolean();
+        }
+        catch { }
+        return true;
+    }
+
     public static void SetEnabled(bool enabled)
     {
         try
         {
             var dir = Path.GetDirectoryName(FilePath)!;
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new { enabled }));
+            bool autoHunt = true;
+            bool autoFailover = true;
+            try
+            {
+                if (File.Exists(FilePath))
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(FilePath));
+                    if (doc.RootElement.TryGetProperty("autoHuntHkg", out var ah)) autoHunt = ah.GetBoolean();
+                    if (doc.RootElement.TryGetProperty("autoFailover", out var af)) autoFailover = af.GetBoolean();
+                }
+            }
+            catch { }
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new { enabled, autoHuntHkg = autoHunt, autoFailover }));
         }
         catch
         {

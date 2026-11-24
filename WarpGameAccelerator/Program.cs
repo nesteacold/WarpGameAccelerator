@@ -29,14 +29,23 @@ public static class Program
             return;
         }
 
+        if (LocalLaunchExtension.Current?.TryHandleCliArgs(args) == true)
+        {
+            return;
+        }
+
         // ── Chặn đa instance ──────────────────────────────────
         // Phải chặn TRƯỚC Application.Start — nếu để App khởi tạo thì
         // ExtractCoreResources()/StopProxy() sẽ kill mihomo.exe của
-        // instance đang chạy trước đó. Giữ mutex sống suốt vòng đời app
-        // bằng cách không Dispose cho tới sau khi Application.Start trả về.
-        if (!SingleInstanceGuard.TryAcquire(out var singleInstanceMutex))
+        // instance đang chạy trước đó, làm rớt toàn bộ client mà không cảnh báo.
+        // Dấu hiệu từng gặp trong log: "RegisterHotKey thất bại — tổ hợp phím có thể
+        // đã bị chiếm".
+        // Instance cũ giữ khoá SUỐT cuộc dọn dẹp của lệnh thoát (trần 3 s, xem MainWindow.ExitApp),
+        // nên TryAcquire tự chờ 1,2 s thay vì từ chối ngay — mở lại ngay sau khi bấm thoát
+        // là hợp lệ. Nếu vẫn bị chặn, hộp thoại nói rõ ai đang giữ khoá và cho nút Thử lại;
+        // chỉ khi người dùng bấm Huỷ thì tiến trình này mới thoát.
+        if (!SingleInstanceGuard.TryAcquire() && !SingleInstanceGuard.ShowAlreadyRunningMessage())
         {
-            SingleInstanceGuard.ShowAlreadyRunningMessage();
             return;
         }
 
@@ -50,7 +59,6 @@ public static class Program
             new App();
         });
 
-        singleInstanceMutex?.ReleaseMutex();
-        singleInstanceMutex?.Dispose();
+        SingleInstanceGuard.Release();
     }
 }

@@ -306,7 +306,50 @@ public partial class DashboardViewModel : ObservableObject
         SaveBoostState();
         _ = UpdateRouteTierAsync(engineMode);
         _coloRecheckTimer.Start();
+        StartMultiCandidateAutoRouting();
         BoostStarted?.Invoke();
+    }
+
+    private CancellationTokenSource? _autoHuntCts;
+
+    /// <summary>
+    /// Bước 2 + Bước 3: khi chạy Direct MASQUE multi-candidate, tự săn & chọn tuyến HKG/TPE
+    /// tốt nhất ngay sau khi Boost lên, rồi bật vòng giám sát Hot-Standby Failover nền.
+    /// Chạy nền hoàn toàn — không bao giờ chặn UI thread.
+    /// </summary>
+    private void StartMultiCandidateAutoRouting()
+    {
+        _autoHuntCts?.Cancel();
+        _autoHuntCts = null;
+
+        if (_tunnelSweep == null || _mihomoService.ActiveMasqueControl == null)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _autoHuntCts = cts;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (MultiCandidateSettings.IsAutoHuntHkgEnabled())
+                {
+                    await _tunnelSweep.AutoHuntAndSelectBestAsync(cts.Token);
+                }
+
+                if (cts.IsCancellationRequested || _mihomoService.ActiveMasqueControl == null)
+                    return;
+
+                if (MultiCandidateSettings.IsAutoFailoverEnabled())
+                    await _tunnelSweep.StartAutoFailoverMonitor(TimeSpan.FromSeconds(30));
+                else
+                    await _tunnelSweep.StartPeriodicReverifyAsync(TimeSpan.FromSeconds(60));
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                DiagnosticLogService.Trace($"[AutoHunt] Lỗi nền (không ảnh hưởng Boost): {ex.Message}");
+            }
+        }, cts.Token);
     }
 
     /// <summary>
@@ -391,13 +434,17 @@ public partial class DashboardViewModel : ObservableObject
         var current = statuses.FirstOrDefault(s => s.IsCurrentSelection);
         if (current == null) return;
 
+        string twTag = current.TargetRttMs is { } tw ? $" · TW {tw:0}ms" : "";
+        int standby = _tunnelSweep?.HotStandbyCount() ?? 0;
+        string standbyTag = standby > 0 ? $" · {standby} dự phòng HKG" : "";
         string suffix = current.Colo != null && current.VerifiedAtUtc != null
-            ? $" · colo {current.Colo} (xác thực lúc {current.VerifiedAtUtc.Value.ToLocalTime():HH:mm:ss})"
+            ? $" · colo {current.Colo}{twTag}{standbyTag} (xác thực lúc {current.VerifiedAtUtc.Value.ToLocalTime():HH:mm:ss})"
             : " · chưa xác thực";
 
         _dispatcher.TryEnqueue(() =>
         {
             if (CurrentState != AppState.Connected) return;
+            EndpointText = _mihomoService.ActiveEndpointAddress ?? current.Endpoint.ToString();
             var baseMode = _mihomoService.ActiveEndpointMode ?? "";
             EndpointModeText = baseMode + suffix;
             // Kết quả sweep là phép đo colo MỚI HƠN (vừa PUT PROBE-PATH + fetch
@@ -421,8 +468,16 @@ public partial class DashboardViewModel : ObservableObject
     private async Task StopBoostAsync()
     {
         CurrentState = AppState.Disconnecting;
+        _autoHuntCts?.Cancel();
+        _autoHuntCts = null;
+        _tunnelSweep?.Stop();
         _pingMonitor.Stop();
-        _mihomoService.StopProxy();
+        // StopProxy() chặn tối đa 3000+1000+1000×(số mihomo cứng đầu) GIÂY (TryGracefulStop
+        // WaitForExit(3000) + Kill/WaitForExit(1000) mỗi cái còn sót). AsyncRelayCommand chạy
+        // đồng bộ tới await ĐẦU TIÊN trên UI thread, nên để nó ở đây là nút "Stop Boost" có thể
+        // giữ UI 5–6 giây — đúng vách HangWatchdog đã đo (5000ms an toàn, 6000ms bị giết) ở
+        // experiments/hang-watchdog T7. ExitApp đã bọc Task.Run từ trước; Stop Boost cũng phải vậy.
+        await Task.Run(_mihomoService.StopProxy);
         _coloRecheckTimer.Stop();
         EndpointText = "—";
         EndpointModeText = "";

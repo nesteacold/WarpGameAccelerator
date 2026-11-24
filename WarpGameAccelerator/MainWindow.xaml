@@ -71,6 +71,7 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition x:Name="DevPanelColumn" Width="0"/>
                 <ColumnDefinition x:Name="ColoPanelColumn" Width="0"/>
+                <ColumnDefinition x:Name="LocalSidePanelColumn" Width="0"/>
             </Grid.ColumnDefinitions>
 
             <NavigationView
@@ -335,6 +336,12 @@
                     BorderThickness="1,0,0,0">
                 <views:MasqueColoPanel x:Name="MasqueColoPanelControl"/>
             </Border>
+
+            <Border Grid.Column="3"
+                    x:Name="LocalSidePanelRoot"
+                    Visibility="Collapsed"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1,0,0,0"/>
         </Grid>
     </Grid>
 </Window>

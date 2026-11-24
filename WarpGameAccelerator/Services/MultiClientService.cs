@@ -34,7 +34,24 @@ public class AowTokenInfo
 /// WaitForTokenInternalAsync). Token cũ lưu ở aow_token.json không được
 /// migrate sang đây vì không rõ token đó thuộc thư mục nào.
 /// </summary>
-public record GameFolderEntry(string Path, int LastClientCount, DateTimeOffset AddedAt, string Token = "");
+public record GameFolderEntry(string Path, int LastClientCount, DateTimeOffset AddedAt, string Token = "",
+    DateTime? ArgumentSourceStart = null);
+// ArgumentSourceStart (tuỳ chọn, thêm 2026-11-16 — Codex DEC-598 v2 P1#2): StartTime của client NGUỒN
+// của argument đang lưu = watermark tự cập nhật, LƯU để sống qua lần khởi động lại Booster. File cũ
+// không có trường ⇒ null ⇒ PickArgumentUpdate không ghi đè khi còn client chạy bằng argument đang lưu.
+
+/// <summary>Kết quả một lượt LaunchClientsToTotalAsync (thêm các trường cho xác nhận argument khởi động).</summary>
+public sealed record LaunchRoundResult(
+    int Launched, string Message,
+    int StaleArgumentPid = 0, DateTime StaleArgumentStart = default,
+    bool NewClientValid = false, DateTime? ValidSourceStart = null, bool RoundStopped = false);
+
+/// <summary>
+/// Kết quả EnsureClientsRunningAsync. ArgumentSourceStart = StartTime của client NGUỒN đã sinh/xác
+/// nhận argument trả về (null nếu không biết) — ViewModel dùng làm watermark tự cập nhật (Codex
+/// P2#6: không dùng thời điểm ghi).
+/// </summary>
+public sealed record EnsureResult(int Launched, string Message, string Token, DateTime? ArgumentSourceStart = null);
 
 public class RunningClient
 {
@@ -79,16 +96,11 @@ public class MultiClientService
     /// </summary>
     private const int ConnectWaitTimeoutMs = 60000;
 
-    /// <summary>
-    /// Khoảng chờ để phát hiện token đã lưu HẾT HẠN khi mở client đầu tiên
-    /// của một thư mục THẲNG bằng token (không qua fxlaunch — xem
-    /// EnsureClientsRunningAsync). KHÔNG cần biết client đã kết nối server
-    /// thật hay chưa (đơn giản hoá theo yêu cầu người dùng 2026-09-16) — chỉ
-    /// cần tiến trình fxgame.exe còn SỐNG sau khoảng này là coi như ổn. Token
-    /// hỏng (vd game vừa update) khiến client tự thoát gần như ngay lập tức
-    /// thay vì đứng yên, nên khoảng chờ ngắn là đủ phân biệt 2 trường hợp.
-    /// </summary>
-    private const int TokenStaleGraceMs = 8000;
+    // TokenStaleGraceMs (8000) + WaitForProcessStillAliveAsync đã BỎ (2026-11-16, FCT-2658):
+    // "client còn sống sau 8 s" không phân biệt được argument khởi động sai — client mang argument
+    // sai treo ~60 s rồi mới chết, nên kiểm đó luôn đạt và Booster nhân bản client hỏng mãi.
+    // Nay argument đã lưu được xác nhận bằng tín hiệu thật: client phải KẾT NỐI server
+    // (ObserveLaunchedClientAsync — chết/WER treo trong cửa sổ quan sát mới là argument hỏng).
 
     /// <summary>
     /// Token giờ là PER-FOLDER (mỗi thư mục = 1 tài khoản/phiên riêng — xem
@@ -189,7 +201,10 @@ public class MultiClientService
             {
                 var json = File.ReadAllText(GameFoldersFilePath);
                 var loaded = JsonSerializer.Deserialize<List<GameFolderEntry>>(json);
-                if (loaded != null) return loaded;
+                // #30: hai điểm chạm bí mật nằm ở ĐÂY (đọc) và ở SaveGameFolders (ghi) — mọi chỗ khác
+                // trong app chỉ thấy token đã là chuỗi thuần, không phải lo đổi 20 call-site.
+                if (loaded != null)
+                    return loaded.Select(f => f with { Token = SecretStore.Unprotect(f.Token) }).ToList();
                 return new List<GameFolderEntry>();
             }
 
@@ -221,7 +236,9 @@ public class MultiClientService
             var dir = Path.GetDirectoryName(GameFoldersFilePath)!;
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             File.WriteAllText(GameFoldersFilePath,
-                JsonSerializer.Serialize(folders, new JsonSerializerOptions { WriteIndented = true }));
+                JsonSerializer.Serialize(
+                    folders.Select(f => f with { Token = SecretStore.Protect(f.Token) }).ToList(),
+                    new JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception ex)
         {
@@ -317,33 +334,10 @@ public class MultiClientService
         }
     }
 
-    /// <summary>
-    /// Thư mục (trong danh sách đã biết) sở hữu file exe này, so theo tiền tố
-    /// đường dẫn đã chuẩn hoá — khớp cả trường hợp exe nằm trong bin64/Bin64.
-    /// </summary>
-    private static string? ResolveOwningFolder(string exePath, IReadOnlyList<string> knownFolders)
-    {
-        if (string.IsNullOrWhiteSpace(exePath)) return null;
-        try
-        {
-            var fullExe = Path.GetFullPath(exePath);
-            foreach (var folder in knownFolders)
-            {
-                if (string.IsNullOrWhiteSpace(folder)) continue;
-                string fullFolder;
-                try { fullFolder = Path.GetFullPath(folder).TrimEnd('\\', '/'); }
-                catch { continue; }
-
-                if (fullExe.Equals(fullFolder, StringComparison.OrdinalIgnoreCase) ||
-                    fullExe.StartsWith(fullFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                {
-                    return folder;
-                }
-            }
-        }
-        catch { }
-        return null;
-    }
+    // ResolveOwningFolder (so TIỀN TỐ, lấy thư mục khớp đầu tiên) đã BỎ 2026-11-16 (Codex DEC-598 v3
+    // P1#1): thêm D:\AOW_Dev trước D:\AOW_Dev\Test thì client của Test bị gán cho dòng cha và "Tắt tất
+    // cả" dòng cha giết luôn nó (cả cây tiến trình). Mọi chỗ gán/đếm/liệt kê/tắt client theo thư mục giờ
+    // dùng chung LaunchArgumentLogic.IsGameExeOfFolder / ResolveOwningFolder (khớp ĐÚNG đường dẫn exe).
 
     // ── Bước 1: Mở client đầu tiên qua fxlaunch ──────────
     public static async Task<(bool Success, string Message)> LaunchFirstClientAsync(string gameFolder)
@@ -379,87 +373,329 @@ public class MultiClientService
         }
     }
 
-    // ── Bước 2: Detect token từ fxgame.exe đang chạy ────────
-    public static async Task<(bool Success, string Token, string Message)> DetectTokenAsync()
+    // ── Bước 2: Lấy argument khởi động từ fxgame.exe của ĐÚNG thư mục ────────
+    /// <summary>
+    /// Đọc argument khởi động (trong code cũ gọi là "token") từ dòng lệnh của một fxgame.exe
+    /// THUỘC <paramref name="gameFolder"/>. PID mới (không có trong <paramref name="pidsBefore"/>)
+    /// được thử trước; <paramref name="newOnly"/> = true thì chỉ PID mới.
+    ///
+    /// Trước 2026-11-16 hàm này đọc fxgame.exe BẤT KỲ và lấy cái đầu tiên có argument — đang có
+    /// client của thư mục khác hoặc client cũ mang argument hỏng là bắt nhầm (FCT-2658: thêm lại
+    /// D:\AOW_Dev thì lưu argument sai, mọi client sau đó treo ~60 s rồi chết). Nay PID không đọc
+    /// được đường dẫn exe thì không bao giờ được chọn: không biết thuộc thư mục nào thì không lấy.
+    /// </summary>
+    public static async Task<(bool Success, string Token, string Message, int Pid)> DetectTokenAsync(
+        string gameFolder, IReadOnlyCollection<int>? pidsBefore, bool newOnly)
     {
-        // Token nằm trong CommandLine, không có cách nào lấy nó bằng P/Invoke
-        // đơn giản như đường dẫn exe (xem GetFxgameExecutablePaths) nên vẫn
-        // phải dùng WMI ở đây. NHƯNG trace.log thực tế cho thấy WMI trên máy
-        // người dùng có thể treo hàng chục phút trước khi trả lỗi — đặt
-        // Timeout cho chính searcher (bán đồng bộ, .NET tự huỷ enumeration khi
-        // quá hạn) làm giảm rủi ro nhưng KHÔNG đảm bảo tuyệt đối, nên còn bọc
-        // thêm timeout cứng ở tầng gọi (WaitForTokenInternalAsync) qua
-        // Task.WhenAny — một vòng lặp bị WMI treo chỉ mất tối đa vài giây của
-        // MỘT lượt thử, không chặn cả 60s chờ đăng nhập.
+        // #8: đường CHÍNH là đọc CommandLine trực tiếp từ PEB (ProcessCommandLine) — không qua
+        // System.Management, tức không qua DỊCH VỤ WMI. WMI trên máy người dùng từng treo "hàng
+        // chục phút" và được đo là ném 11 exception / 224 phiên (mỗi lần hỏng ~5s). WMI vẫn ở lại,
+        // nhưng chỉ là FALLBACK cho ca duy nhất mà PEB bó tay: tiến trình đích ở mức quyền khác
+        // (OpenProcess bị chặn). Đã đo: đọc 32-bit lẫn 64-bit bằng một đường, và PID không mở được
+        // trả false trong 0 ms (experiments/process-command-line).
         return await Task.Run(() =>
         {
+            int[] pids;
             try
             {
-                using var searcher = new ManagementObjectSearcher(
-                    new ManagementScope("root\\cimv2"),
-                    new ObjectQuery("SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'fxgame.exe'"),
-                    new System.Management.EnumerationOptions { Timeout = TimeSpan.FromSeconds(5) });
-                using var collection = searcher.Get();
-
-                foreach (ManagementObject obj in collection)
-                {
-                    using (obj)
-                    {
-                        string? cmdLine = null;
-                        try
-                        {
-                            cmdLine = obj["CommandLine"]?.ToString();
-                        }
-                        catch
-                        {
-                            continue;
-                        }
-
-                        if (string.IsNullOrEmpty(cmdLine)) continue;
-
-                        // CommandLine: "C:\...\fxgame.exe" TOKEN
-                        // Tách token ra khỏi phần exe path
-                        string token = ParseTokenFromCommandLine(cmdLine);
-                        if (!string.IsNullOrEmpty(token))
-                            return (true, token, "Detect token thành công!");
-                    }
-                }
-
-                return (false, string.Empty,
-                    "Không tìm thấy fxgame.exe đang chạy. Hãy mở client đầu tiên trước.");
+                // Lọc theo đường dẫn exe (QueryFullProcessImageName, không WMI) TRƯỚC khi đọc dòng lệnh.
+                var paths = GetFxgameExecutablePaths();
+                pids = LaunchArgumentLogic.OrderCandidatePids(
+                    paths, gameFolder, pidsBefore, newOnly, GetFxgameStartTimes(paths.Keys),
+                    FindGameExe(gameFolder, "fxgame.exe")).ToArray();
             }
-            catch (Exception ex)
+            catch { pids = Array.Empty<int>(); }
+
+            int unreadable = 0;
+            foreach (var pid in pids)
             {
-                return (false, string.Empty, $"Lỗi WMI: {ex.Message}");
+                if (!ProcessCommandLine.TryGet(pid, out string cmdLine)) { unreadable++; continue; }
+                string token = ParseTokenFromCommandLine(cmdLine);
+                if (!string.IsNullOrEmpty(token))
+                    return (true, token, "Đã lấy được argument khởi động.", pid);
             }
+
+            // Chưa có client nào của thư mục này → không có gì để đọc, khỏi cần WMI.
+            if (pids.Length == 0)
+                return (false, string.Empty,
+                    newOnly
+                        ? "Chưa thấy fxgame.exe mới của thư mục này (đang chờ đăng nhập qua launcher)."
+                        : "Không thấy fxgame.exe nào của thư mục này đang chạy.", 0);
+
+            // Có fxgame nhưng không đọc được CommandLine (khác mức quyền) → mới cần tới WMI.
+            if (unreadable == pids.Length)
+                return DetectTokenViaWmi(pids);
+
+            return (false, string.Empty,
+                $"Thấy {pids.Length} fxgame của thư mục này nhưng chưa thấy argument khởi động trong dòng lệnh — client có thể chưa nhận xong tham số.", 0);
         });
     }
 
-    private static string ParseTokenFromCommandLine(string cmdLine)
+    // Fallback CÓ GIỚI HẠN (5s) cho ca PEB không mở được tiến trình đích. Chỉ nhận PID nằm trong
+    // danh sách ứng viên đã lọc theo thư mục (theo đúng thứ tự ưu tiên PID mới) — WMI trả về mọi
+    // fxgame.exe trên máy, nên không lọc ở đây là quay lại đúng lỗi bắt nhầm thư mục.
+    private static (bool Success, string Token, string Message, int Pid) DetectTokenViaWmi(IReadOnlyList<int> candidatePids)
     {
-        // Chuỗi dạng: "C:\Path\fxgame.exe" TOKEN
-        // hoặc: C:\Path\fxgame.exe TOKEN
-        cmdLine = cmdLine.Trim();
-        string rest;
-
-        if (cmdLine.StartsWith("\""))
+        try
         {
-            // Có ngoặc kép → tìm ngoặc đóng
-            int closing = cmdLine.IndexOf('"', 1);
-            if (closing < 0) return string.Empty;
-            rest = cmdLine[(closing + 1)..].Trim();
+            using var searcher = new ManagementObjectSearcher(
+                new ManagementScope("root\\cimv2"),
+                new ObjectQuery("SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'fxgame.exe'"),
+                new System.Management.EnumerationOptions { Timeout = TimeSpan.FromSeconds(5) });
+            using var collection = searcher.Get();
+
+            var byPid = new Dictionary<int, string>();
+            foreach (ManagementObject obj in collection)
+            {
+                using (obj)
+                {
+                    try
+                    {
+                        int pid = Convert.ToInt32(obj["ProcessId"]);
+                        var cmdLine = obj["CommandLine"]?.ToString();
+                        if (!string.IsNullOrEmpty(cmdLine)) byPid[pid] = cmdLine;
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            foreach (var pid in candidatePids)
+            {
+                if (!byPid.TryGetValue(pid, out var cmdLine)) continue;
+                string token = ParseTokenFromCommandLine(cmdLine);
+                if (!string.IsNullOrEmpty(token))
+                    return (true, token, "Đã lấy được argument khởi động (WMI fallback).", pid);
+            }
+
+            return (false, string.Empty,
+                $"Thấy {candidatePids.Count} fxgame của thư mục này nhưng WMI cũng không đọc được dòng lệnh (client chưa nhận tham số?).", 0);
         }
-        else
+        catch (Exception ex)
         {
-            // Không có ngoặc → tách theo khoảng trắng đầu tiên
-            int space = cmdLine.IndexOf(' ');
-            if (space < 0) return string.Empty;
-            rest = cmdLine[(space + 1)..].Trim();
+            return (false, string.Empty, $"Lỗi WMI: {ex.Message}", 0);
+        }
+    }
+
+    // Chuỗi dạng: "C:\Path\fxgame.exe" ARG hoặc C:\Path\fxgame.exe ARG — logic thuần nằm ở
+    // LaunchArgumentLogic để lab experiments/launch-argument kiểm được chính mã này.
+    private static string ParseTokenFromCommandLine(string cmdLine) => LaunchArgumentLogic.ParseArgument(cmdLine);
+
+    /// <summary>Thời điểm khởi động của các PID (bỏ qua PID không đọc được) — dùng để xếp PID mới nhất trước.</summary>
+    private static Dictionary<int, DateTime> GetFxgameStartTimes(IEnumerable<int> pids)
+    {
+        var result = new Dictionary<int, DateTime>();
+        foreach (var pid in pids)
+        {
+            try
+            {
+                using var p = Process.GetProcessById(pid);
+                result[pid] = p.StartTime;
+            }
+            catch { /* đã thoát / khác quyền — xếp sau cùng, không chặn */ }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// E: mỗi lần làm mới/đổi argument khởi động chỉ ghi thư mục, PID nguồn, độ dài và
+    /// sha256[:8] — tuyệt đối không ghi giá trị (argument là phiên đăng nhập của người chơi).
+    /// </summary>
+    private static void LogArgumentChange(string reason, string gameFolder, int sourcePid, string oldArg, string newArg)
+    {
+        DiagnosticLogService.Trace(
+            $"[argument khởi động] {reason} — thư mục={gameFolder}, PID nguồn={sourcePid}, " +
+            $"mới: {LaunchArgumentLogic.Describe(newArg)}, cũ: {LaunchArgumentLogic.Describe(oldArg)}");
+    }
+
+    /// <summary>
+    /// D: tìm argument khởi động mới từ fxgame.exe ỔN ĐỊNH của thư mục này (vd người dùng tự mở qua
+    /// launcher): sống ≥ <see cref="LaunchArgumentLogic.StableClientAge"/>, không bị WER treo, bất kể
+    /// đi qua kiểu kết nối nào (gearup/proxy LAN cũng được — Codex P1#5). Chỉ nhận client khởi động
+    /// SAU <paramref name="watermark"/> = StartTime của client nguồn của argument đang lưu (Codex
+    /// P2#6). Trả null nếu không có gì để cập nhật. Chỉ đọc PEB (không WMI): hàm chạy định kỳ ở nền,
+    /// WMI có thể treo hàng chục phút. Không ghi log khi không đổi gì.
+    /// </summary>
+    public static FolderClientSnapshot? FindUpdatedArgument(string gameFolder, string savedArgument, DateTime? watermark)
+    {
+        try
+        {
+            var paths = GetFxgameExecutablePaths();
+            var pids = LaunchArgumentLogic.OrderCandidatePids(paths, gameFolder, null, newOnly: false,
+                findGameExePath: FindGameExe(gameFolder, "fxgame.exe"));
+            if (pids.Count == 0) return null;
+            var starts = GetFxgameStartTimes(pids);
+            var now = DateTime.Now;
+
+            // MỌI client đọc được argument đều vào danh sách (kể cả trẻ / WER treo): khi watermark =
+            // null, chỉ cần còn một client chạy bằng argument đang lưu là không được ghi đè (v2 P1#2).
+            // Lọc tuổi/WER/watermark nằm trong PickArgumentUpdate (thuần, có lab).
+            var snapshots = new List<FolderClientSnapshot>();
+            foreach (var pid in pids)
+            {
+                if (!starts.TryGetValue(pid, out var start)) continue;
+                if (!ProcessCommandLine.TryGet(pid, out string cmdLine)) continue;
+                var arg = ParseTokenFromCommandLine(cmdLine);
+                if (string.IsNullOrEmpty(arg)) continue;
+                // Chỉ lấy mẫu thread (tốn hơn) khi client đủ tuổi; mẫu không đọc được (null) ⇒ coi như
+                // WER-treo: không chắc thì không nhận.
+                bool wer = now - start < LaunchArgumentLogic.StableClientAge || SampleWerSuspended(pid) != false;
+                snapshots.Add(new FolderClientSnapshot(pid, start, arg, wer));
+            }
+
+            var pick = LaunchArgumentLogic.PickArgumentUpdate(
+                snapshots, savedArgument, watermark, now, LaunchArgumentLogic.StableClientAge);
+            if (pick != null)
+                LogArgumentChange(
+                    $"tự cập nhật từ client ổn định (sống ≥ {LaunchArgumentLogic.StableClientAge.TotalMinutes:0} phút, không bị WER treo)",
+                    gameFolder, pick.Pid, savedArgument, pick.Argument);
+            return pick;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"[argument khởi động] FindUpdatedArgument lỗi: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Tắt ĐÚNG client mang argument hỏng: PID đó phải còn là fxgame.exe của thư mục game này VÀ
+    /// còn đúng StartTime lúc được chọn (PID có thể đã bị tái sử dụng). Không bao giờ đụng client khác.
+    /// </summary>
+    private static void KillStaleClient(int pid, DateTime expectedStart, string gameFolder, string reason)
+    {
+        if (pid <= 0) return;
+        bool sameProcess = GetFxgameExecutablePaths().TryGetValue(pid, out var exe) &&
+                           LaunchArgumentLogic.IsGameExeOfFolder(exe, gameFolder, FindGameExe(gameFolder, "fxgame.exe")) &&
+                           GetFxgameStartTimes(new[] { pid }).TryGetValue(pid, out var start) &&
+                           (expectedStart == DateTime.MinValue || start == expectedStart);
+        if (!sameProcess)
+        {
+            DiagnosticLogService.Trace(
+                $"[argument khởi động] KHÔNG tắt PID={pid}: không còn là fxgame.exe của lần mở này ({gameFolder}) hoặc đã thoát");
+            return;
+        }
+        bool ok = KillClient(pid);
+        DiagnosticLogService.Trace(
+            $"[argument khởi động] tắt PID={pid} ({gameFolder}) — lý do: {reason} — {(ok ? "đã tắt" : "tắt thất bại")}");
+    }
+
+    /// <summary>
+    /// Một mẫu "WER đang xử lý crash" (gần như mọi thread Wait/Suspended — FCT-2656/2657). null = không
+    /// đọc được (đã thoát / khác quyền). Đọc qua Process.Threads (NtQuerySystemInformation, không mở
+    /// handle thread, không WMI).
+    /// </summary>
+    private static bool? SampleWerSuspended(int pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            var threads = p.Threads;
+            int total = threads.Count, suspended = 0;
+            foreach (ProcessThread t in threads)
+            {
+                try
+                {
+                    if (t.ThreadState == System.Diagnostics.ThreadState.Wait &&
+                        t.WaitReason == ThreadWaitReason.Suspended)
+                        suspended++;
+                }
+                catch { /* thread vừa thoát giữa chừng */ }
+                finally { try { t.Dispose(); } catch { } }
+            }
+            return LaunchArgumentLogic.IsWerSuspendedSample(total, suspended);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// A + P1#1: chờ PID của ĐÚNG lần mở vừa rồi — fxgame.exe MỚI (không có trong
+    /// <paramref name="pidsBefore"/>), exe thuộc <paramref name="gameFolder"/>, và dòng lệnh mang đúng
+    /// <paramref name="expectedArgument"/> (PID đọc được dòng lệnh mà argument KHÁC thì không bao giờ
+    /// được chọn — đó là lần mở của thư mục/người khác). Trả (0, MinValue) nếu hết giờ.
+    /// </summary>
+    private static async Task<(int Pid, DateTime Start)> WaitForLaunchedFolderPidAsync(
+        string gameFolder, HashSet<int> pidsBefore, string expectedArgument, int timeoutMs)
+    {
+        const int pollInterval = 500;
+
+        for (int elapsed = 0; elapsed < timeoutMs; elapsed += pollInterval)
+        {
+            await Task.Delay(pollInterval);
+            try
+            {
+                var paths = GetFxgameExecutablePaths();
+                var starts = GetFxgameStartTimes(paths.Keys);
+                var fresh = LaunchArgumentLogic.OrderCandidatePids(paths, gameFolder, pidsBefore, newOnly: true, starts,
+                    FindGameExe(gameFolder, "fxgame.exe"));
+                if (fresh.Count == 0) continue;
+
+                var args = new Dictionary<int, string?>();
+                foreach (var pid in fresh)
+                    args[pid] = ProcessCommandLine.TryGet(pid, out var cmd) ? ParseTokenFromCommandLine(cmd) : null;
+
+                int chosen = LaunchArgumentLogic.SelectLaunchedPid(fresh, args, expectedArgument);
+                if (chosen != 0)
+                {
+                    DiagnosticLogService.Trace(
+                        $"  client mới PID={chosen} của {gameFolder} xuất hiện sau {elapsed + pollInterval}ms" +
+                        (args[chosen] == null ? " (không đọc được dòng lệnh — chọn theo thư mục + PID mới)" : ""));
+                    return (chosen, starts.TryGetValue(chosen, out var s) ? s : DateTime.MinValue);
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLogService.Trace($"  WaitForLaunchedFolderPid EXCEPTION: {ex.GetType().Name}");
+            }
         }
 
-        // rest là token (hoặc có thêm args khác phía sau, lấy word đầu tiên)
-        var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length > 0 ? parts[0] : string.Empty;
+        DiagnosticLogService.Trace($"  TIMEOUT {timeoutMs}ms — chưa thấy client mới của {gameFolder} mang đúng argument vừa mở");
+        return (0, DateTime.MinValue);
+    }
+
+    /// <summary>
+    /// B/C: xác nhận argument khởi động bằng tín hiệu THẬT (định hướng kiến trúc sư sau review Codex
+    /// vòng 1, dựa trên đo FCT-2656/2657/2658): quan sát client vừa mở trọn
+    /// <see cref="LaunchArgumentLogic.ObserveWindowMs"/>. Stale CHỈ khi nó CHẾT hoặc bị WER treo kéo
+    /// dài; Valid khi sống trọn cửa sổ VÀ đã có kết nối công; còn lại Unknown (proxy LAN/cục bộ,
+    /// mạng chậm) ⇒ caller không tắt, không làm mới, chỉ log.
+    /// </summary>
+    private static async Task<ArgumentVerdict> ObserveLaunchedClientAsync(
+        int pid, string waitingMessagePrefix, IProgress<string>? progress)
+    {
+        const int pollInterval = 2000;
+        var obs = new LaunchObserver();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        string? remote = null;
+
+        while (sw.ElapsedMilliseconds < LaunchArgumentLogic.ObserveWindowMs)
+        {
+            bool alive = IsProcessAlive(pid);
+            bool pub = alive && TcpTableHelper.HasEstablishedPublicConnection(pid);
+            if (pub && remote == null)
+            {
+                remote = TcpTableHelper.GetFirstRemoteAddress(pid);
+                DiagnosticLogService.Trace(
+                    $"  PID={pid} đã kết nối server ({remote}) sau {sw.ElapsedMilliseconds}ms — tiếp tục quan sát cho đủ cửa sổ");
+            }
+            obs.Sample(alive, alive ? SampleWerSuspended(pid) : null, pub);
+            if (obs.ShouldStopEarly) break;
+
+            progress?.Report($"{waitingMessagePrefix} ({sw.ElapsedMilliseconds / 1000}/{LaunchArgumentLogic.ObserveWindowMs / 1000}s)...");
+            await Task.Delay(pollInterval);
+        }
+
+        bool aliveEnd = IsProcessAlive(pid);
+        var o = obs.Finish(aliveEnd, aliveEnd ? SampleWerSuspended(pid) : null);
+        var verdict = LaunchArgumentLogic.ClassifyObservation(o);
+        DiagnosticLogService.Trace(
+            $"  PID={pid} phán quyết argument khởi động sau {sw.ElapsedMilliseconds}ms: {verdict} " +
+            $"(chết={o.Died}, WER treo={o.SustainedWerSuspend}, từng có kết nối công={o.SawPublicConnection}, sống trọn cửa sổ={o.AliveThroughWindow})" +
+            (o.SawPublicConnection || o.Died ? "" :
+                $" — {TunnelProbe.Current()} · TCP: {TcpTableHelper.DescribeConnections(pid)} · {TcpTableHelper.DescribeForwarderChain(pid)}"));
+        return verdict;
     }
 
     // ── Đọc token cũ (legacy, chỉ dùng cho migration) ────────
@@ -488,12 +724,25 @@ public class MultiClientService
     /// khá dài (xem MinLaunchIntervalMs) nên bắt buộc phải cho người dùng
     /// thấy app đang chờ chứ không phải treo.
     /// </param>
-    public static async Task<(int Launched, string Message)> LaunchClientsToTotalAsync(
-        string gameFolder, string token, int targetTotal, IProgress<string>? progress = null)
+    /// <param name="newClientValidThisClick">
+    /// true CHỈ khi một client MỚI của CÙNG lần bấm (client nguồn từ launcher) đã được quan sát ra
+    /// Valid. Khi false, client MỚI ĐẦU TIÊN của lượt — kể cả khi nó cũng là client cuối (Codex v1
+    /// P1#4) — LUÔN bị quan sát trọn cửa sổ; client phiên cũ đang chạy KHÔNG BAO GIỜ thay được bước
+    /// này (Codex v2 P1#4). Chết/WER treo ⇒ dừng lượt (StaleArgumentPid) thay vì nhân bản client hỏng.
+    /// Client tiếp theo trong lượt chỉ được bỏ quan sát sau khi một client mới đã ra Valid.
+    /// </param>
+    public static async Task<LaunchRoundResult> LaunchClientsToTotalAsync(
+        string gameFolder, string token, int targetTotal, IProgress<string>? progress = null, bool useLocalExtension = false,
+        bool newClientValidThisClick = false)
     {
+        if (LocalLaunchExtension.Current is { } preExt)
+        {
+            await preExt.BeforeFolderLaunchAsync(gameFolder, progress);
+        }
+
         var gamePath = FindGameExe(gameFolder, "fxgame.exe");
         if (gamePath == null)
-            return (0, "Không tìm thấy fxgame.exe.");
+            return new LaunchRoundResult(0, "Không tìm thấy fxgame.exe.");
 
         // Đếm THEO THƯ MỤC (không phải toàn hệ thống) — hỗ trợ nhiều thư mục
         // chạy song song mà không cộng dồn số cửa sổ của nhau.
@@ -504,17 +753,23 @@ public class MultiClientService
             $"LaunchClientsToTotal — mục tiêu {targetTotal}, đang chạy {alreadyRunning} → cần mở thêm {count}");
 
         if (count <= 0)
-            return (0, $"Đã có đủ {alreadyRunning}/{targetTotal} cửa sổ game đang chạy.");
+            return new LaunchRoundResult(0, $"Đã có đủ {alreadyRunning}/{targetTotal} cửa sổ game đang chạy.");
 
         int launched = 0;
         var errors   = new List<string>();
+        int lastNewPid = 0;   // PID cua client CUOI cung — thứ không bao giờ được chờ (xem batch 66)
+        bool newClientValid = newClientValidThisClick;
+        DateTime? validStart = null;
+        int staleArgumentPid = 0;
+        DateTime staleArgumentStart = DateTime.MinValue;
+        bool roundStopped = false;
 
         for (int i = 0; i < count; i++)
         {
             try
             {
                 var pidsBefore = GetFxgamePids();
-                DiagnosticLogService.Trace($"[client {i + 1}/{count}] trước khi start: {pidsBefore.Count} fxgame đang chạy");
+                DiagnosticLogService.Trace($"[client {i + 1}/{count}] trước khi start: {pidsBefore.Count} fxgame đang chạy | {TunnelProbe.Current()}");
 
                 var launchedAt = System.Diagnostics.Stopwatch.StartNew();
 
@@ -522,18 +777,91 @@ public class MultiClientService
                 // fxgame.exe giết tiến trình cha của nó (cơ chế tự đóng
                 // launcher của game) — nếu gọi thẳng thì app này bị giết.
                 progress?.Report($"Đang mở cửa sổ {alreadyRunning + i + 1}/{targetTotal}...");
-                LauncherHelper.LaunchGameViaHelper(gamePath, token);
-                launched++;
-                DiagnosticLogService.Trace($"[client {i + 1}/{count}] đã gọi helper, chờ tiến trình xuất hiện...");
+                ILocalLaunchSession? extSession = null;
+                int newPid;
+                DateTime newStart;
+                try
+                {
+                    if (useLocalExtension && LocalLaunchExtension.Current is { } ext)
+                        extSession = ext.BeginLaunch(gameFolder, gamePath, token);
+                    else
+                        LauncherHelper.LaunchGameViaHelper(gamePath, token);
+                    DiagnosticLogService.Trace($"[client {i + 1}/{count}] đã gọi helper, chờ tiến trình xuất hiện...");
 
-                int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
+                    // Chỉ PID mới của ĐÚNG thư mục, mang ĐÚNG argument vừa truyền (Codex P1#1): một client
+                    // của thư mục khác xuất hiện cùng lúc không được thay chỗ client của lần mở này.
+                    (newPid, newStart) = await WaitForLaunchedFolderPidAsync(gameFolder, pidsBefore, token, timeoutMs: 15000);
+                    // Chỉ TÍNH là đã mở khi thấy PID của chính lần mở này (Codex v3 P1#2).
+                    if (LaunchArgumentLogic.CountsAsLaunched(newPid))
+                    {
+                        launched++;
+                        lastNewPid = newPid;
+                    }
+                    else if (extSession != null)
+                    {
+                        errors.Add($"Client {i + 1}: {await extSession.DescribeFailureAsync()}");
+                    }
+                    else
+                    {
+                        errors.Add($"Client {i + 1}: không thấy tiến trình game của lần mở này trong 15 giây " +
+                                   "(chết ngay khi mở hoặc xuất hiện quá muộn)");
+                    }
+                }
+                finally { extSession?.Dispose(); }
+
+                if (!LaunchArgumentLogic.CountsAsLaunched(newPid) &&
+                    LaunchArgumentLogic.ShouldStopOnMissingPid(newClientValid))
+                {
+                    // Argument CHƯA được xác nhận trong lần bấm này mà không bắt được client của lần mở ⇒
+                    // không xác nhận được ⇒ dừng, không nhân bản tiếp bằng argument chưa kiểm (v3 P1#2).
+                    roundStopped = true;
+                    DiagnosticLogService.Trace(
+                        $"[client {i + 1}/{count}] DỪNG mở thêm: không thấy PID của lần mở này và argument khởi động chưa được " +
+                        $"xác nhận trong lượt ({LaunchArgumentLogic.Describe(token)})");
+                    break;
+                }
+
+                bool observed = false;
+                if (newPid > 0 && LaunchArgumentLogic.ShouldVerifyClient(newClientValid))
+                {
+                    // C: quan sát trọn cửa sổ BẤT KỂ vị trí trong lượt (vòng 1 chỉ chờ khi i < count-1).
+                    observed = true;
+                    var verdict = await ObserveLaunchedClientAsync(
+                        newPid,
+                        $"Đã mở {alreadyRunning + launched}/{targetTotal} cửa sổ — đang xác nhận argument khởi động",
+                        progress);
+                    if (verdict == ArgumentVerdict.Valid)
+                    {
+                        newClientValid = true;
+                        if (newStart != DateTime.MinValue) validStart = newStart;
+                    }
+                    else if (verdict == ArgumentVerdict.Unknown)
+                    {
+                        // Unknown KHÔNG cho bỏ quan sát client kế tiếp — client sau vẫn bị quan sát.
+                        DiagnosticLogService.Trace(
+                            $"[client {i + 1}/{count}] PID={newPid} còn sống nhưng không chứng minh được argument " +
+                            "(proxy LAN/cục bộ hoặc mạng chậm) — không tắt, không làm mới, mở tiếp và quan sát client sau");
+                    }
+                    else if (LaunchArgumentLogic.ShouldStopLaunching(verdict, newClientValid))
+                    {
+                        roundStopped = true;
+                        staleArgumentPid = newPid;
+                        staleArgumentStart = newStart;
+                        DiagnosticLogService.Trace(
+                            $"[client {i + 1}/{count}] DỪNG mở thêm: PID={newPid} đã thoát/bị WER treo trong cửa sổ quan sát " +
+                            $"và argument chưa được xác nhận trong lượt này — argument khởi động có vẻ đã hết hạn " +
+                            $"({LaunchArgumentLogic.Describe(token)})");
+                        break;
+                    }
+                }
 
                 if (i < count - 1)
                 {
                     // Chờ client vừa mở KẾT NỐI XONG vào server rồi mới mở cái
                     // tiếp theo. Hai client cùng xác thực một token gần như
                     // đồng thời sẽ khiến một cái bị "Mạng đứt kết nối".
-                    if (newPid > 0)
+                    // (Client vừa được quan sát trọn cửa sổ thì đã qua bước này.)
+                    if (newPid > 0 && !observed)
                     {
                         await WaitForClientConnectedAsync(
                             newPid, alreadyRunning + launched, targetTotal, progress);
@@ -562,12 +890,46 @@ public class MultiClientService
             }
         }
 
-        string msg = launched == count
-            ? $"Đã mở đủ {alreadyRunning + launched}/{targetTotal} cửa sổ game!"
-            : $"Mở được {alreadyRunning + launched}/{targetTotal} cửa sổ. Lỗi: {string.Join(", ", errors)}";
+        // Lời báo dựa trên số client THỰC TẾ của thư mục đếm lại sau lượt, không dựa vào số lần gọi helper
+        // (v3 P1#2: không bao giờ báo thành công khi số client thực tế chưa đạt).
+        int actualRunning = CountRunningFxgameInFolder(gameFolder);
+        string errText = errors.Count > 0 ? " Lỗi: " + string.Join(", ", errors) : "";
+        string msg = staleArgumentPid > 0
+            ? $"Đã dừng ở {actualRunning}/{targetTotal} cửa sổ: client vừa mở đã thoát hoặc bị treo do lỗi trong " +
+              $"{LaunchArgumentLogic.ObserveWindowMs / 1000} giây — argument khởi động có vẻ đã hết hạn, cần đăng nhập lại qua launcher (fxlaunch.exe)."
+            : roundStopped
+            ? $"Đã dừng ở {actualRunning}/{targetTotal} cửa sổ: không thấy tiến trình game của lần mở vừa rồi và argument khởi động " +
+              "chưa được xác nhận — không mở thêm để tránh nhân bản client hỏng. Thử lại, hoặc đăng nhập lại qua launcher (fxlaunch.exe)." + errText
+            : LaunchArgumentLogic.IsRoundSuccess(actualRunning, targetTotal, roundStopped)
+            ? $"Đã mở đủ {actualRunning}/{targetTotal} cửa sổ game!"
+            : $"Mới có {actualRunning}/{targetTotal} cửa sổ đang chạy (đã mở thêm {launched}).{errText}";
 
-        DiagnosticLogService.Trace($"LaunchClientsToTotal KẾT THÚC — {alreadyRunning + launched}/{targetTotal}");
-        return (launched, msg);
+        // Batch 66 (#48): client CUỐI không bao giờ được chờ (vòng đợi nằm trong `if (i < count - 1)`),
+        // và đo trên 550 cú mở cho thấy 110/115 cú "+1" không đời nào nhắc lại PID đó nữa
+        // (experiments/game-path-probe/analyze_last_client.py) ⇒ lời báo "Đã mở đủ" cho client cuối
+        // không có MỘT dòng bằng chứng nào phía sau. Probe trễ này chạy nền, SAU khi đã trả lời người
+        // dùng, chỉ ghi log: không đổi hành vi, không chạm UI thread, không thêm lần chờ nào.
+        if (lastNewPid > 0)
+        {
+            int probePid = lastNewPid;
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    await System.Threading.Tasks.Task.Delay(10000);
+                    DiagnosticLogService.Trace(
+                        $"[client cuối] PID={probePid} sau 10s (chưa từng được chờ): {TunnelProbe.Current()} | {TcpTableHelper.DescribeConnections(probePid)}");
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticLogService.Trace($"[client cuối] PID={probePid} không kiểm tra được: {ex.GetType().Name}");
+                }
+            });
+        }
+
+        DiagnosticLogService.Trace(
+            $"LaunchClientsToTotal KẾT THÚC — thực tế {actualRunning}/{targetTotal} (mở thêm {launched}, dừng={roundStopped})");
+        return new LaunchRoundResult(launched, msg, staleArgumentPid, staleArgumentStart, newClientValid, validStart, roundStopped);
     }
 
     /// <summary>
@@ -585,8 +947,8 @@ public class MultiClientService
     /// <see cref="MinLaunchIntervalMs"/> của nhau, mỗi lời gọi vẫn chỉ trả giá
     /// pacing của chính nó.
     /// </summary>
-    public static async Task<(int Launched, string Message, string Token)> EnsureClientsRunningAsync(
-        string gameFolder, string existingToken, int targetTotal, IProgress<string>? progress = null)
+    public static async Task<EnsureResult> EnsureClientsRunningAsync(
+        string gameFolder, string existingToken, int targetTotal, IProgress<string>? progress = null, bool useLocalExtension = false)
     {
         await LaunchGate.WaitAsync();
         try
@@ -610,49 +972,61 @@ public class MultiClientService
             // MainModule → WMI ExecutablePath → WMI CommandLine). Phép đếm vốn
             // KHÔNG sai — ảnh người dùng gửi hiện badge "2/1 cửa sổ" và liệt kê
             // đúng cả 2 PID thuộc thư mục, tức đếm đúng nhưng đã mở dư.
+            //
+            // 2026-11-16 (FCT-2658/DEC-598): "token" thực chất là ARGUMENT KHỞI ĐỘNG fxgame.exe do
+            // fxlaunch.exe sinh ra, đổi theo phiên đăng nhập. Argument đã lưu chỉ được tin sau khi một
+            // client mở bằng nó SỐNG trọn cửa sổ quan sát (trước đây chỉ cần "còn sống sau 8 s" —
+            // client mang argument sai sống ~60 s rồi chết nên kiểm đó luôn đạt). Quan sát nằm trong
+            // LaunchClientsToTotalAsync, áp cho client ĐẦU TIÊN của lượt bất kể nó là client thứ mấy
+            // (Codex P1#4: thư mục đã có client cũ, mở thêm đúng 1 cũng phải được kiểm).
             if (string.IsNullOrEmpty(token))
             {
-                var (loginOk, newToken, loginMsg) = await LoginViaFxlaunchAndWaitAsync(gameFolder, targetTotal, progress);
-                if (!loginOk) return (0, loginMsg, token);
-                token = newToken;
+                var login = await LoginViaFxlaunchAndWaitAsync(gameFolder, token, "chưa có argument đã lưu", progress);
+                if (!login.Ok) return new EnsureResult(0, login.Message, token);
+                // Argument vừa lấy từ launcher: không mở launcher lần nữa trong cùng lần bấm. Client nguồn
+                // đã đếm vào số cửa sổ; LaunchClientsToTotalAsync chỉ mở phần còn thiếu.
+                var r0 = await LaunchClientsToTotalAsync(gameFolder, login.Token, targetTotal, progress, useLocalExtension,
+                    newClientValidThisClick: login.Verdict == ArgumentVerdict.Valid);
+                if (r0.StaleArgumentPid > 0)
+                    return RejectFreshArgument(gameFolder, r0, login.Token, token);
+                return new EnsureResult(r0.Launched, r0.Message, login.Token, login.SourceStart ?? r0.ValidSourceStart);
             }
-            else if (CountRunningFxgameInFolder(gameFolder) == 0)
+
+            // Mở bằng argument đã lưu. Client MỚI đầu tiên của lượt LUÔN bị quan sát — client phiên cũ
+            // đang chạy không được dùng làm bằng chứng (Codex v2 P1#4).
+            var r = await LaunchClientsToTotalAsync(gameFolder, token, targetTotal, progress, useLocalExtension);
+            if (r.StaleArgumentPid == 0)
+                return new EnsureResult(r.Launched, r.Message, token, r.ValidSourceStart);
+
+            // B/C: client mới mở bằng argument đã lưu CHẾT hoặc bị WER treo trong cửa sổ quan sát (dấu
+            // hiệu đã đo của argument sai). Tắt đúng client đó (PID + StartTime + exe của thư mục), đăng
+            // nhập lại qua launcher, bắt argument của PID MỚI của ĐÚNG thư mục, rồi mở nốt. Tối đa một
+            // lần mở launcher trong một lần bấm.
+            string reason =
+                $"client mở bằng argument đã lưu đã thoát/bị treo do lỗi trong {LaunchArgumentLogic.ObserveWindowMs / 1000} giây quan sát";
+            DiagnosticLogService.Trace(
+                $"[token đã lưu] {gameFolder} — {reason} ({LaunchArgumentLogic.Describe(token)}), " +
+                "coi như argument khởi động đã hết hạn, mở fxlaunch để đăng nhập lại");
+            KillStaleClient(r.StaleArgumentPid, r.StaleArgumentStart, gameFolder, reason);
+
+            progress?.Report("Argument khởi động đã lưu có vẻ đã hết hạn — mở launcher để đăng nhập lại...");
+            var relogin = await LoginViaFxlaunchAndWaitAsync(gameFolder, token, reason, progress);
+            // Đăng nhập lại thất bại / client nguồn mới cũng hỏng ⇒ giữ argument CŨ ở caller (không lưu
+            // argument hỏng), báo lỗi rõ.
+            if (!relogin.Ok) return new EnsureResult(r.Launched, r.Message + " " + relogin.Message, token);
+
+            var r2 = await LaunchClientsToTotalAsync(gameFolder, relogin.Token, targetTotal, progress, useLocalExtension,
+                newClientValidThisClick: relogin.Verdict == ArgumentVerdict.Valid);
+            if (r2.StaleArgumentPid > 0)
             {
-                // Mở THẲNG bằng token đã lưu (không qua fxlaunch — đúng UX đã
-                // chốt ở v1.15.8), NHƯNG phải xác nhận nó còn dùng được.
-                // Token có thể đã HẾT HẠN (vd game vừa update) — khi đó
-                // fxgame.exe tự thoát gần như ngay lập tức thay vì đứng yên.
-                // KHÔNG cần chờ kết nối TCP thật sự (đơn giản hoá theo yêu cầu
-                // người dùng 2026-09-16) — chỉ cần tiến trình còn SỐNG sau một
-                // khoảng chờ ngắn là coi như ổn, không cần biết nó đã vào được
-                // server hay chưa. Không sống nổi thì coi token đã hỏng, quay
-                // lại mở fxlaunch để đăng nhập lấy token mới.
-                var gamePath = FindGameExe(gameFolder, "fxgame.exe");
-                if (gamePath == null) return (0, "Không tìm thấy fxgame.exe.", token);
-
-                progress?.Report("Đang mở game bằng token đã lưu...");
-                var pidsBefore = GetFxgamePids();
-                LauncherHelper.LaunchGameViaHelper(gamePath, token);
-                DiagnosticLogService.Trace($"[token đã lưu] đã gọi helper cho {gameFolder}, chờ tiến trình xuất hiện...");
-
-                int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
-                bool alive = newPid > 0 && await WaitForProcessStillAliveAsync(newPid, TokenStaleGraceMs);
-
-                if (!alive)
-                {
-                    DiagnosticLogService.Trace(
-                        $"[token đã lưu] {gameFolder} — client không sống nổi sau {TokenStaleGraceMs}ms, " +
-                        "coi như token đã hết hạn, mở fxlaunch để đăng nhập lại");
-
-                    progress?.Report("Token cũ có vẻ đã hết hạn — mở lại để đăng nhập...");
-                    var (loginOk, newToken, loginMsg) = await LoginViaFxlaunchAndWaitAsync(gameFolder, targetTotal, progress);
-                    if (!loginOk) return (0, loginMsg, token);
-                    token = newToken;
-                }
+                var rej = RejectFreshArgument(gameFolder, r2, relogin.Token, token);
+                return rej with { Launched = r.Launched + r2.Launched };
             }
-
-            var (launched, msg) = await LaunchClientsToTotalAsync(gameFolder, token, targetTotal, progress);
-            return (launched, msg, token);
+            return new EnsureResult(r.Launched + r2.Launched, r2.Message, relogin.Token, relogin.SourceStart ?? r2.ValidSourceStart);
+        }
+        catch (InvalidOperationException ex) when (useLocalExtension)
+        {
+            return new EnsureResult(0, ex.Message, existingToken);
         }
         finally
         {
@@ -661,51 +1035,77 @@ public class MultiClientService
     }
 
     /// <summary>
-    /// Mở fxlaunch.exe của CHÍNH thư mục này, chờ người dùng đăng nhập, đọc
-    /// token từ fxgame.exe vừa chạy lên, rồi chờ nó kết nối server xong (nếu
-    /// mục tiêu cần hơn 1 cửa sổ). Tách riêng khỏi EnsureClientsRunningAsync
-    /// vì được dùng ở CẢ HAI nơi: thư mục chưa từng đăng nhập, VÀ thư mục có
-    /// token đã lưu nhưng hoá ra đã hết hạn.
+    /// Argument VỪA lấy từ launcher (client nguồn ra Unknown) nhưng client MỚI đầu tiên mở bằng nó lại
+    /// chết / bị WER treo ⇒ KHÔNG lưu argument đó (trả lại argument trước đó — Codex v2 P1#3 "Stale ⇒
+    /// không lưu, không nhân bản"), tắt đúng client hỏng, không mở launcher lần nữa trong cùng lần bấm.
     /// </summary>
-    private static async Task<(bool Ok, string Token, string Message)> LoginViaFxlaunchAndWaitAsync(
-        string gameFolder, int targetTotal, IProgress<string>? progress)
+    private static EnsureResult RejectFreshArgument(string gameFolder, LaunchRoundResult round, string freshToken, string previousToken)
+    {
+        string reason = "client mở bằng argument vừa lấy qua launcher đã thoát/bị treo do lỗi trong cửa sổ quan sát";
+        DiagnosticLogService.Trace(
+            $"[argument khởi động] {gameFolder} — {reason}; KHÔNG lưu argument này ({LaunchArgumentLogic.Describe(freshToken)}), " +
+            "giữ argument trước đó, dừng (không lặp)");
+        KillStaleClient(round.StaleArgumentPid, round.StaleArgumentStart, gameFolder, reason);
+        return new EnsureResult(round.Launched,
+            "Client mở bằng argument khởi động vừa lấy qua launcher đã thoát hoặc bị treo do lỗi — chưa lưu argument mới, " +
+            "đã dừng mở thêm. Hãy kiểm tra game/launcher rồi bấm MỞ GAME lại.",
+            previousToken);
+    }
+
+    /// <summary>
+    /// Mở fxlaunch.exe của CHÍNH thư mục này, chờ người dùng đăng nhập, đọc argument khởi động từ
+    /// fxgame.exe MỚI của ĐÚNG thư mục đó (A), rồi LUÔN quan sát chính PID nguồn đó trọn cửa sổ —
+    /// kể cả khi mục tiêu chỉ là 1 cửa sổ (Codex v2 P1#3). Nguồn ra Stale (chết / WER treo) ⇒ Ok=false:
+    /// KHÔNG trả argument (caller không lưu), KHÔNG mở thêm, báo lỗi rõ cho UI. Unknown ⇒ Ok=true
+    /// (argument do chính launcher vừa sinh, không có bằng chứng hỏng) nhưng các client sau vẫn bị
+    /// quan sát. Dùng ở cả hai nơi: thư mục chưa từng đăng nhập, và argument đã lưu hoá ra hết hạn.
+    /// </summary>
+    private static async Task<(bool Ok, string Token, string Message, ArgumentVerdict Verdict, DateTime? SourceStart)>
+        LoginViaFxlaunchAndWaitAsync(string gameFolder, string oldToken, string reason, IProgress<string>? progress)
     {
         progress?.Report("Đang mở launcher, hãy đăng nhập vào game...");
         var pidsBefore = GetFxgamePids();
 
         var (launcherOk, launcherMsg) = await LaunchFirstClientAsync(gameFolder);
-        if (!launcherOk) return (false, string.Empty, launcherMsg);
+        if (!launcherOk) return (false, string.Empty, launcherMsg, ArgumentVerdict.Unknown, null);
 
-        var token = await WaitForTokenInternalAsync(progress);
+        var (token, sourcePid) = await WaitForTokenInternalAsync(gameFolder, pidsBefore, progress);
         if (string.IsNullOrEmpty(token))
         {
             return (false, string.Empty,
-                "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.");
+                "Hết thời gian chờ đăng nhập (60s). Sau khi vào game xong, bấm MỞ lại để mở các cửa sổ còn lại.",
+                ArgumentVerdict.Unknown, null);
         }
 
-        // Chờ đúng client MỚI vừa mở kết nối xong trước khi mở tiếp — giới
-        // hạn theo PID mới để không bị "ăn ké" trạng thái đã kết nối sẵn của
-        // một thư mục KHÁC đang chạy song song.
-        if (targetTotal > CountRunningFxgameInFolder(gameFolder))
+        DateTime? sourceStart = GetFxgameStartTimes(new[] { sourcePid }).TryGetValue(sourcePid, out var st) ? st : null;
+
+        var verdict = await ObserveLaunchedClientAsync(
+            sourcePid, "Đang xác nhận client vừa đăng nhập qua launcher", progress);
+        if (!LaunchArgumentLogic.AcceptLauncherSource(verdict))
         {
-            int newPid = await WaitForNewFxgamePidAsync(pidsBefore, timeoutMs: 15000);
-            if (newPid > 0)
-                await WaitForClientConnectedAsync(newPid, 1, targetTotal, progress);
-            else
-                await WaitForAnyClientConnectedAsync(progress);
+            DiagnosticLogService.Trace(
+                $"[argument khởi động] {gameFolder} — client nguồn PID={sourcePid} từ launcher đã thoát/bị treo do lỗi " +
+                $"trong cửa sổ quan sát; KHÔNG lưu argument này ({LaunchArgumentLogic.Describe(token)}), không mở thêm");
+            return (false, string.Empty,
+                "Client vừa đăng nhập qua launcher đã thoát hoặc bị treo do lỗi trong " +
+                $"{LaunchArgumentLogic.ObserveWindowMs / 1000} giây — chưa lưu argument khởi động mới, không mở thêm cửa sổ. " +
+                "Hãy kiểm tra game/launcher rồi bấm MỞ GAME lại.",
+                verdict, null);
         }
 
-        return (true, token, "Đăng nhập thành công.");
+        LogArgumentChange($"làm mới qua launcher ({reason}; client nguồn: {verdict})", gameFolder, sourcePid, oldToken, token);
+        return (true, token, "Đăng nhập thành công.", verdict, sourceStart);
     }
 
     /// <summary>
-    /// Chờ tới khi lấy được token từ fxgame.exe đang chạy — thử mỗi 2s trong
-    /// tối đa 60s để người dùng có thời gian đăng nhập trong launcher. Chỉ
-    /// TRẢ VỀ token, không tự lưu ở đây — token giờ thuộc về đúng thư mục vừa
-    /// gọi (per-folder), nên caller (EnsureClientsRunningAsync → ViewModel)
-    /// mới biết phải ghi vào GameFolderEntry.Token của thư mục nào.
+    /// Chờ tới khi lấy được argument khởi động từ fxgame.exe MỚI (không có trong
+    /// <paramref name="pidsBefore"/>) của ĐÚNG <paramref name="gameFolder"/> — thử mỗi 2s trong tối
+    /// đa 60s để người dùng có thời gian đăng nhập trong launcher. Không bao giờ đọc client cũ
+    /// (có thể chính là client mang argument hỏng) hay client của thư mục khác. Chỉ TRẢ VỀ, không
+    /// tự lưu — caller (EnsureClientsRunningAsync → ViewModel) ghi vào đúng thư mục.
     /// </summary>
-    private static async Task<string> WaitForTokenInternalAsync(IProgress<string>? progress)
+    private static async Task<(string Token, int Pid)> WaitForTokenInternalAsync(
+        string gameFolder, HashSet<int> pidsBefore, IProgress<string>? progress)
     {
         for (int i = 0; i < 30; i++)
         {
@@ -717,7 +1117,7 @@ public class MultiClientService
             // không tin tưởng tuyệt đối vào timeout nội bộ của searcher. Một
             // lượt bị treo chỉ mất tối đa 8s ở đây rồi vòng lặp tự thử lại,
             // KHÔNG để nó chặn cả 60s chờ đăng nhập.
-            var detectTask = DetectTokenAsync();
+            var detectTask = DetectTokenAsync(gameFolder, pidsBefore, newOnly: true);
             var winner = await Task.WhenAny(detectTask, Task.Delay(8000));
             if (winner != detectTask)
             {
@@ -726,18 +1126,18 @@ public class MultiClientService
                 continue;
             }
 
-            var (ok, token, _) = await detectTask;
+            var (ok, token, _, pid) = await detectTask;
             if (ok && !string.IsNullOrEmpty(token))
             {
-                DiagnosticLogService.Trace($"  lấy được token sau {(i + 1) * 2}s");
-                return token;
+                DiagnosticLogService.Trace($"  lấy được argument khởi động từ PID={pid} sau {(i + 1) * 2}s");
+                return (token, pid);
             }
 
             progress?.Report($"Đang chờ bạn đăng nhập... ({(i + 1) * 2}s)");
         }
 
-        DiagnosticLogService.Trace("  TIMEOUT 60s — không lấy được token");
-        return string.Empty;
+        DiagnosticLogService.Trace($"  TIMEOUT 60s — không lấy được argument khởi động của {gameFolder}");
+        return (string.Empty, 0);
     }
 
     /// <summary>Số cửa sổ game (fxgame.exe) đang chạy, toàn hệ thống.</summary>
@@ -819,9 +1219,11 @@ public class MultiClientService
     /// </summary>
     public static int CountRunningFxgameInFolder(string folder)
     {
-        var folders = new[] { folder };
+        // Cùng định nghĩa "client của thư mục" với đường argument: khớp ĐÚNG đường dẫn exe (v2 P1#1),
+        // để đếm và chọn PID không lệch nhau.
+        var exe = FindGameExe(folder, "fxgame.exe");
         var paths = GetFxgameExecutablePaths();
-        return paths.Values.Count(p => ResolveOwningFolder(p, folders) != null);
+        return paths.Values.Count(p => LaunchArgumentLogic.IsGameExeOfFolder(p, folder, exe));
     }
 
     /// <summary>
@@ -904,71 +1306,18 @@ public class MultiClientService
         }
     }
 
-    /// <summary>
-    /// Chờ một fxgame.exe MỚI xuất hiện và trả về PID của nó (0 nếu hết giờ).
-    /// </summary>
-    private static async Task<int> WaitForNewFxgamePidAsync(HashSet<int> pidsBefore, int timeoutMs)
+    /// <summary>Tiến trình còn sống không. Lỗi truy cập (khác quyền) ⇒ coi như còn sống: không
+    /// biết thì không được kết luận argument hỏng.</summary>
+    private static bool IsProcessAlive(int pid)
     {
-        const int pollInterval = 500;
-
-        for (int elapsed = 0; elapsed < timeoutMs; elapsed += pollInterval)
+        try
         {
-            await Task.Delay(pollInterval);
-
-            try
-            {
-                var newPid = GetFxgamePids().FirstOrDefault(pid => !pidsBefore.Contains(pid));
-                if (newPid != 0)
-                {
-                    DiagnosticLogService.Trace($"  client mới PID={newPid} xuất hiện sau {elapsed + pollInterval}ms");
-                    return newPid;
-                }
-            }
-            catch (Exception ex)
-            {
-                DiagnosticLogService.Trace($"  WaitForNewFxgamePid EXCEPTION: {ex.Message}");
-            }
+            using var p = Process.GetProcessById(pid);
+            try { return !p.HasExited; }
+            catch { return true; }
         }
-
-        DiagnosticLogService.Trace($"  TIMEOUT {timeoutMs}ms — chưa thấy client mới, vẫn tiếp tục");
-        return 0;
-    }
-
-    /// <summary>
-    /// Chờ <paramref name="graceMs"/> rồi báo tiến trình (PID cho trước) có
-    /// CÒN SỐNG hay không — KHÔNG kiểm tra kết nối TCP/đăng nhập, chỉ cần
-    /// tiến trình chưa tự thoát. Dùng để phát hiện token đã lưu hết hạn (client
-    /// tự thoát gần như ngay lập tức) mà không cần biết nó có vào được server
-    /// hay chưa — xem TokenStaleGraceMs.
-    /// </summary>
-    private static async Task<bool> WaitForProcessStillAliveAsync(int pid, int graceMs)
-    {
-        const int pollInterval = 500;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
-        while (sw.ElapsedMilliseconds < graceMs)
-        {
-            try
-            {
-                using var p = Process.GetProcessById(pid);
-                if (p.HasExited)
-                {
-                    DiagnosticLogService.Trace($"  PID={pid} đã tự thoát sau {sw.ElapsedMilliseconds}ms");
-                    return false;
-                }
-            }
-            catch (ArgumentException)
-            {
-                // Không tìm thấy process theo PID này nữa — đã thoát.
-                DiagnosticLogService.Trace($"  PID={pid} không còn tồn tại sau {sw.ElapsedMilliseconds}ms");
-                return false;
-            }
-
-            await Task.Delay(pollInterval);
-        }
-
-        DiagnosticLogService.Trace($"  PID={pid} vẫn sống sau {graceMs}ms — coi như ổn");
-        return true;
+        catch (ArgumentException) { return false; }   // không còn PID này
+        catch { return true; }
     }
 
     /// <summary>
@@ -995,12 +1344,23 @@ public class MultiClientService
                 return true;
             }
 
+            // Client đã chết thì chờ tiếp tới 60 s là vô ích — argument hỏng thường kết thúc
+            // bằng cảnh này (FCT-2658: treo ~60 s rồi chết).
+            if (!IsProcessAlive(pid))
+            {
+                DiagnosticLogService.Trace(
+                    $"  PID={pid} đã thoát sau {sw.ElapsedMilliseconds}ms, chưa từng có kết nối server — {TunnelProbe.Current()}");
+                return false;
+            }
+
             progress?.Report($"{waitingMessagePrefix} ({sw.ElapsedMilliseconds / 1000}s)...");
             await Task.Delay(pollInterval);
         }
 
+        // Chan doan thay im lang: 124/615 ket qua trong trace.log la loai "khong thay" ma khong co mo ta nao,
+        // trong khi 491 dong thanh cong lai ghi ro dich ⇒ that bai khong quy duoc nguyên nhân (batch 55).
         DiagnosticLogService.Trace(
-            $"  PID={pid} chưa thấy kết nối server sau {timeoutMs}ms");
+            $"  PID={pid} chưa thấy kết nối server sau {timeoutMs}ms — {TunnelProbe.Current()} | {TcpTableHelper.DescribeConnections(pid)} | {TcpTableHelper.DescribeForwarderChain(pid)}");
         return false;
     }
 
@@ -1041,6 +1401,10 @@ public class MultiClientService
         var exePaths = (knownFolders != null && knownFolders.Count > 0)
             ? GetFxgameExecutablePaths()
             : new Dictionary<int, string>();
+        // KHÔNG gọi FindGameExe ở đây: hàm này chạy mỗi 2 s TRÊN UI THREAD, mà FindGameExe có thể đào 2
+        // cấp thư mục (I/O đĩa) — ba vị trí chuẩn (gốc/bin64/bin) đã đủ cho mọi bản cài đã đo. Bản cài
+        // lạ không khớp thì client rơi vào "không rõ thư mục" — an toàn hơn gán nhầm cho dòng khác.
+        IReadOnlyDictionary<string, string?>? findExe = null;
         try
         {
             var processes = Process.GetProcessesByName("fxgame");
@@ -1066,7 +1430,7 @@ public class MultiClientService
                     string? folder = null;
                     if (knownFolders != null && knownFolders.Count > 0 && exePaths.TryGetValue(p.Id, out var exePath))
                     {
-                        folder = ResolveOwningFolder(exePath, knownFolders);
+                        folder = LaunchArgumentLogic.ResolveOwningFolder(exePath, knownFolders, findExe);
                     }
 
                     result.Add(new RunningClient

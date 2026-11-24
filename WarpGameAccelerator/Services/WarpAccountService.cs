@@ -486,13 +486,26 @@ public class WarpAccountService
         using var proc = Process.Start(psi);
         if (proc == null) return false;
 
-        var waitTask = proc.WaitForExitAsync();
-        var completed = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(15)));
-        if (completed != waitTask)
+        // Batch 70 (#46): hai luồng đều được redirect nên PHAI rút ca hai. truoc do khong doc gi ca:
+        // wgcf in bang trang thai > 4 KB la pipe day, parent khong biet, 15 s sau Kill ⇒ "that bai"
+        // gia. Nguong deadlock do bang experiments/redirect-deadlock: >=8 KB la ket vinh vien.
+        var discardOut = Task.Run(() => proc.StandardOutput.ReadToEndAsync());
+        var discardErr = Task.Run(() => proc.StandardError.ReadToEndAsync());
+
+        // Tran that nam ngay trong Wait (khong phai Task.WhenAny bo roi waitTask chay lo luen):
+        // khi bi Huy, wgcf duoc Kill ca cay tien trinh va ket qua tra ve false co chu dich.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            await proc.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
         {
             try { proc.Kill(entireProcessTree: true); } catch { }
             return false;
         }
+        try { await discardOut; } catch { }
+        try { await discardErr; } catch { }
 
         return proc.ExitCode == 0;
     }

@@ -23,6 +23,8 @@ public sealed partial class MainWindow : Window
     // cầu người dùng). Không mật khẩu, chỉ ẩn qua hotkey — ai biết tổ hợp
     // phím Ctrl+Shift+Alt+D đều mở được, không giới hạn máy nào.
     private GlobalHotkeyHelper? _devPanelHotkey;
+    private Services.HangWatchdog? _hangWatchdog;
+    private LocalSidePanelHandle? _localSidePanel;
 
     public MainWindow(DashboardViewModel dashboardVm)
     {
@@ -41,8 +43,10 @@ public sealed partial class MainWindow : Window
         ConfigureSystemBackdrop();
         ConfigureTrayIcon();
         ConfigureDevPanelHotkey();
+        ConfigureHangWatchdog();
         WireDevPanelEvents();
         MasqueColoPanelControl.CloseRequested += (_, _) => CloseMasqueColoPanel();
+        ConfigureLocalExtensionUi();
         SubscribeDashboardEvents();
 
         // Subscribe language change để update nav items
@@ -56,6 +60,7 @@ public sealed partial class MainWindow : Window
 
         // Kiểm tra & đề xuất gửi báo cáo lỗi nếu lần trước bị sập
         CheckPendingCrashReportAsync();
+        CheckPreviousHangAsync();
     }
 
     private async void CheckPendingCrashReportAsync()
@@ -78,8 +83,67 @@ public sealed partial class MainWindow : Window
         }
         catch
         {
-            // Bảo vệ 100%: Fail-safe im lặng
-            CrashReportService.ClearPendingCrashReport();
+            // Bảo vệ 100%: fail-safe im lặng, nhưng GIỮ crash_pending — xoá ở đây là xoá bằng chứng
+            // duy nhất của một lần crash mà chưa ai gửi đi (#15).
+        }
+    }
+
+    /// <summary>FR-05: mở app sau một lần treo thì phải NÓI cho người dùng biết và chỉ đúng nơi lưu
+    /// bằng chứng. Toàn bộ việc chọn hồ sơ/định dạng nằm trong HangWatchdog (đã kiểm bằng lab trên
+    /// hồ sơ THẬT do chính watchdog viết — experiments/hang-watchdog, F1..F7).</summary>
+    private async void CheckPreviousHangAsync()
+    {
+        HangWatchdog.Mark("kiểm tra hồ sơ treo của lần chạy trước");
+        try
+        {
+            var dir = Services.HangWatchdog.CapturesDir;
+
+            var inc = Services.HangWatchdog.FindPreviousIncident(dir, Services.HangWatchdog.SessionTag);
+            if (inc is null) return;
+
+            // Muộn hơn dialog crash report (1,2s) một chút: hai ContentDialog cùng ShowAsync một lúc
+            // là rủi ro thật trong WinUI, mà thông báo này không khẩn cấp bằng.
+            await Task.Delay(2600);
+            if (_isActuallyExiting) return;   // người dùng đã thoát app trong lúc chờ ⇒ khỏi hiện
+
+            var notice = Services.HangWatchdog.BuildNotice(inc.Value);
+
+            // FR-13: thêm số THẬT về đường hầm của phiên trước, suy từ trạng thái hiện tại chứ
+            // không hard-code — spec cũ viết theo hành vi "mở app là kill tunnel", code hiện tại
+            // đã đổi sang nhận nuôi (AdoptRunningTunnel), nói theo spec cũ là dọa nhầm người dùng.
+            try
+            {
+                var mihomoSvc = App.Services.GetRequiredService<Services.MihomoService>();
+                var verdict = Services.TunnelHandover.Decide(mihomoSvc.IsMihomoAlreadyRunning());
+                notice += "\n\n" + Services.TunnelHandover.StatusLine(verdict);
+            }
+            catch { /* không có container/DI lỗi thì bỏ qua dòng này, phần chính vẫn hiện */ }
+            var dialog = new ContentDialog
+            {
+                XamlRoot            = Content.XamlRoot,
+                Style               = Application.Current.Resources["DefaultContentDialogStyle"] as Style,
+                Title               = "Ứng dụng đã dừng ở lần chạy trước",
+                Content             = new TextBlock { Text = notice, TextWrapping = TextWrapping.Wrap,
+                                                      IsTextSelectionEnabled = true },
+                PrimaryButtonText   = "Hiểu rồi",
+                SecondaryButtonText = "Mở thư mục hồ sơ",
+                DefaultButton       = ContentDialogButton.Primary
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Secondary)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                        "explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+                }
+                catch { }
+            }
+        }
+        catch
+        {
+            // Một thông báo chẩn đoán không bao giờ được làm hỏng lúc khởi động.
         }
     }
 
@@ -138,11 +202,12 @@ public sealed partial class MainWindow : Window
             if (NavView.MenuItems[1] is NavigationViewItem selectGame)
                 selectGame.Content = _loc.NavSelectGame;
 
-        // FooterMenuItems: [0]=MultiClient, [1]=AowBooster, [2]=WarpAccount, [3]=Settings, [4]=Exit
-            if (NavView.FooterMenuItems[3] is NavigationViewItem settings)
-                settings.Content = _loc.NavSettings;
-            if (NavView.FooterMenuItems[4] is NavigationViewItem exit)
-                exit.Content = _loc.NavExit;
+            foreach (var item in NavView.FooterMenuItems)
+            {
+                if (item is not NavigationViewItem navItem || navItem.Tag is not string tag) continue;
+                if (tag == "settings") navItem.Content = _loc.NavSettings;
+                else if (tag == "exit") navItem.Content = _loc.NavExit;
+            }
         });
     }
 
@@ -165,6 +230,7 @@ public sealed partial class MainWindow : Window
         if (remembered == RememberedExitAction.Minimize)
         {
             AppWindow.Hide();
+            MultiClientViewModel.NotifyWindowHidden(true);
             _trayIcon?.ShowBalloon("WARP Game Accelerator", _loc.TrayMinimizedMsg);
             return;
         }
@@ -204,6 +270,7 @@ public sealed partial class MainWindow : Window
                 ExitBehaviorSettings.Remember(RememberedExitAction.Minimize);
 
             AppWindow.Hide();
+            MultiClientViewModel.NotifyWindowHidden(true);
             _trayIcon?.ShowBalloon(
                 "WARP Game Accelerator",
                 _loc.TrayMinimizedMsg);
@@ -252,6 +319,34 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // #2 (spec 001): canh UI thread bằng vòng phản hồi của chính hàng đợi. Treo xác nhận ⇒ ghi
+    // HỒ SƠ VĂN BẢN vào data dir của app rồi FailFast — xem Services/HangWatchdog.cs vì sao phải là
+    // tín hiệu nội bộ (batch 22: mọi dấu hiệu "not responding" của Windows đều báo khoẻ nhầm với
+    // đúng kiểu kẹt ShowWindow cross-process) và vì sao hồ sơ KHÔNG được nằm ở thư mục dump của OS.
+    // Ngưỡng production: thăm dò 2s, stall 15s, 3 lượt liên tiếp (≈19-21s kẹt thật không kèm OS
+    // pause) — tránh tự giết app khi máy gặp đợt nghẽn tải/boot tạm thời 4-10s (7/7 dump 17-24/11).
+    private void ConfigureHangWatchdog()
+    {
+        try
+        {
+            _hangWatchdog = new Services.HangWatchdog(
+                new Services.DispatcherLivenessPump(DispatcherQueue),
+                new Services.HangWatchdog.Options
+                {
+                    ProbeIntervalMs = 2000,
+                    StallThresholdMs = 15000,
+                    ConfirmationsRequired = 3
+                });
+            Services.HangWatchdog.Current = _hangWatchdog;
+            _hangWatchdog.Start();
+        }
+        catch
+        {
+            // Đây là lớp CHẨN ĐOÁN: nếu nó lỗi lúc khởi tạo thì app vẫn phải mở bình thường.
+            DiagnosticLogService.Trace("[HangWatchdog] Không bật được bộ canh treo — app chạy không có chẩn đoán treo.");
+        }
+    }
+
     /// <summary>
     /// Bọc try/catch quanh TOÀN BỘ luồng mở/đóng panel — đây là callback chạy
     /// trực tiếp từ DispatcherQueue.TryEnqueue (không có async Task nào bên
@@ -286,13 +381,22 @@ public sealed partial class MainWindow : Window
         {
             AppWindow.Show();
             AppWindow.MoveInZOrderAtTop();
+            MultiClientViewModel.NotifyWindowHidden(false);
         });
     }
 
     private async void ExitApp()
     {
+        // FR-11: người dùng CHỦ ĐỘNG thoát thì mọi độ trễ của lúc thoát là bình thường —
+        // phải tắt bộ canh trước khi làm bất việc gì khác, nếu không nó sẽ ghi một "hồ sơ treo"
+        // giả cho chính phiên thoát.
+        _hangWatchdog?.BeginShutdown();
+
+        _hangWatchdog?.Dispose();
         _trayIcon?.Dispose();
         _devPanelHotkey?.Dispose();
+
+        try { LocalLaunchExtension.Current?.OnAppExiting(App.Services); } catch { }
 
         try
         {
@@ -323,6 +427,13 @@ public sealed partial class MainWindow : Window
             await Task.WhenAny(cleanupTask, Task.Delay(3000));
         }
         catch { }
+
+        // Nhả single-instance lock ở ĐÂY, sau khi cuộc dọn dẹp đã xong — KHÔNG nhả sớm hơn.
+        // Nhả trước StopProxy/DisconnectAsync/RestoreAllAsync nghĩa là mở toang cửa cho một
+        // instance khác dựng tunnel trong 3 giây cuối, để rồi chính mấy bước này tắt nó đi
+        // (đúng tai hoạ mà guard này sinh ra để chặn — xem header SingleInstanceGuard.cs).
+        // Người mở lại trong lúc chờ được TryAcquire thử lại 4×400 ms trước khi thấy hộp thoại.
+        SingleInstanceGuard.Release();
 
         Application.Current.Exit();
         Environment.Exit(0); // Force kill to prevent background thread hangs
@@ -389,7 +500,9 @@ public sealed partial class MainWindow : Window
             "multiclient" => typeof(MultiClientPage),
             "warpaccount" => typeof(WarpAccountPage),
             "settings"    => typeof(SettingsPage),
-            _             => null
+            _             => (LocalLaunchExtension.Current is { } ext && ext.NavItemTag == tag)
+                             ? ext.NavPageType
+                             : null
         };
 
         if (pageType is not null && ContentFrame.CurrentSourcePageType != pageType)
@@ -487,12 +600,55 @@ public sealed partial class MainWindow : Window
         ResizeAndRecenter(ComputeWindowWidth(), MainWindowHeight);
     }
 
+    private void ConfigureLocalExtensionUi()
+    {
+        var ext = LocalLaunchExtension.Current;
+        if (ext == null) return;
+
+        if (!string.IsNullOrEmpty(ext.NavItemTag) && !string.IsNullOrEmpty(ext.NavItemLabel))
+        {
+            var item = new NavigationViewItem
+            {
+                Tag = ext.NavItemTag,
+                Content = ext.NavItemLabel
+            };
+            if (!string.IsNullOrEmpty(ext.NavItemGlyph))
+                item.Icon = new FontIcon { Glyph = ext.NavItemGlyph };
+            int insertIdx = Math.Min(2, NavView.FooterMenuItems.Count);
+            NavView.FooterMenuItems.Insert(insertIdx, item);
+        }
+
+        _localSidePanel = ext.CreateSidePanel(CloseLocalSidePanel);
+        if (_localSidePanel != null)
+            LocalSidePanelRoot.Child = _localSidePanel.Control;
+    }
+
+    public void ShowLocalSidePanel()
+    {
+        if (_localSidePanel == null) return;
+        if (LocalSidePanelRoot.Visibility == Visibility.Visible) return;
+        LocalSidePanelColumn.Width = new GridLength(_localSidePanel.Width);
+        LocalSidePanelRoot.Visibility = Visibility.Visible;
+        ResizeAndRecenter(ComputeWindowWidth(), MainWindowHeight);
+        _localSidePanel.RefreshOnOpen();
+    }
+
+    public void CloseLocalSidePanel()
+    {
+        _localSidePanel?.ClearSelection();
+        if (LocalSidePanelRoot.Visibility != Visibility.Visible) return;
+        LocalSidePanelRoot.Visibility = Visibility.Collapsed;
+        LocalSidePanelColumn.Width = new GridLength(0);
+        ResizeAndRecenter(ComputeWindowWidth(), MainWindowHeight);
+    }
+
     /// <summary>Tổng bề rộng cửa sổ = cột nội dung chính + mọi panel phụ ĐANG mở — tính lại
     /// mỗi lần mở/đóng 1 panel để không panel nào ghi đè mất phần rộng của panel kia nếu cả
     /// hai cùng mở (Dev Panel + Masque Colo Panel là độc lập với nhau).</summary>
     private int ComputeWindowWidth() => MainWindowWidth
         + (DevPanelRoot.Visibility == Visibility.Visible ? DevPanelWidth : 0)
-        + (ColoPanelRoot.Visibility == Visibility.Visible ? ColoPanelWidth : 0);
+        + (ColoPanelRoot.Visibility == Visibility.Visible ? ColoPanelWidth : 0)
+        + (LocalSidePanelRoot.Visibility == Visibility.Visible && _localSidePanel != null ? _localSidePanel.Width : 0);
 
     private void ResizeAndRecenter(int width, int height)
     {

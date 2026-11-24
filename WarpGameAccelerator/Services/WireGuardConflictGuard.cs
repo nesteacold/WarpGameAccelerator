@@ -248,6 +248,11 @@ public static class WireGuardConflictGuard
         }
     }
 
+    /// <summary>Trần cho một lời gọi powershell phục vụ tunnel. Nhịp pause→restore khoẻ đo được
+    /// trong trace.log là ~9,7 s, nên 90 s vừa đủ xa để không cắt thao tác hợp lệ, vừa đủ gần để
+    /// người dùng còn thấy lỗi trước khi mất kiên nhẫn.</summary>
+    internal const int PowerShellTimeoutMs = 90_000;
+
     private static async Task<string> RunPowerShellAsync(string command)
     {
         var psi = new ProcessStartInfo
@@ -264,8 +269,26 @@ public static class WireGuardConflictGuard
         psi.ArgumentList.Add(command);
 
         using var process = Process.Start(psi)!;
-        string output = await process.StandardOutput.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        return output;
+
+        // Mo ca hai pipe thi PHAI rut ca hai: do chỉ await stdout + WaitForExitAsync là deadlock có
+        // ngưỡng đo được (experiments/redirect-deadlock): stderr 1–4 KB vô hại, ≥8 KB KET VINH VIEN
+        // 4/6 luot — 'await' khong cứu được, vì cái block là pipe chứ không phải thread.
+        var outT = process.StandardOutput.ReadToEndAsync();
+        var errT = process.StandardError.ReadToEndAsync();
+        using var cts = new CancellationTokenSource(PowerShellTimeoutMs);
+        try
+        {
+            await process.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            // Stall trước đây KHÔNG để lại dấu vết nào; nay phải thành một dòng log đọc được.
+            DiagnosticLogService.Trace(
+                $"[WireGuardConflictGuard] powershell quá {PowerShellTimeoutMs / 1000}s không trả lời → đã dừng: {command[..Math.Min(72, command.Length)]}");
+            return string.Empty;
+        }
+        _ = await errT;   // rút cho cạn pipe
+        return await outT;
     }
 }

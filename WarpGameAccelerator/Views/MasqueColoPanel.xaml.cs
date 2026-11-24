@@ -128,16 +128,25 @@ public sealed partial class MasqueColoPanel : UserControl
         var byName = statuses.ToDictionary(s => s.ProxyName);
         var rows = new List<MultiCandidateRow>();
         int index = 0;
+        int hiddenErrors = 0;
         foreach (var (proxyName, endpoint) in session.Candidates)
         {
             index++;
             byName.TryGetValue(proxyName, out var status);
             bool isCurrent = status?.IsCurrentSelection == true;
             bool isError = status != null && status.Colo == null;
+            // Mỗi lần quét colo các tunnel dự phòng: tự dọn (không hiển thị) các slot dự phòng bị lỗi
+            // để màn hình chỉ hiện các tunnel sống; chỉ giữ lại nếu đó là tunnel đang dùng hiện tại.
+            if (isError && !isCurrent)
+            {
+                hiddenErrors++;
+                continue;
+            }
             string detail = status == null
                 ? "Chưa đo — bấm \"Quét colo\" bên trên."
                 : status.Colo != null
-                    ? (status.VerifiedAtUtc is { } t ? $"xác thực lúc {t.ToLocalTime():HH:mm:ss}" : "")
+                    ? (status.TargetRttMs is { } tw ? $"TW {tw:0} ms · " : "")
+                      + (status.VerifiedAtUtc is { } t ? $"xác thực lúc {t.ToLocalTime():HH:mm:ss}" : "")
                     : "Không đo được" + (status.VerifiedAtUtc is { } t2 ? $" (lúc {t2.ToLocalTime():HH:mm:ss})" : "");
             string pillText = status == null ? "chưa đo" : status.Colo != null ? $"colo {status.Colo}" : "lỗi";
 
@@ -161,7 +170,7 @@ public sealed partial class MasqueColoPanel : UserControl
                 CanSelect = canSelect,
                 ButtonTooltip = tooltip,
                 IsCurrent = isCurrent,
-                LatencyMs = status?.LatencyMs,
+                LatencyMs = status?.TargetRttMs ?? status?.LatencyMs,
                 IsError = isError,
                 PillText = pillText
             });
@@ -169,6 +178,8 @@ public sealed partial class MasqueColoPanel : UserControl
         // Tunnel đang mang traffic game luôn lên đầu — đỡ phải dò cả danh sách mới biết
         // colo hiện tại là gì (đây chính là điều người dùng đã bị nhầm/bỏ sót).
         MultiCandidateResults.ItemsSource = rows.OrderByDescending(r => r.IsCurrent).ToList();
+        if (hiddenErrors > 0 && _multiCandidateSweep == null)
+            MultiCandidateStatusText.Text = $"Hiển thị {rows.Count} tunnel hoạt động (đã ẩn {hiddenErrors} tunnel lỗi).";
     }
 
     private async void SweepMultiCandidate_Click(object sender, RoutedEventArgs e)
@@ -185,7 +196,7 @@ public sealed partial class MasqueColoPanel : UserControl
         MultiCandidateStatusText.Text = "Đang quét colo từng tunnel dự phòng qua PROBE-PATH (không đụng traffic game)...";
         try
         {
-            await _tunnelSweep.SweepAllAsync(cts.Token);
+            await _tunnelSweep.SweepAllAsync(cts.Token, measureTargetRtt: true);
             MultiCandidateStatusText.Text = "Đã quét xong.";
         }
         catch (OperationCanceledException) { MultiCandidateStatusText.Text = "Đã dừng quét."; }
@@ -246,13 +257,14 @@ public sealed partial class MasqueColoPanel : UserControl
     {
         try
         {
+            MasqueEndpointLab.PruneFailedResults();
             var history = MasqueEndpointLab.LoadResults();
             if (history == null) return;
             var selection = MasqueEndpointLab.LoadSelection();
-            _masqueRows.AddRange(history.Results);
+            _masqueRows.AddRange(history.Results.Where(r => r.Success));
             _highlightedEndpoint = selection;
             RefreshMasqueResults();
-            MasqueStatusText.Text = $"Đã khôi phục {history.Results.Count} kết quả. Lần cập nhật cuối: {history.MeasuredAt.ToLocalTime():dd/MM HH:mm}. Kết quả cũ có thể thay đổi theo mạng/thời điểm.";
+            MasqueStatusText.Text = $"Đã khôi phục {_masqueRows.Count} endpoint hoạt động. Lần cập nhật cuối: {history.MeasuredAt.ToLocalTime():dd/MM HH:mm}. Kết quả cũ có thể thay đổi theo mạng/thời điểm.";
         }
         catch (Exception ex) { MasqueStatusText.Text = "Không đọc được lịch sử đo: " + ex.Message; }
     }
@@ -292,13 +304,39 @@ public sealed partial class MasqueColoPanel : UserControl
                 counts[colo] = counts.GetValueOrDefault(colo) + 1;
         }
 
-        var chips = new List<ColoChip> { new("__all", $"Tất cả ({allRows.Count})", _activeColoFilters.Count == 0) };
-        foreach (var (colo, count) in counts.OrderByDescending(kv => kv.Value))
+        int okCount = allRows.Count(r => r.Success);
+        var chips = new List<ColoChip> { new("__all", $"Hoạt động ({okCount})", _activeColoFilters.Count == 0) };
+        foreach (var (colo, count) in counts.OrderByDescending(kv => RoutingCandidateScorer.ColoTier(kv.Key)).ThenByDescending(kv => kv.Value))
             chips.Add(new ColoChip(colo, $"{colo} ({count})", _activeColoFilters.Contains(colo)));
         if (errorCount > 0)
             chips.Add(new ColoChip("__error", $"Lỗi ({errorCount})", _activeColoFilters.Contains("__error")));
 
         ColoChipsList.ItemsSource = chips;
+        if (PruneFailedMasqueButton != null)
+        {
+            PruneFailedMasqueButton.Visibility = errorCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PruneFailedMasqueButton.Content = $"🧹 Dọn {errorCount} lỗi";
+        }
+    }
+
+    private void PruneFailedMasque_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            int removed = MasqueEndpointLab.PruneFailedResults();
+            _masqueRows.RemoveAll(r => !r.Success);
+            _activeColoFilters.Remove("__error");
+            if (_highlightedEndpoint != null && !_masqueRows.Any(r => r.Endpoint == _highlightedEndpoint))
+                _highlightedEndpoint = null;
+            RefreshMasqueResults();
+            MasqueStatusText.Text = removed > 0
+                ? $"Đã dọn {removed} endpoint lỗi khỏi lịch sử."
+                : "Không còn endpoint lỗi nào.";
+        }
+        catch (Exception ex)
+        {
+            MasqueStatusText.Text = "Lỗi khi dọn danh sách: " + ex.Message;
+        }
     }
 
     private void ScanExtendedMasque_Click(object sender, RoutedEventArgs e)
@@ -325,9 +363,18 @@ public sealed partial class MasqueColoPanel : UserControl
         if (_activeColoFilters.Count > 0)
             rows = rows.Where(row => _activeColoFilters.Contains("__error") && !row.Success
                 || row.Colos.Any(colo => _activeColoFilters.Contains(colo)));
+        else
+            // Mặc định ẩn các endpoint lỗi để không rác màn hình — người dùng vẫn có thể bấm chip "Lỗi (N)" để xem hoặc bấm "Dọn lỗi" để xoá hẳn.
+            rows = rows.Where(row => row.Success);
+
         if (_httpSortAscending is { } ascending)
             rows = rows.OrderBy(row => row.WarmHttpMs == null)
                 .ThenBy(row => ascending ? row.WarmHttpMs : -row.WarmHttpMs);
+        else
+            // Mặc định đẩy HKG/TPE lên đầu rồi theo ms thấp nhất.
+            rows = rows.OrderByDescending(row => row.Success)
+                .ThenByDescending(row => row.Colos.Select(RoutingCandidateScorer.ColoTier).DefaultIfEmpty(0).Max())
+                .ThenBy(row => row.WarmHttpMs ?? double.MaxValue);
         var visible = rows.ToList();
 
         var roster = MasqueCandidateRoster.Load();
@@ -351,9 +398,12 @@ public sealed partial class MasqueColoPanel : UserControl
 
         MasqueResults.ItemsSource = wrapped;
         MasqueResults.SelectedItem = wrapped.FirstOrDefault(row => row.Endpoint == _highlightedEndpoint);
+        int hiddenErrors = _activeColoFilters.Count == 0 ? _masqueRows.Count(r => !r.Success) : 0;
         MasqueCountText.Text = visible.Count == 0 && _masqueRows.Count > 0
             ? $"Không có colo phù hợp · 0/{_masqueRows.Count}"
-            : $"Hiển thị {visible.Count}/{_masqueRows.Count} endpoint";
+            : hiddenErrors > 0
+                ? $"Hiển thị {visible.Count} endpoint hoạt động (đã ẩn {hiddenErrors} lỗi)"
+                : $"Hiển thị {visible.Count}/{_masqueRows.Count} endpoint";
 
         RefreshRosterStrip(roster);
     }
@@ -457,28 +507,43 @@ public sealed partial class MasqueColoPanel : UserControl
         if (_masqueScan != null) return;
         using var cancellation = new CancellationTokenSource();
         _masqueScan = cancellation;
-        MasqueScanButton.IsEnabled = MasqueApplyButton.IsEnabled = MasqueResetButton.IsEnabled = MasqueRetestButton.IsEnabled = MasqueExtendedCheck.IsEnabled = false;
+        MasqueScanButton.IsEnabled = MasqueExtendedScanButton.IsEnabled = MasqueApplyButton.IsEnabled = MasqueResetButton.IsEnabled = MasqueRetestButton.IsEnabled = MasqueExtendedCheck.IsEnabled = false;
         MasqueCancelButton.IsEnabled = true;
         int measured = 0;
-        MasqueStatusText.Text = "Đang đo; kết quả được lưu sau mỗi endpoint. Đo mở rộng có thể mất 10–15 phút.";
+        int succeeded = 0;
+        int skippedErrors = 0;
+        // Dọn sạch mọi endpoint lỗi cũ ngay khi bắt đầu quét lại.
+        _masqueRows.RemoveAll(r => !r.Success);
+        _activeColoFilters.Remove("__error");
+        RefreshMasqueResults();
+        MasqueStatusText.Text = "Đang đo; chỉ giữ các endpoint hoạt động, các colo lỗi sẽ tự bị loại bỏ. Đo mở rộng có thể mất 10–15 phút.";
         try
         {
             await MasqueEndpointLab.ScanAsync(result =>
             {
-                int index = _masqueRows.FindIndex(row => row.Endpoint == result.Endpoint);
-                if (index >= 0) _masqueRows[index] = result;
-                else _masqueRows.Add(result);
+                measured++;
+                _masqueRows.RemoveAll(row => row.Endpoint == result.Endpoint);
+                if (result.Success)
+                {
+                    _masqueRows.Add(result);
+                    succeeded++;
+                }
+                else
+                {
+                    skippedErrors++;
+                    if (_highlightedEndpoint == result.Endpoint) _highlightedEndpoint = null;
+                }
                 RefreshMasqueResults();
-                MasqueStatusText.Text = $"Đã đo và lưu {++measured} endpoint trong lượt này. Đang tiếp tục…";
+                MasqueStatusText.Text = $"Đã đo {measured} endpoint ({succeeded} hoạt động · đã bỏ {skippedErrors} lỗi). Đang tiếp tục…";
             }, cancellation.Token, MasqueExtendedCheck.IsChecked == true, only);
-            MasqueStatusText.Text = "Đã đo xong. Chọn dòng thành công để thử với game. Báo cáo lưu trong Data/masque-endpoint-results.json.";
+            MasqueStatusText.Text = $"Đã đo xong — {succeeded} hoạt động, đã tự dọn {skippedErrors} endpoint lỗi.";
         }
         catch (OperationCanceledException) { MasqueStatusText.Text = "Đã dừng đo; các kết quả đã đo vẫn được giữ."; }
         catch (Exception ex) { MasqueStatusText.Text = ex.Message; }
         finally
         {
             _masqueScan = null;
-            MasqueScanButton.IsEnabled = MasqueApplyButton.IsEnabled = MasqueResetButton.IsEnabled = MasqueRetestButton.IsEnabled = MasqueExtendedCheck.IsEnabled = true;
+            MasqueScanButton.IsEnabled = MasqueExtendedScanButton.IsEnabled = MasqueApplyButton.IsEnabled = MasqueResetButton.IsEnabled = MasqueRetestButton.IsEnabled = MasqueExtendedCheck.IsEnabled = true;
             MasqueCancelButton.IsEnabled = false;
         }
     }

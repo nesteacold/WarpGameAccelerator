@@ -111,6 +111,22 @@ public sealed partial class MultiClientPage : Page
         }
     }
 
+    private async void LocalOptionToggle_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (GetRow(sender) is { } row)
+            {
+                await ViewModel.ToggleLocalOptionAsync(row);
+                if (sender is CheckBox cb) cb.IsChecked = row.LocalOptionEnabled;
+            }
+        }
+        catch (Exception ex)
+        {
+            CrashReportService.RecordCrash(ex, "MultiClientPage.LocalOptionToggle_Click");
+        }
+    }
+
     private void DecCount_Click(object sender, RoutedEventArgs e)
     {
         try

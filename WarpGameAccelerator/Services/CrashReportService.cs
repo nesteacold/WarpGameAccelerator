@@ -82,66 +82,69 @@ public class CrashReportService
         catch { return null; }
     }
 
-    public static void ClearPendingCrashReport()
+    public static void ClearPendingCrashReport() => ClearPendingCrashReport(CrashPendingPath);
+
+    public static void ClearPendingCrashReport(string pendingPath)
     {
         try
         {
-            if (File.Exists(CrashPendingPath)) File.Delete(CrashPendingPath);
+            if (File.Exists(pendingPath)) File.Delete(pendingPath);
         }
         catch { }
     }
 
-    // ── Gửi Báo Cáo Lỗi Lên GitHub Issues qua REST API ─────────
-    public static async Task<bool> SendCrashReportToGitHubAsync(CrashReportInfo info)
+    // ── Gửi báo cáo crash ──────────────────────────────────────
+    // Đường cũ POST lên GitHub API mà KHÔNG có token — đã đo: trả 401 "Requires authentication",
+    // tức hàm không thể trả true bao giờ. Tệ hơn: ClearPendingCrashReport() chạy VÔ ĐIỀU KIỆN ngay
+    // sau PostAsync (và lần nữa trong catch), nên vết crash duy nhất vừa bắt được bị xoá dù gửi hỏng,
+    // trong khi dialog vẫn báo "✓ Đã lưu vết lỗi nội bộ".
+    // Nay: gửi qua kênh Discord đã cấu hình sẵn (kênh mà BugReportService dùng và đã biết là chạy),
+    // và CHỈ xoá pending khi server xác nhận thành công — thất bại thì giữ để hỏi lại lần sau.
+    public static async Task<bool> UploadPendingCrashAsync(CrashReportInfo info)
     {
+        var endpoint = BugReportService.GetWebhookUrl();
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return false;   // giữ pending: chưa có kênh gửi thì chưa nên vứt bằng chứng
+
+        return await SubmitAsync(info, endpoint, CrashPendingPath);
+    }
+
+    // Tách mạng ra khỏi quyết định "có xoá bằng chứng không" để test được bằng endpoint giả (lab).
+    public static async Task<bool> SubmitAsync(CrashReportInfo info, string endpointUrl, string pendingPath)
+    {
+        string body = BuildBody(info);
+
         try
         {
             using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(6); // Timeout ngắn 6s
+            client.Timeout = TimeSpan.FromSeconds(6);
             client.DefaultRequestHeaders.Add("User-Agent", "WarpGameAccelerator-Telemetry");
 
-            // Tự động tạo Issue trên GitHub Repository
-            string issueTitle = $"[Crash Report] v{info.AppVersion} - {info.ExceptionType}";
-            string issueBody = $@"### ⚠️ Automated Crash Report
-
-| Thống số | Chi tiết |
-|---|---|
-| **App Version** | `v{info.AppVersion}` |
-| **OS Version** | `{info.OsVersion}` |
-| **Thời gian** | `{info.Timestamp}` |
-| **Loại Ngoại Lệ** | `{info.ExceptionType}` |
-
-#### 📝 Thông điệp lỗi:
-```text
-{info.Message}
-```
-
-#### 🔍 Stack Trace:
-```text
-{info.StackTrace}
-```
-";
-
-            var payload = new
-            {
-                title = issueTitle,
-                body  = issueBody,
-                labels = new[] { "bug", "crash-report" }
-            };
-
-            // Đăng lên endpoint báo cáo crash công khai của repository
+            var payload = new { content = body };
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var response = await client.PostAsync("https://api.github.com/repos/nesteacold/WarpGameAccelerator/issues", content);
+            var response = await client.PostAsync(endpointUrl, content);
 
-            ClearPendingCrashReport();
-            return response.IsSuccessStatusCode;
+            if (!response.IsSuccessStatusCode) return false;    // GIỮ lại vết để hỏi lần sau
+
+            ClearPendingCrashReport(pendingPath);
+            return true;
         }
         catch
         {
-            // Nếu mất mạng hoặc API fail, xóa pending để không làm phiền người dùng
-            ClearPendingCrashReport();
-            return false;
+            return false;                                        // mất mạng ≠ mất bằng chứng
         }
+    }
+
+    public static string BuildBody(CrashReportInfo info)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"**Crash tự động** — v{info.AppVersion} · {info.Timestamp}");
+        sb.AppendLine($"**OS:** {info.OsVersion}");
+        sb.AppendLine($"**Loại:** `{info.ExceptionType}`");
+        sb.AppendLine($"```text\n{info.Message}\n```");
+        sb.AppendLine($"**Stack:**");
+        sb.AppendLine($"```text\n{info.StackTrace}\n```");
+        return BugReportService.ClampKeepingFences(sb.ToString(), BugReportService.MaxMessageChars);
     }
 
     private static string GetAppVersion()

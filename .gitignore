@@ -20,3 +20,23 @@ experiments/**/bin/
 
 # Logs
 *.log
+# artifact thí nghiệm (dump + log, chứa đường dẫn cá nhân)
+experiments/**/work/
+experiments/**/captures/
+
+# Developer-only private extensions & internal artifacts (NEVER commit or push publicly)
+WarpGameAccelerator/Private/
+WarpGameAccelerator/binVerifyBuild*
+AOW_Booster.code-workspace
+**/__pycache__/
+*.pyc
+experiments/masque-test/runtime/
+experiments/lab-isolation/telemetry_state.json
+docs/hang-audit-findings.md
+docs/upgrade-backlog.md
+docs/upgrade-candidates-2026-11.md
+experiments/disk-audit/
+experiments/post-tag-verification/channel_state.json
+experiments/batch47-verify/
+experiments/game-path-probe/analyze_launch_path.py
+

@@ -19,6 +19,19 @@ public partial class App : Application
     /// <summary>HWND của MainWindow — cần cho FileOpenPicker</summary>
     public IntPtr MainWindowHandle { get; private set; }
 
+    /// <summary>#28: mô tả ngắn gọn "bản này chạy từ đâu" — xem ghi chú ở nơi dùng nó.</summary>
+    private static string DescribeRunContext()
+    {
+        var exe = Environment.ProcessPath ?? string.Empty;
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrEmpty(home) && exe.StartsWith(home, StringComparison.OrdinalIgnoreCase))
+            exe = "~" + exe.Substring(home.Length);            // cắt phần chứa tên người dùng
+        string flavor = exe.Contains(@"\bin\Debug\", StringComparison.OrdinalIgnoreCase)  ? "DEV-Debug"
+                      : exe.Contains(@"\bin\Release\", StringComparison.OrdinalIgnoreCase) ? "DEV-Release"
+                      : "installed/other";
+        return $"[nguồn chạy] flavor={flavor} exe={exe} version={typeof(App).Assembly.GetName().Version}";
+    }
+
     public App()
     {
         var logDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WarpGameAccelerator", "Logs");
@@ -29,6 +42,16 @@ public partial class App : Application
         // KHÔNG có dòng "=== THOÁT SẠCH ===" thì biết chắc phiên trước bị kết
         // thúc đột ngột (silent exit) chứ không phải người dùng tự thoát.
         DiagnosticLogService.Trace("================ APP KHỞI ĐỘNG ================");
+
+        // #28 (batch 43): ghi nguồn chạy mỗi phiên. LÝ DO ĐÃ PHẢI SỬA (batch 52): dòng này lúc đầu
+        // được dựng vì tin rằng "1002 không chứa đường dẫn nên không tách được dev/install" — SAI:
+        // đọc XML của sự kiện (trường EventData `ExeFileName`) là có, và nó cho thấy 48/48 lần treo
+        // đều ở `bin\Debug\...\win-x64` (máy dev, một chuỗi đường dẫn duy nhất). Giá trị còn lại:
+        // (a) log của NGƯỜI DUNG thật — báo lỗi của họ không kèm Event Log máy khác, nên dòng này tự
+        // nói phiên đó chạy bản nào; (b) định danh flavor/version cho các kênh không có `ExeFileName`
+        // (WER archive rỗng, silent exit). Bài học phương pháp: đọc EventData của sự kiện, đừng chỉ
+        // parse đoạn message text.
+        DiagnosticLogService.Trace(DescribeRunContext());
 
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
@@ -71,6 +94,8 @@ public partial class App : Application
         DispatcherQueue = _mainWindow.DispatcherQueue;
         MainWindowHandle = WindowNative.GetWindowHandle(_mainWindow);
         _mainWindow.Activate();
+
+        LocalLaunchExtension.Current?.OnAppLaunched(Services);
 
         // Chuẩn bị sẵn tài khoản WARP (tự đăng ký qua wgcf nếu chưa có) ngay khi
         // app khởi động, để lúc người dùng bấm Boost không phải chờ đăng ký.
@@ -137,6 +162,7 @@ public partial class App : Application
                 sp.GetRequiredService<PingMonitorService>(),
                 sp.GetRequiredService<LocalizationService>()));
         services.AddSingleton<MultiClientViewModel>();
+        LocalLaunchExtension.Current?.ConfigureServices(services);
 
         // Windows
         services.AddSingleton<MainWindow>();

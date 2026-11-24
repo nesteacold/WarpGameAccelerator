@@ -143,9 +143,23 @@ public static class NvOverlayOptimizerService
             psi.ArgumentList.Add(command);
 
             using var process = Process.Start(psi)!;
-            string output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            return output;
+            // Mo stderr thi PHAI rut ca hai luong, va phai co tran: threshold deadlock do bang
+            // experiments/redirect-deadlock = stderr >=8 KB (ca sync lan async). Xem WireGuardConflictGuard.
+            var outT = process.StandardOutput.ReadToEndAsync();
+            var errT = process.StandardError.ReadToEndAsync();
+            using var cts = new CancellationTokenSource(WireGuardConflictGuard.PowerShellTimeoutMs);
+            try
+            {
+                await process.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                DiagnosticLogService.Trace($"powershell qua {WireGuardConflictGuard.PowerShellTimeoutMs / 1000}s khong tra loi → dung: " + command[..Math.Min(72, command.Length)]);
+                return string.Empty;
+            }
+            _ = await errT;
+            return await outT;
         }
         catch (Exception ex)
         {

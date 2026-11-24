@@ -63,19 +63,35 @@ public static class ConflictDetectionService
     /// <summary>Gọi lúc Start Boost — chỉ mitigate các conflict đang bật toggle.</summary>
     public static async Task MitigateEnabledAsync()
     {
+        // Batch 63-65 (#42/#44): 25/42 ca treo da xac dinh im lang 4-12 s sau khi sinh, va khoang
+        // trong 'binh thuong' giua dong guard voi buoc ke tiep do duoc la
+        // p50 4,3 s (p10 1,0 s, max 26,7 s, n=6) — tuc im lang RIENG thi khong phan biet duoc
+        // 'treo' voi 'dang cho binh thuong'. Mark() cho thread-nay-dang-o-dau, con duration cho
+        // bieet buoc nay ton bao lau, ca hai thu deu doc duoc ngay ca khi khong co treo.
+        HangWatchdog.Mark("phat hien xung dot — tam dung tunnel");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         if (IsEnabled(WireGuardForWindowsId))
             await WireGuardConflictGuard.PauseAsync();
 
         if (IsEnabled(HyperVVmsBindingId))
             await HyperVConflictGuard.PauseAsync();
+        sw.Stop();
+        DiagnosticLogService.Trace($"[xung dot] tam dung xong trong {sw.ElapsedMilliseconds} ms");
+        HangWatchdog.Mark("phat hien xung dot — xong buoc tam dung");
     }
 
-    /// <summary>Gọi lúc Stop Boost — luôn thử khôi phục cả 2 (mỗi guard tự no-op nếu không có gì để trả lại), tránh kẹt conflict ở trạng thái tắt nếu người dùng đổi toggle giữa chừng phiên Boost.</summary>
+    /// <summary>Gọi lúc Stop Boost — luôn thử khôi phục cả 2 (mỗi guard tự no-op nếu không có gì để phục hồi).</summary>
     public static async Task RestoreAllAsync()
     {
+        HangWatchdog.Mark("phat hien xung dot — khoi phục tunnel");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         await WireGuardConflictGuard.ResumeAsync();
         await HyperVConflictGuard.ResumeAsync();
+        sw.Stop();
+        DiagnosticLogService.Trace($"[xung dot] khoi phục xong trong {sw.ElapsedMilliseconds} ms");
+        HangWatchdog.Mark("phat hien xung dot — xong khoi phục");
     }
+
 
     private static Dictionary<string, bool> LoadToggles()
     {

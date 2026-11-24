@@ -53,11 +53,25 @@ public static class MasqueEndpointLab
     public static MasqueProbeHistory? LoadResults() => File.Exists(ResultsPath)
         ? JsonSerializer.Deserialize<MasqueProbeHistory>(File.ReadAllText(ResultsPath)) : null;
 
+    /// <summary>Xoá toàn bộ các endpoint đo lỗi (Success == false) khỏi lịch sử lưu trên đĩa để tránh rác danh sách.</summary>
+    public static int PruneFailedResults()
+    {
+        var history = LoadResults();
+        if (history == null) return 0;
+        int before = history.Results.Count;
+        var kept = history.Results.Where(r => r.Success).ToList();
+        int removed = before - kept.Count;
+        if (removed > 0)
+            SaveResults(kept);
+        return removed;
+    }
+
     private static void SaveResults(List<MasqueProbeResult> results)
     {
         Directory.CreateDirectory(DataDir);
+        var clean = results.Where(r => r.Success).ToList();
         File.WriteAllText(ResultsPath + ".tmp", JsonSerializer.Serialize(
-            new MasqueProbeHistory(DateTimeOffset.Now, results), new JsonSerializerOptions { WriteIndented = true }));
+            new MasqueProbeHistory(DateTimeOffset.Now, clean), new JsonSerializerOptions { WriteIndented = true }));
         File.Move(ResultsPath + ".tmp", ResultsPath, true);
     }
 
@@ -124,15 +138,19 @@ public static class MasqueEndpointLab
         }
         if (only != null) endpoints = [only];
 
-        // Merge with prior measurements, including partial scans, rather than erasing untested rows.
-        var results = LoadResults()?.Results ?? new List<MasqueProbeResult>();
+        // Gộp với các kết quả ĐO THÀNH CÔNG trước đó và tự dọn sạch mọi endpoint lỗi để không rác danh sách.
+        var results = (LoadResults()?.Results ?? new List<MasqueProbeResult>())
+            .Where(r => r.Success)
+            .ToList();
+        SaveResults(results);
         foreach (var endpoint in endpoints.Distinct())
         {
             token.ThrowIfCancellationRequested();
             var result = (await ProbeAsync(account, endpoint, token)) with { MeasuredAt = DateTimeOffset.Now };
             results.RemoveAll(row => row.Endpoint == endpoint);
-            results.Add(result);
-            SaveResults(results); // Commit every completed endpoint before updating the view.
+            if (result.Success)
+                results.Add(result);
+            SaveResults(results); // Luôn chỉ lưu endpoint hoạt động; endpoint lỗi tự bị dọn ngay.
             report(result);
         }
     }
