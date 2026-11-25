@@ -32,9 +32,20 @@ public partial class GameFolderRowViewModel : ObservableObject
     [ObservableProperty] private bool _canToggleLocalOption;
     [ObservableProperty] private string _localOptionTooltip = string.Empty;
     [ObservableProperty] private bool _isUpdatingLocalOption;
+    [ObservableProperty] private bool _secondaryLocalOptionEnabled;
+    [ObservableProperty] private bool _canToggleSecondaryLocalOption;
+    [ObservableProperty] private string _secondaryLocalOptionTooltip = string.Empty;
+    [ObservableProperty] private bool _isUpdatingSecondaryLocalOption;
+    [ObservableProperty] private bool _isLocalOptionsReady = LocalLaunchExtension.Current == null;
+    // Mỗi lượt RefreshLocalOptionState tăng số này; lượt dò nền cũ hơn thấy số đã đổi thì bỏ kết quả.
+    private int _refreshVersion;
+    private const string TooltipCheckFailed = "Không kiểm tra được tuỳ chọn thư mục.";
 
     public bool HasLocalOption => LocalLaunchExtension.IsAvailable;
     public string LocalOptionLabel => LocalLaunchExtension.Current?.OptionLabel ?? string.Empty;
+
+    public bool HasSecondaryLocalOption => !string.IsNullOrEmpty(LocalLaunchExtension.Current?.SecondaryOptionLabel);
+    public string SecondaryLocalOptionLabel => LocalLaunchExtension.Current?.SecondaryOptionLabel ?? string.Empty;
     [ObservableProperty] private string _versionText = string.Empty;
     [ObservableProperty] private int _runningCount;
     [ObservableProperty] private bool _isExpanded;
@@ -81,8 +92,8 @@ public partial class GameFolderRowViewModel : ObservableObject
         ClientCount = clientCount <= 0 ? 1 : clientCount;
         AddedAt = addedAt;
         Token = token;
-        LocalOptionEnabled = LocalLaunchExtension.Current?.IsFolderEnabled(path) == true;
         ArgumentSourceStart = argumentSourceStart;
+
         RefreshLocalOptionState();
 
         // Đọc version ở LUỒNG NỀN, không chặn UI: TryLoadVersion gọi
@@ -108,16 +119,55 @@ public partial class GameFolderRowViewModel : ObservableObject
     public void RefreshLocalOptionState()
     {
         var ext = LocalLaunchExtension.Current;
-        if (ext == null) return;
+        if (ext == null)
+        {
+            IsLocalOptionsReady = true;
+            return;
+        }
         var dispatcher = DispatcherQueue.GetForCurrentThread();
+        // Đánh dấu "chưa sẵn sàng" ngay trên luồng gọi, TRƯỚC khi dò nền, để nút mở game không đọc
+        // trạng thái cũ trong lúc kết quả của lượt dò này còn đang trên đường tới.
+        int version = Interlocked.Increment(ref _refreshVersion);
+        IsLocalOptionsReady = false;
         _ = Task.Run(() =>
         {
-            var (canEnable, isEnabled, tip) = ext.EvaluateFolder(Path);
+            (bool canEnable, bool isEnabled, string tip) primary;
+            (bool canSecondary, bool secondaryEnabled, string secondaryTip) secondary;
+            try
+            {
+                // Cả hai ô tick đều dò trên luồng nền: EvaluateFolder/EvaluateSecondaryFolder có
+                // File.Exists/đọc file trong bin64, chạy thẳng trên UI thread có thể chặn vài giây.
+                primary = ext.EvaluateFolder(Path);
+                secondary = ext.EvaluateSecondaryFolder(Path);
+            }
+            catch (Exception ex)
+            {
+                CrashReportService.RecordCrash(ex, "GameFolderRowViewModel.RefreshLocalOptionState");
+                void ApplyError()
+                {
+                    if (version != Volatile.Read(ref _refreshVersion)) return;
+                    // Đánh giá thất bại: khoá cả hai tuỳ chọn và giữ chưa sẵn sàng để không khởi chạy với trạng thái chưa xác minh.
+                    CanToggleLocalOption = false;
+                    CanToggleSecondaryLocalOption = false;
+                    LocalOptionTooltip = TooltipCheckFailed;
+                    SecondaryLocalOptionTooltip = TooltipCheckFailed;
+                    IsLocalOptionsReady = false;
+                }
+                if (dispatcher != null) dispatcher.TryEnqueue(ApplyError); else ApplyError();
+                return;
+            }
             void Apply()
             {
-                LocalOptionEnabled = isEnabled;
-                CanToggleLocalOption = canEnable && !IsUpdatingLocalOption;
-                LocalOptionTooltip = tip;
+                if (version != Volatile.Read(ref _refreshVersion)) return;
+                LocalOptionEnabled = primary.isEnabled;
+                CanToggleLocalOption = primary.canEnable && !IsUpdatingLocalOption;
+                LocalOptionTooltip = primary.tip;
+                SecondaryLocalOptionEnabled = secondary.secondaryEnabled;
+                // Cho phép bỏ chọn tuỳ chọn phụ ngay cả khi điều kiện hiện đang chặn,
+                // để người dùng vẫn gỡ được lựa chọn đã lưu.
+                CanToggleSecondaryLocalOption = (secondary.canSecondary || secondary.secondaryEnabled) && !IsUpdatingSecondaryLocalOption;
+                SecondaryLocalOptionTooltip = secondary.secondaryTip;
+                IsLocalOptionsReady = true;
             }
             if (dispatcher != null) dispatcher.TryEnqueue(Apply); else Apply();
         });
@@ -175,6 +225,29 @@ public partial class MultiClientViewModel : ObservableObject
     private readonly DispatcherQueue? _dispatcher;
     private volatile bool _refreshInFlight;
     private bool _refreshQueued;
+    // Chỉ ghi file ở luồng nền — nhiều lượt PersistFolders có thể chồng nhau, serialize bằng lock.
+    private readonly object _persistLock = new();
+    // Chưa dựng xong danh sách lúc khởi động thì KHÔNG được ghi: ghi sớm sẽ ghi đè file đã lưu bằng
+    // danh sách rỗng/chưa ghép. Lượt ghi bị chặn được ghi nhớ (pending) và chạy lại sau khi nạp xong.
+    // Ba trạng thái nạp: Loading (chưa có dữ liệu đĩa) / Loaded (đã ghép danh sách đĩa vào Folders) /
+    // Failed (đọc hoặc ghép hỏng — chỉ khi này mới được đọc lại đĩa lúc ghi để không xoá mất dòng đã lưu).
+    private enum LoadLifecycle { Loading, Loaded, Failed }
+    // R5 Major 4: worker nền đọc trạng thái này để bỏ lượt ghi bị từ chối, nên phải nguyên tử —
+    // enum (int) ghi/đọc bằng Volatile thay vì để torn read trên trampoline UI.
+    private int _loadState = (int)LoadLifecycle.Loading;
+    private LoadLifecycle CurrentLoadState => (LoadLifecycle)Volatile.Read(ref _loadState);
+    private void SetLoadState(LoadLifecycle s) => Volatile.Write(ref _loadState, (int)s);
+    private bool _persistPending;
+    // Snapshot mới nhất chưa ghi ra đĩa; một worker duy nhất rút dần theo thứ tự nên lượt cũ không
+    // bao giờ ghi đè lượt mới, và không mất thay đổi nào chỉ xảy ra trong lúc worker đang ghi.
+    private List<GameFolderEntry>? _latestPersistSnapshot;
+    private bool _latestPersistNeedsDiskMerge;
+    // R6 Major 3: đường dẫn người dùng đã CHỦ Ý xoá. Lượt ghi hợp nhất đọc lại đĩa (khi nạp Failed) phải
+    // biết điều này, nếu không dòng đã xoá còn nằm trong file sẽ được đọc lên và sống lại.
+    private readonly HashSet<string> _removedPaths = new(StringComparer.OrdinalIgnoreCase);
+    // Snapshot _removedPaths của lượt ghi mới nhất — như _latestPersistSnapshot, một worker rút dần theo thứ tự.
+    private HashSet<string>? _latestPersistRemovedPaths;
+    private bool _persistWorkerRunning;
 
     public ObservableCollection<GameFolderRowViewModel> Folders { get; } = new();
 
@@ -194,8 +267,9 @@ public partial class MultiClientViewModel : ObservableObject
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         _instance = this;
 
+        // Đọc danh sách ở luồng nền và chỉ dựng hàng về UI thread (LoadState tự RefreshRunning
+        // sau khi dựng xong) — nạp đồng bộ cây thư mục ngay tại đây làm đóng băng cửa sổ lúc mở.
         LoadState();
-        RefreshRunning();
 
         _refreshTimer = new DispatcherTimer
         {
@@ -223,24 +297,236 @@ public partial class MultiClientViewModel : ObservableObject
     // ── Khởi động: nạp danh sách thư mục đã lưu (token đi kèm mỗi thư mục) ──
     private void LoadState()
     {
+        var dispatcher = _dispatcher;
+        if (dispatcher == null)
+        {
+            // R5 Major 4: không có hàng đợi UI (vd headless/không phải UI thread) thì đọc ngay trên
+            // thread này — KHÔNG dựng thread nền chạm vào Folders/Folders.Add ẩn khỏi người gọi.
+            // R6 Major 2: lỗi ngoài dự kiến cũng phải chốt Failed, không thì _loadState kẹt Loading mãi.
+            try
+            {
+                var (ok, entries, err) = MultiClientService.TryLoadGameFolders();
+                FinishLoadOnUi(ok ? entries : null, ok ? null : (err ?? new InvalidOperationException("Không đọc được danh sách thư mục đã lưu.")));
+            }
+            catch (Exception ex) { FinishLoadOnUi(null, ex); }
+            return;
+        }
         try
         {
-            var entries = MultiClientService.LoadGameFolders();
-            foreach (var e in entries)
-                Folders.Add(new GameFolderRowViewModel(e.Path, e.LastClientCount, e.AddedAt, e.Token,
-                    e.ArgumentSourceStart));
+            _ = Task.Run(() =>
+            {
+                // R6 Major 2: nạp hỏng ném ra ngoài Task sẽ mất, _loadState kẹt Loading — bọc tại đây.
+                try
+                {
+                    var (ok, entries, err) = MultiClientService.TryLoadGameFolders();
+                    DispatchFinishLoad(dispatcher, ok ? entries : null, ok ? null : (err ?? new InvalidOperationException("Không đọc được danh sách thư mục đã lưu.")));
+                }
+                catch (Exception ex) { DispatchFinishLoad(dispatcher, null, ex); }
+            });
+        }
+        catch (Exception ex)
+        {
+            // Không tạo được lượt đọc/pump nào: kết thúc lượt nạp ngay bằng trạng thái hỏng, để lần lỗi
+            // này tháo cờ chặn ghi thay vì khoá vĩnh viễn việc lưu.
+            FinishLoadOnUi(null, ex);
+        }
+    }
+
+    /// <summary>
+    /// Đưa lượt kết thúc nạp về UI thread. Không xếp được vào hàng đợi UI thì bỏ lượt nạp (chốt Failed)
+    /// và trả về; lượt ghi kế tiếp tự đọc lại đĩa trước khi ghi nên không mất dòng đã lưu.
+    /// </summary>
+    private void DispatchFinishLoad(DispatcherQueue dispatcher, List<GameFolderEntry>? entries, Exception? loadEx)
+    {
+        try
+        {
+            if (dispatcher.TryEnqueue(() => FinishLoadOnUi(entries, loadEx))) return;
         }
         catch (Exception ex)
         {
             CrashReportService.RecordCrash(ex, "MultiClientViewModel.LoadState");
         }
+        // Đã có dispatcher mà không xếp được lệnh: gọi FinishLoadOnUi ngay ở đây sẽ sờ vào
+        // ObservableCollection trên luồng nền và ném lỗi. Bỏ lượt nạp này, chốt trạng thái Failed
+        // (chưa ghép được dữ liệu đĩa, nên không được coi là Loaded).
+        // R5 Major 4: lượt ghi đang chờ chỉ được chạy từ FinishLoadOnUi TRÊN UI thread; ở đây gọi
+        // PersistFolders/RefreshRunning sẽ chạm Folders từ worker, nên chỉ báo lỗi và đánh Failed —
+        // lượt ghi thường sau đó thấy Failed nên tự đi nhánh hợp nhất đọc lại đĩa.
+        CrashReportService.RecordCrash(new InvalidOperationException(
+            "Không xếp được FinishLoadOnUi vào DispatcherQueue; bỏ lượt nạp."),
+            "MultiClientViewModel.DispatchFinishLoad");
+        SetLoadState(LoadLifecycle.Failed);
     }
 
+    /// <summary>
+    /// Kết thúc lượt nạp trên UI thread: ghép danh sách đã lưu vào Folders, chốt trạng thái nạp,
+    /// rồi ghi lượt bị chặn (nếu có) và refresh. Mọi đường (đọc được/hỏng, enqueue được/không)
+    /// đều đi qua đây nên stateLoaded không bao giờ bị bỏ quên hay mở sớm trên luồng nền.
+    /// </summary>
+    private void FinishLoadOnUi(List<GameFolderEntry>? entries, Exception? loadEx)
+    {
+        if (loadEx != null)
+        {
+            try
+            {
+                CrashReportService.RecordCrash(loadEx, "MultiClientViewModel.LoadState");
+                SetLoadState(LoadLifecycle.Failed);
+                // Chưa ghép được dữ liệu đĩa: lượt ghi đang chờ phải đi qua nhánh hợp nhất an toàn của
+                // PersistFolders (đọc lại file rồi mới ghi), không được ghi đè bằng danh sách bộ nhớ rỗng/thiếu.
+                if (_persistPending)
+                {
+                    _persistPending = false;
+                    PersistFolders();
+                }
+                try { RefreshRunning(); }
+                catch (Exception ex) { CrashReportService.RecordCrash(ex, "MultiClientViewModel.LoadState.Refresh"); }
+            }
+            catch (Exception ex)
+            {
+                // Không chạm được UI (vd đang ở luồng nền): vẫn phải thoát khỏi Loading, nếu không
+                // PersistFolders chỉ dồn lượt ghi vào _persistPending và không bao giờ ghi.
+                CrashReportService.RecordCrash(ex, "MultiClientViewModel.FinishLoadOnUi");
+                SetLoadState(LoadLifecycle.Failed);
+                _persistPending = false;
+            }
+            return;
+        }
+
+        if (entries != null)
+        {
+            try
+            {
+                // Bỏ qua thư mục đã được thêm trong lúc đọc file (vd thêm tay hay quét ổ
+                // ngay khi trang vừa mở) để không nhân đôi hàng.
+                foreach (var e in entries)
+                {
+                    // Người dùng đã xoá trong lúc còn Loading: không hồi sinh dòng đó (cùng lý do R6 Major 3).
+                    if (_removedPaths.Contains(e.Path)) continue;
+                    if (Folders.Any(f => string.Equals(f.Path, e.Path, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+                    Folders.Add(new GameFolderRowViewModel(e.Path, e.LastClientCount, e.AddedAt, e.Token,
+                        e.ArgumentSourceStart));
+                }
+                SetLoadState(LoadLifecycle.Loaded);
+            }
+            catch (Exception ex)
+            {
+                CrashReportService.RecordCrash(ex, "MultiClientViewModel.LoadState");
+                SetLoadState(LoadLifecycle.Failed);
+            }
+        }
+
+        // Không đọc được dữ liệu đĩa: chỉ chốt Failed khi còn Loading, không giẫm lên kết quả một lượt
+        // trước (vd lượt nạp đầu đã hỏng rồi lượt sau trả về null).
+        if (CurrentLoadState == LoadLifecycle.Loading) SetLoadState(LoadLifecycle.Failed);
+
+        // Mở cổng ghi NGAY trên UI thread; nếu danh sách trong bộ nhớ đã dài hơn file (vd AddFolder
+        // chạy trong lúc đọc, hoặc có lượt ghi bị chặn) thì ghi lại để file khớp với giao diện.
+        // Xếp lượt ghi TRƯỚC RefreshRunning: lỗi khi refresh không được làm mất lượt ghi đang chờ.
+        int diskCount = entries?.Count ?? 0;
+        bool needPersist = _persistPending
+            || (CurrentLoadState == LoadLifecycle.Loaded && diskCount > 0 && Folders.Count > diskCount);
+        _persistPending = false;
+        if (needPersist) PersistFolders();
+        try { RefreshRunning(); }
+        catch (Exception ex) { CrashReportService.RecordCrash(ex, "MultiClientViewModel.LoadState.Refresh"); }
+    }
+
+
+    /// <summary>
+    /// Ghi danh sách xuống đĩa ở luồng nền, ĐÚNG THỨ TỰ. Mỗi lượt chỉ thay snapshot "mới nhất"; một
+    /// worker duy nhất lấy snapshot, ghi, rồi lấy tiếp đến khi hết — nên lượt cũ không bao giờ ghi
+    /// đè lượt mới và không mất thay đổi xảy ra trong lúc đang ghi.
+    /// </summary>
     private void PersistFolders()
     {
+        var state = CurrentLoadState;
+        if (state == LoadLifecycle.Loading)
+        {
+            _persistPending = true;
+            return;
+        }
+        _persistPending = false;
         var entries = Folders.Select(f => new GameFolderEntry(f.Path, f.ClientCount, f.AddedAt, f.Token,
             f.ArgumentSourceStart)).ToList();
-        MultiClientService.SaveGameFolders(entries);
+        bool needsDiskMerge = state == LoadLifecycle.Failed;
+        // R6 Major 3: chỉ lượt ghi hợp nhất mới cần danh sách đã xoá, và chỉ chép khi thực sự cần.
+        HashSet<string>? removedSnapshot = needsDiskMerge && _removedPaths.Count > 0
+            ? new HashSet<string>(_removedPaths, StringComparer.OrdinalIgnoreCase)
+            : null;
+        bool startWorker = false;
+        lock (_persistLock)
+        {
+            _latestPersistSnapshot = entries;
+            _latestPersistNeedsDiskMerge = needsDiskMerge;
+            _latestPersistRemovedPaths = removedSnapshot;
+            if (!_persistWorkerRunning)
+            {
+                _persistWorkerRunning = true;
+                startWorker = true;
+            }
+        }
+        if (!startWorker) return;
+        _ = Task.Run(() =>
+        {
+            while (true)
+            {
+                List<GameFolderEntry>? batch;
+                bool batchNeedsDiskMerge;
+                HashSet<string>? batchRemovedPaths;
+                lock (_persistLock)
+                {
+                    batch = _latestPersistSnapshot;
+                    batchNeedsDiskMerge = _latestPersistNeedsDiskMerge;
+                    _latestPersistSnapshot = null;
+                    batchRemovedPaths = _latestPersistRemovedPaths;
+                    _latestPersistRemovedPaths = null;
+                    if (batch == null)
+                    {
+                        _persistWorkerRunning = false;
+                        return;
+                    }
+                }
+                try
+                {
+                    List<GameFolderEntry> toSave = batch;
+                    if (batchNeedsDiskMerge)
+                    {
+                        // R5 Major 3: TryLoad phân biệt "file hỏng/không đọc được" với "chưa có gì để
+                        // đọc" — file hỏng KHÔNG được coi là rỗng rồi ghi đè bằng đoạn bộ nhớ thiếu.
+                        var (diskOk, diskEntries, diskErr) = MultiClientService.TryLoadGameFolders();
+
+                        if (!diskOk)
+                        {
+                            // Không đọc được file đã lưu (hỏng/đang bị khoá): ghi đè bằng đoạn bộ nhớ
+                            // thiếu sẽ xoá mất dòng đang lưu — bỏ lượt ghi này, chỉ báo lỗi.
+                            CrashReportService.RecordCrash(
+                                diskErr ?? new InvalidOperationException(
+                                    "Bỏ qua lượt ghi hợp nhất vì không đọc được danh sách thư mục đã lưu."),
+                                "MultiClientViewModel.PersistFolders.LoadForMerge");
+                            // Phải continue: không thì rơi xuống SaveGameFolders(toSave) và ghi đè file
+                            // bằng đoạn bộ nhớ thiếu, đúng cái mà nhánh trên muốn ngăn.
+                            continue;
+                        }
+                        else
+                        {
+                            // Chỉ giữ các dòng CHỈ CÓ trên đĩa; dòng đang có trong bộ nhớ (kể cả vừa xoá,
+                            // nên không còn ở đây) giữ nguyên danh sách bộ nhớ.
+                            // R6 Major 3: dòng người dùng vừa xoá cũng không có ở bộ nhớ — nếu không
+                            // loại riêng, đọc đĩa lên sẽ khôi phục lại đúng nó.
+                            var merged = diskEntries
+                                .Where(d => !batch.Any(b => string.Equals(b.Path, d.Path, StringComparison.OrdinalIgnoreCase))
+                                    && (batchRemovedPaths == null || !batchRemovedPaths.Contains(d.Path)))
+                                .ToList();
+                            merged.AddRange(batch);
+                            toSave = merged;
+                        }
+                    }
+                    MultiClientService.SaveGameFolders(toSave);
+                }
+                catch (Exception ex) { CrashReportService.RecordCrash(ex, "MultiClientViewModel.PersistFolders"); }
+            }
+        });
     }
 
     // ── Thêm thư mục ─────────────────────────────────────────
@@ -261,6 +547,7 @@ public partial class MultiClientViewModel : ObservableObject
             {
                 if (Folders.Any(f => string.Equals(f.Path, folder, StringComparison.OrdinalIgnoreCase)))
                     continue;
+                _removedPaths.Remove(folder);
                 Folders.Add(new GameFolderRowViewModel(folder, 2, DateTimeOffset.Now));
                 added++;
             }
@@ -298,6 +585,7 @@ public partial class MultiClientViewModel : ObservableObject
                 DiscoveryStatusText = "Thư mục này đã có trong danh sách.";
                 return;
             }
+            _removedPaths.Remove(path);
             Folders.Add(new GameFolderRowViewModel(path, 2, DateTimeOffset.Now));
             PersistFolders();
             DiscoveryStatusText = "Đã thêm thư mục.";
@@ -312,10 +600,26 @@ public partial class MultiClientViewModel : ObservableObject
     {
         try
         {
-            if (LocalLaunchExtension.Current?.ClearFolderState(row.Path) is { } err)
-                DiagnosticLogService.Trace("  " + err);
+            var path = row.Path;
+            var ext = LocalLaunchExtension.Current;
             Folders.Remove(row);
+            _removedPaths.Add(path);
             PersistFolders();
+            // Dọn trạng thái tuỳ chọn của thư mục bằng luồng nền để tránh chạm đĩa trên UI thread.
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    if (ext?.ClearFolderState(path) is { } err)
+                        DiagnosticLogService.Trace("  " + err);
+                    if (ext?.ClearSecondaryFolderState(path) is { } secondaryErr)
+                        DiagnosticLogService.Trace("  " + secondaryErr);
+                }
+                catch (Exception ex)
+                {
+                    CrashReportService.RecordCrash(ex, "MultiClientViewModel.RemoveFolder");
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -367,8 +671,47 @@ public partial class MultiClientViewModel : ObservableObject
         }
         finally
         {
-            row.IsUpdatingLocalOption = false;
+            // Dò TRƯỚC rồi mới hạ cờ: RefreshLocalOptionState đặt IsLocalOptionsReady = false đồng bộ
+            // ngay trên luồng này, nên trên UI thread không có thời điểm nào đọc được IsUpdating=false
+            // mà IsLocalOptionsReady còn true từ lượt dò cũ (cửa sổ trạng thái cũ = 0).
             row.RefreshLocalOptionState();
+            row.IsUpdatingLocalOption = false;
+        }
+    }
+
+    public async Task ToggleSecondaryLocalOptionAsync(GameFolderRowViewModel row)
+    {
+        var ext = LocalLaunchExtension.Current;
+        if (ext == null || row == null || row.IsUpdatingSecondaryLocalOption) return;
+        bool done = false;
+        try
+        {
+            row.IsUpdatingSecondaryLocalOption = true;
+            row.CanToggleSecondaryLocalOption = false;
+            var progress = new Progress<string>(line =>
+            {
+                if (!done) row.StatusText = line;
+            });
+            var (enabled, msg) = await ext.ToggleSecondaryFolderAsync(row.Path, row.SecondaryLocalOptionEnabled, progress);
+            done = true;
+            row.SecondaryLocalOptionEnabled = enabled;
+            if (!string.IsNullOrEmpty(msg)) row.StatusText = msg;
+        }
+        catch (Exception ex)
+        {
+            done = true;
+            row.StatusText = $"Lỗi ({ex.GetType().Name})";
+            CrashReportService.RecordCrash(ex, "MultiClientViewModel.ToggleSecondaryLocalOptionAsync");
+        }
+        finally
+        {
+            // Bật/tắt tuỳ chọn phụ có thể làm thay đổi điều kiện của tuỳ chọn chính (hai tuỳ chọn có thể bật cùng lúc),
+            // nên phải dò lại CẢ HAI trạng thái ngay sau khi đổi.
+            // Dò TRƯỚC rồi mới hạ cờ: RefreshLocalOptionState đặt IsLocalOptionsReady = false đồng bộ ngay,
+            // nên cũng trên UI thread IsUpdating đã hạ xuống mà chưa lần dò nào kịp báo "sẵn sàng" — không còn
+            // khe hở đọc trạng thái cũ.
+            row.RefreshLocalOptionState();
+            row.IsUpdatingSecondaryLocalOption = false;
         }
     }
 
@@ -377,12 +720,27 @@ public partial class MultiClientViewModel : ObservableObject
     private async Task LaunchAsync(GameFolderRowViewModel row)
     {
         if (row == null || row.IsBusy) return;
+        // Ô tick thư mục cục bộ chỉ đúng sau khi lần dò nền (RefreshLocalOptionState) xong và
+        // không có lượt bật/tắt nào đang chạy — mở game sớm hơn sẽ đọc nhầm điều kiện (mặc định false).
+        if (!row.IsLocalOptionsReady || row.IsUpdatingLocalOption || row.IsUpdatingSecondaryLocalOption)
+        {
+            row.StatusText = "Đang cập nhật tuỳ chọn thư mục, vui lòng thử lại sau giây lát...";
+            return;
+        }
         try
         {
             row.IsBusy = true;
             row.StatusText = "Đang xử lý...";
 
             var progress = new Progress<string>(t => row.StatusText = t);
+
+            // Chụp lại các property của row NGAY TRÊN UI THREAD: đoạn dưới chạy ở luồng nền và
+            // worker của refresh tự cập nhật Token/ClientCount, đọc trực tiếp trong đó là đọc đua.
+            var folderPath = row.Path;
+            var savedToken = row.Token;
+            var clientCount = row.ClientCount;
+            var usePrimary = row.LocalOptionEnabled;
+            var useSecondary = row.SecondaryLocalOptionEnabled;
 
             // BẮT BUỘC Task.Run: method async chạy ĐỒNG BỘ trên thread của
             // caller cho tới await đầu tiên thực sự nhường quyền.
@@ -395,11 +753,12 @@ public partial class MultiClientViewModel : ObservableObject
             // tạo ở trên (UI thread) nên các report từ thread pool vẫn tự
             // marshal về UI đúng cách.
             var result = await Task.Run(() => MultiClientService.EnsureClientsRunningAsync(
-                row.Path, row.Token, row.ClientCount, progress, row.LocalOptionEnabled));
+                folderPath, savedToken, clientCount, progress, usePrimary,
+                useSecondaryLocalExtension: useSecondary));
             var msg = result.Message;
             var token = result.Token;
 
-            bool changed = !string.IsNullOrEmpty(token) && token != row.Token;
+            bool changed = !string.IsNullOrEmpty(token) && token != savedToken;
             if (changed) row.Token = token;
             row.ArgumentSourceStart = LaunchArgumentLogic.NextWatermark(
                 row.ArgumentSourceStart, result.ArgumentSourceStart, changed);

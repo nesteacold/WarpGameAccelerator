@@ -44,7 +44,8 @@ public record GameFolderEntry(string Path, int LastClientCount, DateTimeOffset A
 public sealed record LaunchRoundResult(
     int Launched, string Message,
     int StaleArgumentPid = 0, DateTime StaleArgumentStart = default,
-    bool NewClientValid = false, DateTime? ValidSourceStart = null, bool RoundStopped = false);
+    bool NewClientValid = false, DateTime? ValidSourceStart = null, bool RoundStopped = false,
+    IReadOnlyList<string>? Errors = null);
 
 /// <summary>
 /// Kết quả EnsureClientsRunningAsync. ArgumentSourceStart = StartTime của client NGUỒN đã sinh/xác
@@ -89,6 +90,12 @@ public class MultiClientService
     /// chỉ còn giữ vai trò SÀN cho ràng buộc DXVK — trả về 3000ms.
     /// </summary>
     private const int MinLaunchIntervalMs = 3000;
+
+    /// R3 Major 2: ngan sach ket thuc den ket thuc cua MOT lan mo qua extension,
+    /// tinh tu TRUOC BeginLaunch (khong phai sau khi da thay PID) — cho PID va cho helper khong
+    /// duoc cong don thanh hai cua rieng. Phan du phong danh cho buoc don dep sau khi cho.
+    private const int ExtTotalBudgetMs = 30000;
+    private const int ExtCleanupReserveMs = 2000;
 
     /// <summary>
     /// Giới hạn thời gian chờ một client kết nối vào server. Hết giờ thì vẫn
@@ -195,38 +202,81 @@ public class MultiClientService
     /// </summary>
     public static List<GameFolderEntry> LoadGameFolders()
     {
+        var (_, entries, _) = TryLoadGameFoldersCore();
         try
         {
-            if (File.Exists(GameFoldersFilePath))
+            return entries.Select(f => f with { Token = SecretStore.Unprotect(f.Token) }).ToList();
+        }
+        catch (Exception ex)
+        {
+            // Kho mã hoá hỏng/máy khác ⇒ bỏ cả danh sách thay vì ném ra lệnh gọi (giống đường đọc hỏng).
+            DiagnosticLogService.Trace($"LoadGameFolders Unprotect EXCEPTION: {ex}");
+            return new List<GameFolderEntry>();
+        }
+    }
+
+    /// <summary>
+    /// R5 Major 3: phân biệt "chưa có gì để đọc" (file chưa tồn tại, hoặc vừa migrate) và "đọc hỏng"
+    /// (file có nhưng sai định dạng / không đọc được) — chỉ loại sau mới được phép coi file cũ là rác.
+    /// </summary>
+    public static (bool Ok, List<GameFolderEntry> Entries, Exception? Error) TryLoadGameFolders()
+    {
+        var (ok, entries, error) = TryLoadGameFoldersCore();
+        try
+        {
+            return (ok, entries.Select(f => f with { Token = SecretStore.Unprotect(f.Token) }).ToList(), error);
+        }
+        catch (Exception unprotectEx)
+        {
+            // Kho mã hoá của máy này không giải được token ⇒ coi như lượt đọc hỏng, trả nguyên nhân thật.
+            DiagnosticLogService.Trace($"TryLoadGameFolders Unprotect EXCEPTION: {unprotectEx}");
+            return (false, new List<GameFolderEntry>(), unprotectEx);
+        }
+    }
+
+    /// <summary>
+    /// #30: đọc THÔ game_folders.json — token còn là chuỗi đã mã hóa. Tách riêng để cả
+    /// LoadGameFolders() lẫn TryLoadGameFolders() đều tự gọi SecretStore.Unprotect tại chỗ.
+    /// </summary>
+    private static (bool Ok, List<GameFolderEntry> Entries, Exception? Error) TryLoadGameFoldersCore()
+    {
+        try
+        {
+            // R6 Major 2: KHÔNG dùng File.Exists — nó nuốt lỗi quyền truy cập thành "false" và biến
+            // một file hỏng thành "chưa có gì để đọc". Đọc thẳng; chỉ lỗi "không có file" mới là absent.
+            string json;
+            try
             {
-                var json = File.ReadAllText(GameFoldersFilePath);
-                var loaded = JsonSerializer.Deserialize<List<GameFolderEntry>>(json);
-                // #30: hai điểm chạm bí mật nằm ở ĐÂY (đọc) và ở SaveGameFolders (ghi) — mọi chỗ khác
-                // trong app chỉ thấy token đã là chuỗi thuần, không phải lo đổi 20 call-site.
-                if (loaded != null)
-                    return loaded.Select(f => f with { Token = SecretStore.Unprotect(f.Token) }).ToList();
-                return new List<GameFolderEntry>();
+                json = File.ReadAllText(GameFoldersFilePath);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                // Chưa có file mới — thử migrate từ token cũ (chỉ 1 lần).
+                var legacy = LoadToken();
+                if (!string.IsNullOrWhiteSpace(legacy?.GameFolder) && Directory.Exists(legacy.GameFolder))
+                {
+                    var seeded = new List<GameFolderEntry>
+                    {
+                        new(legacy!.GameFolder, 2, DateTimeOffset.Now)
+                    };
+                    SaveGameFolders(seeded);
+                    DiagnosticLogService.Trace(
+                        $"Migrate game_folders.json từ aow_token.json cũ: {legacy.GameFolder}");
+                    return (true, seeded, null);
+                }
+                return (true, new List<GameFolderEntry>(), null);
             }
 
-            // Chưa có file mới — thử migrate từ token cũ (chỉ 1 lần).
-            var legacy = LoadToken();
-            if (!string.IsNullOrWhiteSpace(legacy?.GameFolder) && Directory.Exists(legacy.GameFolder))
-            {
-                var seeded = new List<GameFolderEntry>
-                {
-                    new(legacy!.GameFolder, 2, DateTimeOffset.Now)
-                };
-                SaveGameFolders(seeded);
-                DiagnosticLogService.Trace(
-                    $"Migrate game_folders.json từ aow_token.json cũ: {legacy.GameFolder}");
-                return seeded;
-            }
+            var loaded = JsonSerializer.Deserialize<List<GameFolderEntry>>(json);
+            if (loaded == null || loaded.Any(e => e is null || string.IsNullOrWhiteSpace(e.Path)))
+                return (false, new List<GameFolderEntry>(), new InvalidDataException("Tệp game_folders.json sai định dạng."));
+            return (true, loaded, null);
         }
         catch (Exception ex)
         {
             DiagnosticLogService.Trace($"LoadGameFolders EXCEPTION: {ex}");
+            return (false, new List<GameFolderEntry>(), ex);
         }
-        return new List<GameFolderEntry>();
     }
 
     public static void SaveGameFolders(List<GameFolderEntry> folders)
@@ -621,26 +671,40 @@ public class MultiClientService
     {
         const int pollInterval = 500;
 
-        for (int elapsed = 0; elapsed < timeoutMs; elapsed += pollInterval)
+        // R5 Major 1: han <= 0 ⇒ khong bao gio poll (truoc day van vao 1 luot WMI/process/command-line).
+        if (timeoutMs <= 0) return (0, DateTime.MinValue);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeoutMs)
         {
-            await Task.Delay(pollInterval);
+            int step = (int)Math.Min(pollInterval, Math.Max(0, timeoutMs - sw.ElapsedMilliseconds));
+            if (step > 0) await Task.Delay(step);
+            // R5 Major 1: kiem tra lai han SAU khi cho — delay da an het timeoutMs thi khong duoc bat
+            // dau mot luot WMI/process/command-line nua (han 30 giay cua luot phai giu dung).
+            if (sw.ElapsedMilliseconds >= timeoutMs) break;
             try
             {
                 var paths = GetFxgameExecutablePaths();
                 var starts = GetFxgameStartTimes(paths.Keys);
+                // R6 Major 1: truy van WMI vua roi da co the an het han — kiem tra lai truoc khi chon PID.
+                if (sw.ElapsedMilliseconds >= timeoutMs) break;
                 var fresh = LaunchArgumentLogic.OrderCandidatePids(paths, gameFolder, pidsBefore, newOnly: true, starts,
                     FindGameExe(gameFolder, "fxgame.exe"));
                 if (fresh.Count == 0) continue;
 
                 var args = new Dictionary<int, string?>();
                 foreach (var pid in fresh)
+                {
+                    if (sw.ElapsedMilliseconds >= timeoutMs) break;
                     args[pid] = ProcessCommandLine.TryGet(pid, out var cmd) ? ParseTokenFromCommandLine(cmd) : null;
+                }
+                if (sw.ElapsedMilliseconds >= timeoutMs) break;
 
                 int chosen = LaunchArgumentLogic.SelectLaunchedPid(fresh, args, expectedArgument);
                 if (chosen != 0)
                 {
                     DiagnosticLogService.Trace(
-                        $"  client mới PID={chosen} của {gameFolder} xuất hiện sau {elapsed + pollInterval}ms" +
+                        $"  client mới PID={chosen} của {gameFolder} xuất hiện sau {sw.ElapsedMilliseconds}ms" +
                         (args[chosen] == null ? " (không đọc được dòng lệnh — chọn theo thư mục + PID mới)" : ""));
                     return (chosen, starts.TryGetValue(chosen, out var s) ? s : DateTime.MinValue);
                 }
@@ -733,7 +797,7 @@ public class MultiClientService
     /// </param>
     public static async Task<LaunchRoundResult> LaunchClientsToTotalAsync(
         string gameFolder, string token, int targetTotal, IProgress<string>? progress = null, bool useLocalExtension = false,
-        bool newClientValidThisClick = false)
+        bool newClientValidThisClick = false, bool useSecondaryLocalExtension = false)
     {
         if (LocalLaunchExtension.Current is { } preExt)
         {
@@ -782,24 +846,58 @@ public class MultiClientService
                 DateTime newStart;
                 try
                 {
-                    if (useLocalExtension && LocalLaunchExtension.Current is { } ext)
-                        extSession = ext.BeginLaunch(gameFolder, gamePath, token);
+                    // R3 Major 2: MOT dong ho tuyet doi chay tu TRUOC BeginLaunch — khong phai tu luc
+                    // xong buoc cho PID. Budget duoc tinh bang thoi gian con lai, khong cong don hai cua.
+                    var extStopwatch = Stopwatch.StartNew();
+                    if ((useLocalExtension || useSecondaryLocalExtension) && LocalLaunchExtension.Current is { } ext)
+                        extSession = ext.BeginLaunch(gameFolder, gamePath, token, useLocalExtension, useSecondaryLocalExtension);
                     else
                         LauncherHelper.LaunchGameViaHelper(gamePath, token);
                     DiagnosticLogService.Trace($"[client {i + 1}/{count}] đã gọi helper, chờ tiến trình xuất hiện...");
 
                     // Chỉ PID mới của ĐÚNG thư mục, mang ĐÚNG argument vừa truyền (Codex P1#1): một client
                     // của thư mục khác xuất hiện cùng lúc không được thay chỗ client của lần mở này.
-                    (newPid, newStart) = await WaitForLaunchedFolderPidAsync(gameFolder, pidsBefore, token, timeoutMs: 15000);
+                    // Major 2: MOT han chung 30 giay cho ca luot (chờ PID + chờ helper), tinh tu lan goi
+                    // BeginLaunch — khong cong don hai cua so rieng thanh 40 giay mot client.
+                    // R4 Major 1: buoc chờ PID cũng nằm TRONG hạn này (trước đây luôn 15 giây; du
+                    // dong ho da chay gan het budget thi tong van vuot 30 giây).
+                    int pidTimeoutMs = extSession != null
+                        ? Math.Min(15000, Math.Max(0, ExtTotalBudgetMs - ExtCleanupReserveMs - (int)extStopwatch.ElapsedMilliseconds))
+                        : 15000;
+                    // R5 Major 1: khong con thoi gian cho PID (du phong don dep da het) thi BO QUA luon —
+                    // khong duoc poll mot lan de sam nghiem/dong lenh, tranh vet qua han 30 giay.
+                    (newPid, newStart) = pidTimeoutMs > 0
+                        ? await WaitForLaunchedFolderPidAsync(gameFolder, pidsBefore, token, timeoutMs: pidTimeoutMs)
+                        : (0, DateTime.MinValue);
+                    // Cung mot han cho ca nhanh PID-found lan nhanh khong thay PID: budget da tru thoi
+                    // gian cho PID va phan du phong don dep (khong con san 5 giay keo dai ngan sach).
+                    int extRemainingMs = Math.Max(0, ExtTotalBudgetMs - ExtCleanupReserveMs - (int)extStopwatch.ElapsedMilliseconds);
                     // Chỉ TÍNH là đã mở khi thấy PID của chính lần mở này (Codex v3 P1#2).
-                    if (LaunchArgumentLogic.CountsAsLaunched(newPid))
+                    if (extSession != null && LaunchArgumentLogic.CountsAsLaunched(newPid))
+                    {
+                        var (extOk, extFail) = await extSession.WaitCompletedAsync(timeoutMs: extRemainingMs);
+                        if (!extOk)
+                        {
+                            errors.Add($"Client {i + 1}: {(string.IsNullOrWhiteSpace(extFail) ? await extSession.DescribeFailureAsync() : extFail)}");
+                            newPid = 0;
+                        }
+                        else
+                        {
+                            launched++;
+                            lastNewPid = newPid;
+                        }
+                    }
+                    else if (LaunchArgumentLogic.CountsAsLaunched(newPid))
                     {
                         launched++;
                         lastNewPid = newPid;
                     }
                     else if (extSession != null)
                     {
-                        errors.Add($"Client {i + 1}: {await extSession.DescribeFailureAsync()}");
+                        // Khong thay PID: van phai cho helper het CUNG han tren — neu no ghi result.json
+                        // sau khi het han nay thi loi do moi la loi dung, khong bao "khong thay tien trinh".
+                        var (extOk, extFail) = await extSession.WaitCompletedAsync(timeoutMs: extRemainingMs);
+                        errors.Add($"Client {i + 1}: {(extOk ? await extSession.DescribeFailureAsync() : (string.IsNullOrWhiteSpace(extFail) ? await extSession.DescribeFailureAsync() : extFail))}");
                     }
                     else
                     {
@@ -895,12 +993,15 @@ public class MultiClientService
         int actualRunning = CountRunningFxgameInFolder(gameFolder);
         string errText = errors.Count > 0 ? " Lỗi: " + string.Join(", ", errors) : "";
         string msg = staleArgumentPid > 0
+            // R3 Major 1: nhanh nay cung phai mang loi da tich luy (helper xac nhan that bai, client
+            // khac loi) — khong duoc che chung chi vi da chon duoc cau ve argument het han.
             ? $"Đã dừng ở {actualRunning}/{targetTotal} cửa sổ: client vừa mở đã thoát hoặc bị treo do lỗi trong " +
-              $"{LaunchArgumentLogic.ObserveWindowMs / 1000} giây — argument khởi động có vẻ đã hết hạn, cần đăng nhập lại qua launcher (fxlaunch.exe)."
+              $"{LaunchArgumentLogic.ObserveWindowMs / 1000} giây — argument khởi động có vẻ đã hết hạn, cần đăng nhập lại qua launcher (fxlaunch.exe)." + errText
             : roundStopped
             ? $"Đã dừng ở {actualRunning}/{targetTotal} cửa sổ: không thấy tiến trình game của lần mở vừa rồi và argument khởi động " +
               "chưa được xác nhận — không mở thêm để tránh nhân bản client hỏng. Thử lại, hoặc đăng nhập lại qua launcher (fxlaunch.exe)." + errText
-            : LaunchArgumentLogic.IsRoundSuccess(actualRunning, targetTotal, roundStopped)
+            // Major 1: loi tu client bat ky (ke ca helper xac nhan that bai) khong duoc che bang so luong process.
+            : errors.Count == 0 && LaunchArgumentLogic.IsRoundSuccess(actualRunning, targetTotal, roundStopped)
             ? $"Đã mở đủ {actualRunning}/{targetTotal} cửa sổ game!"
             : $"Mới có {actualRunning}/{targetTotal} cửa sổ đang chạy (đã mở thêm {launched}).{errText}";
 
@@ -929,7 +1030,8 @@ public class MultiClientService
 
         DiagnosticLogService.Trace(
             $"LaunchClientsToTotal KẾT THÚC — thực tế {actualRunning}/{targetTotal} (mở thêm {launched}, dừng={roundStopped})");
-        return new LaunchRoundResult(launched, msg, staleArgumentPid, staleArgumentStart, newClientValid, validStart, roundStopped);
+        return new LaunchRoundResult(launched, msg, staleArgumentPid, staleArgumentStart, newClientValid, validStart, roundStopped,
+            errors.Count > 0 ? errors.AsReadOnly() : null);
     }
 
     /// <summary>
@@ -948,7 +1050,8 @@ public class MultiClientService
     /// pacing của chính nó.
     /// </summary>
     public static async Task<EnsureResult> EnsureClientsRunningAsync(
-        string gameFolder, string existingToken, int targetTotal, IProgress<string>? progress = null, bool useLocalExtension = false)
+        string gameFolder, string existingToken, int targetTotal, IProgress<string>? progress = null, bool useLocalExtension = false,
+        bool useSecondaryLocalExtension = false)
     {
         await LaunchGate.WaitAsync();
         try
@@ -986,7 +1089,8 @@ public class MultiClientService
                 // Argument vừa lấy từ launcher: không mở launcher lần nữa trong cùng lần bấm. Client nguồn
                 // đã đếm vào số cửa sổ; LaunchClientsToTotalAsync chỉ mở phần còn thiếu.
                 var r0 = await LaunchClientsToTotalAsync(gameFolder, login.Token, targetTotal, progress, useLocalExtension,
-                    newClientValidThisClick: login.Verdict == ArgumentVerdict.Valid);
+                    newClientValidThisClick: login.Verdict == ArgumentVerdict.Valid,
+                    useSecondaryLocalExtension: useSecondaryLocalExtension);
                 if (r0.StaleArgumentPid > 0)
                     return RejectFreshArgument(gameFolder, r0, login.Token, token);
                 return new EnsureResult(r0.Launched, r0.Message, login.Token, login.SourceStart ?? r0.ValidSourceStart);
@@ -994,7 +1098,8 @@ public class MultiClientService
 
             // Mở bằng argument đã lưu. Client MỚI đầu tiên của lượt LUÔN bị quan sát — client phiên cũ
             // đang chạy không được dùng làm bằng chứng (Codex v2 P1#4).
-            var r = await LaunchClientsToTotalAsync(gameFolder, token, targetTotal, progress, useLocalExtension);
+            var r = await LaunchClientsToTotalAsync(gameFolder, token, targetTotal, progress, useLocalExtension,
+                useSecondaryLocalExtension: useSecondaryLocalExtension);
             if (r.StaleArgumentPid == 0)
                 return new EnsureResult(r.Launched, r.Message, token, r.ValidSourceStart);
 
@@ -1016,15 +1121,17 @@ public class MultiClientService
             if (!relogin.Ok) return new EnsureResult(r.Launched, r.Message + " " + relogin.Message, token);
 
             var r2 = await LaunchClientsToTotalAsync(gameFolder, relogin.Token, targetTotal, progress, useLocalExtension,
-                newClientValidThisClick: relogin.Verdict == ArgumentVerdict.Valid);
+                newClientValidThisClick: relogin.Verdict == ArgumentVerdict.Valid,
+                useSecondaryLocalExtension: useSecondaryLocalExtension);
             if (r2.StaleArgumentPid > 0)
             {
-                var rej = RejectFreshArgument(gameFolder, r2, relogin.Token, token);
+                var rej = RejectFreshArgument(gameFolder, r2, relogin.Token, token, priorErrors: r.Errors);
                 return rej with { Launched = r.Launched + r2.Launched };
             }
-            return new EnsureResult(r.Launched + r2.Launched, r2.Message, relogin.Token, relogin.SourceStart ?? r2.ValidSourceStart);
+            string finalMsg = r.Errors is { Count: > 0 } ? $"{r2.Message} (Lượt trước có lỗi: {string.Join(", ", r.Errors)})" : r2.Message;
+            return new EnsureResult(r.Launched + r2.Launched, finalMsg, relogin.Token, relogin.SourceStart ?? r2.ValidSourceStart);
         }
-        catch (InvalidOperationException ex) when (useLocalExtension)
+        catch (InvalidOperationException ex) when (useLocalExtension || useSecondaryLocalExtension)
         {
             return new EnsureResult(0, ex.Message, existingToken);
         }
@@ -1039,16 +1146,23 @@ public class MultiClientService
     /// chết / bị WER treo ⇒ KHÔNG lưu argument đó (trả lại argument trước đó — Codex v2 P1#3 "Stale ⇒
     /// không lưu, không nhân bản"), tắt đúng client hỏng, không mở launcher lần nữa trong cùng lần bấm.
     /// </summary>
-    private static EnsureResult RejectFreshArgument(string gameFolder, LaunchRoundResult round, string freshToken, string previousToken)
+    private static EnsureResult RejectFreshArgument(string gameFolder, LaunchRoundResult round, string freshToken, string previousToken,
+        IReadOnlyList<string>? priorErrors = null)
     {
         string reason = "client mở bằng argument vừa lấy qua launcher đã thoát/bị treo do lỗi trong cửa sổ quan sát";
         DiagnosticLogService.Trace(
             $"[argument khởi động] {gameFolder} — {reason}; KHÔNG lưu argument này ({LaunchArgumentLogic.Describe(freshToken)}), " +
             "giữ argument trước đó, dừng (không lặp)");
         KillStaleClient(round.StaleArgumentPid, round.StaleArgumentStart, gameFolder, reason);
+        // R4 Minor: giu loi cua CA HAI luot (argument cu + argument vua lay) trong cau bao — neu khong
+        // thi loi cua luot launcher bi cau "chua luu argument" che mat.
+        var combined = new List<string>();
+        if (priorErrors != null) combined.AddRange(priorErrors);
+        if (round.Errors != null) combined.AddRange(round.Errors);
+        string errSuffix = combined.Count > 0 ? " Lỗi: " + string.Join(", ", combined) : "";
         return new EnsureResult(round.Launched,
             "Client mở bằng argument khởi động vừa lấy qua launcher đã thoát hoặc bị treo do lỗi — chưa lưu argument mới, " +
-            "đã dừng mở thêm. Hãy kiểm tra game/launcher rồi bấm MỞ GAME lại.",
+            "đã dừng mở thêm. Hãy kiểm tra game/launcher rồi bấm MỞ GAME lại." + errSuffix,
             previousToken);
     }
 

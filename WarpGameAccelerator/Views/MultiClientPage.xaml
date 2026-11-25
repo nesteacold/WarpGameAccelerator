@@ -128,15 +128,26 @@
                                                        TextTrimming="CharacterEllipsis"
                                                        ToolTipService.ToolTip="{x:Bind Path}"/>
 
-                                            <CheckBox Grid.Column="2" Margin="8,0,0,0"
-                                                      HorizontalAlignment="Right"
-                                                      Visibility="{x:Bind HasLocalOption, Mode=OneWay}"
-                                                      Content="{x:Bind LocalOptionLabel, Mode=OneWay}"
-                                                      MinWidth="0" VerticalAlignment="Center"
-                                                      IsChecked="{x:Bind LocalOptionEnabled, Mode=OneWay}"
-                                                      IsEnabled="{x:Bind CanToggleLocalOption, Mode=OneWay}"
-                                                      ToolTipService.ToolTip="{x:Bind LocalOptionTooltip, Mode=OneWay}"
-                                                      Click="LocalOptionToggle_Click" Tag="{x:Bind}"/>
+                                            <StackPanel Grid.Column="2" Margin="8,0,0,0"
+                                                        Orientation="Horizontal" Spacing="10"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <!-- Tuỳ chọn phụ (Private/): chỉ hiện khi extension local có nhãn -->
+                                                <CheckBox Visibility="{x:Bind HasSecondaryLocalOption, Mode=OneWay}"
+                                                          Content="{x:Bind SecondaryLocalOptionLabel, Mode=OneWay}"
+                                                          MinWidth="0" VerticalAlignment="Center"
+                                                          IsChecked="{x:Bind SecondaryLocalOptionEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind CanToggleSecondaryLocalOption, Mode=OneWay}"
+                                                          ToolTipService.ToolTip="{x:Bind SecondaryLocalOptionTooltip, Mode=OneWay}"
+                                                          Click="SecondaryLocalOptionToggle_Click" Tag="{x:Bind}"/>
+
+                                                <CheckBox Visibility="{x:Bind HasLocalOption, Mode=OneWay}"
+                                                          Content="{x:Bind LocalOptionLabel, Mode=OneWay}"
+                                                          MinWidth="0" VerticalAlignment="Center"
+                                                          IsChecked="{x:Bind LocalOptionEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind CanToggleLocalOption, Mode=OneWay}"
+                                                          ToolTipService.ToolTip="{x:Bind LocalOptionTooltip, Mode=OneWay}"
+                                                          Click="LocalOptionToggle_Click" Tag="{x:Bind}"/>
+                                            </StackPanel>
                                         </Grid>
 
                                         <TextBlock Text="{x:Bind StatusText, Mode=OneWay}"

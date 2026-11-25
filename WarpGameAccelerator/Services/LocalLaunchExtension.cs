@@ -10,6 +10,11 @@ namespace WarpGameAccelerator.Services;
 public interface ILocalLaunchSession : IDisposable
 {
     Task<string> DescribeFailureAsync();
+
+    // Lets a caller await a bounded completion confirmation before counting the client as
+    // launched; the default keeps sessions that have nothing to confirm compatible.
+    Task<(bool ConfirmedOk, string FailureMessage)> WaitCompletedAsync(int timeoutMs) =>
+        Task.FromResult((true, string.Empty));
 }
 
 /// <summary>
@@ -59,6 +64,25 @@ public interface ILocalLaunchExtension
         IProgress<string>? progress);
 
     ILocalLaunchSession BeginLaunch(string folderPath, string gamePath, string token);
+
+    // Optional secondary launch mode; defaults to no-op when no extension provides one.
+    string? SecondaryOptionLabel => null;
+
+    bool IsSecondaryFolderEnabled(string folderPath) => false;
+
+    (bool CanEnable, bool IsEnabled, string Tooltip) EvaluateSecondaryFolder(string folderPath) =>
+        (false, false, string.Empty);
+
+    string? ClearSecondaryFolderState(string folderPath) => null;
+
+    Task<(bool Enabled, string StatusMessage)> ToggleSecondaryFolderAsync(
+        string folderPath,
+        bool currentlyEnabled,
+        IProgress<string>? progress) => Task.FromResult((false, string.Empty));
+
+    ILocalLaunchSession BeginLaunch(
+        string folderPath, string gamePath, string token, bool usePrimaryOption, bool useSecondaryOption) =>
+        BeginLaunch(folderPath, gamePath, token);
 }
 
 public static class LocalLaunchExtension
