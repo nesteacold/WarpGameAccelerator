@@ -1,9 +1,12 @@
 name: Release Builder
 
 on:
-  push:
-    tags:
-      - 'v*' # Trigger khi push tag bắt đầu bằng 'v' (vd: v1.7.3)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.16.1)'
+        required: true
+        type: string
 
 # Cấp quyền ghi để tạo Release và upload file
 permissions:
@@ -22,11 +25,16 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
-    - name: Extract version from tag
+    - name: Resolve manual version
       id: version
+      env:
+        VERSION_INPUT: ${{ inputs.version }}
       run: |
-        $tag = "${{ github.ref_name }}"
-        $version = $tag.TrimStart('v')
+        $version = $env:VERSION_INPUT.TrimStart('v', 'V')
+        if ($version -notmatch '\A[0-9]+\.[0-9]+\.[0-9]+\z') {
+          Write-Error "Invalid version: $($env:VERSION_INPUT)"
+          exit 1
+        }
         echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
     - name: Publish WarpGameAccelerator
@@ -41,6 +49,7 @@ jobs:
     - name: Create Release and Upload Asset
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: v${{ steps.version.outputs.VERSION }}
         files: ./Publish/WarpGameAccelerator.exe
         generate_release_notes: true
         make_latest: true

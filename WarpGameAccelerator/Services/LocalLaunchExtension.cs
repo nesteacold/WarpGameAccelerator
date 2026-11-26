@@ -1,3 +1,5 @@
+using System.IO;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 
@@ -87,6 +89,8 @@ public interface ILocalLaunchExtension
 
 public static class LocalLaunchExtension
 {
+    private static int _embeddedLoadAttempted;
+
     public static ILocalLaunchExtension? Current { get; private set; }
 
     public static bool IsAvailable => Current != null;
@@ -94,5 +98,31 @@ public static class LocalLaunchExtension
     public static void Register(ILocalLaunchExtension extension)
     {
         Current = extension;
+    }
+
+    /// <summary>
+    /// Loads the owner's bundled (optional, obfuscated) release extension once. Public/open-source
+    /// builds embed nothing, so this is a cheap no-op after the first call.
+    /// </summary>
+    public static void EnsureLoaded()
+    {
+        if (Current != null || Interlocked.Exchange(ref _embeddedLoadAttempted, 1) != 0) return;
+        try
+        {
+            using var stream = typeof(LocalLaunchExtension).Assembly.GetManifestResourceStream(
+                "WarpGameAccelerator.Extension.dll");
+            if (stream == null) return;
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            var asm = Assembly.Load(ms.ToArray());
+            var type = asm.GetType("WarpGameAccelerator.Extension.ExtensionBootstrap");
+            var register = type?.GetMethod("Register",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            register?.Invoke(null, null);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogService.Trace($"LocalLaunchExtension.EnsureLoaded failed: {ex.GetType().Name}");
+        }
     }
 }

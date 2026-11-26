@@ -29,6 +29,7 @@ public static class Program
             return;
         }
 
+        LocalLaunchExtension.EnsureLoaded();
         if (LocalLaunchExtension.Current?.TryHandleCliArgs(args) == true)
         {
             return;
